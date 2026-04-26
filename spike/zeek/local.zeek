@@ -4,17 +4,11 @@
 
 @load base/frameworks/notice
 @load base/protocols/conn
-@load policy/frameworks/network/community-id
-
-# AF_PACKET configuration is set via environment / command-line args:
-#   zeek -i af_packet::<iface>
-# The fanout group and cluster config are set in node.cfg / zeekctl.cfg.
-# For the spike we drive Zeek directly with the af_packet plugin.
 
 # Enable JSON output for all logs
 @load tuning/json-logs
 
-# Community ID — load the correct script for this Zeek version
+# Community ID — correct path for zeek/zeek:latest image
 @load policy/protocols/conn/community-id-logging
 
 # Write logs to /logs/zeek/
