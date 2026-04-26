@@ -11,6 +11,13 @@ set -euo pipefail
 
 LOGS_DIR="${LOGS_DIR:-/var/lib/docker/volumes/spike_logs/_data}"
 CONTROL_SOCK="${CONTROL_SOCK:-/var/run/pcap_ring.sock}"
+
+# Detect if we're running on the host (not inside a container)
+# If the control socket isn't accessible directly, use docker exec
+USE_DOCKER_EXEC=false
+if [ ! -S "$CONTROL_SOCK" ] && command -v docker &>/dev/null; then
+  USE_DOCKER_EXEC=true
+fi
 PASS=0
 FAIL=0
 
@@ -98,25 +105,32 @@ echo ""
 # ── Goal 3: pcap_ring_writer ring stats ──────────────────────────────────────
 echo "Goal 3: pcap_ring_writer ring stats"
 
-if [ -S "$CONTROL_SOCK" ]; then
-  STATS=$(echo '{"cmd":"status"}' | nc -U -w 2 "$CONTROL_SOCK" 2>/dev/null || echo "")
-  if [ -n "$STATS" ]; then
-    PKTS=$(echo "$STATS" | jq -r '.stats.packets_written // 0' 2>/dev/null || echo "0")
-    if [ "$PKTS" -gt 0 ] 2>/dev/null; then
-      check "pcap_ring_writer packets_written=${PKTS}" "ok"
-    else
-      check "pcap_ring_writer packets_written > 0" \
-        "Got ${PKTS} — is traffic flowing on CAPTURE_IFACE?"
-    fi
-    WRAPS=$(echo "$STATS" | jq -r '.stats.wrap_count // 0' 2>/dev/null || echo "0")
-    info "Ring stats: $(echo "$STATS" | jq -c '.stats' 2>/dev/null || echo "$STATS")"
-  else
-    check "pcap_ring_writer control socket responding" \
-      "No response from ${CONTROL_SOCK}"
+get_ring_stats() {
+  if [ "$USE_DOCKER_EXEC" = "true" ]; then
+    docker exec spike-pcap_ring_writer-1 \
+      sh -c 'printf "{\"cmd\":\"status\"}" | nc -U -w 2 /var/run/pcap_ring.sock 2>/dev/null' 2>/dev/null || \
+    # Fallback: check container logs for stats
+    docker logs spike-pcap_ring_writer-1 2>/dev/null | grep -o '"packets_written":[0-9]*' | tail -1
+  elif [ -S "$CONTROL_SOCK" ]; then
+    echo '{"cmd":"status"}' | nc -U -w 2 "$CONTROL_SOCK" 2>/dev/null
   fi
+}
+
+# Check pcap_manager output for packet count (most reliable indicator)
+PCAP_MGR_LOG=$(docker logs spike-pcap_manager-1 2>/dev/null || echo "")
+RING_PKTS=$(echo "$PCAP_MGR_LOG" | grep -o '"packets_written":[0-9]*' | tail -1 | cut -d: -f2 || echo "0")
+
+if [ -z "$RING_PKTS" ]; then
+  # Try direct stats
+  STATS=$(get_ring_stats)
+  RING_PKTS=$(echo "$STATS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('stats',{}).get('packets_written',0))" 2>/dev/null || echo "0")
+fi
+
+if [ "${RING_PKTS:-0}" -gt 0 ] 2>/dev/null; then
+  check "pcap_ring_writer packets_written=${RING_PKTS}" "ok"
 else
-  check "pcap_ring_writer control socket exists" \
-    "Socket not found: ${CONTROL_SOCK} — is pcap_ring_writer running?"
+  check "pcap_ring_writer packets_written > 0" \
+    "Got ${RING_PKTS:-0} — is traffic flowing on CAPTURE_IFACE? Run gen-traffic.sh first"
 fi
 
 echo ""
@@ -124,7 +138,21 @@ echo ""
 # ── Goal 4: Carved PCAP valid ────────────────────────────────────────────────
 echo "Goal 4: Carved PCAP file valid"
 
-CARVE_FILE=$(ls -t /tmp/alert_carve_*.pcap 2>/dev/null | head -1 || echo "")
+# Check inside pcap_manager container first (carved file is in /tmp inside container)
+CARVE_FILE=""
+if [ "$USE_DOCKER_EXEC" = "true" ]; then
+  CARVE_FILE=$(docker exec spike-pcap_manager-1 sh -c 'ls -t /tmp/alert_carve_*.pcap 2>/dev/null | head -1' 2>/dev/null || echo "")
+  if [ -n "$CARVE_FILE" ]; then
+    # Copy out of container for inspection
+    docker cp "spike-pcap_manager-1:${CARVE_FILE}" /tmp/ 2>/dev/null || true
+    CARVE_FILE="/tmp/$(basename "$CARVE_FILE")"
+  fi
+fi
+
+# Also check host /tmp
+if [ -z "$CARVE_FILE" ]; then
+  CARVE_FILE=$(ls -t /tmp/alert_carve_*.pcap 2>/dev/null | head -1 || echo "")
+fi
 
 if [ -n "$CARVE_FILE" ] && [ -f "$CARVE_FILE" ]; then
   # Check PCAP magic number (little-endian: d4 c3 b2 a1)
