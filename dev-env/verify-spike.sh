@@ -91,13 +91,19 @@ RING_PKTS=$(docker logs spike-pcap_manager-1 2>/dev/null | \
   python3 -c "
 import sys, json, re
 text = sys.stdin.read()
-# Find the last JSON block after 'Ring stats:'
-matches = list(re.finditer(r'Ring stats:\s*(\{[^}]+\})', text, re.DOTALL))
-if matches:
-    try:
-        d = json.loads(matches[-1].group(1))
-        print(d.get('packets_written', 0))
-    except:
+# Find JSON block after 'Ring stats:' — may span multiple lines
+idx = text.rfind('Ring stats:')
+if idx >= 0:
+    rest = text[idx:]
+    start = rest.find('{')
+    end = rest.find('}')
+    if start >= 0 and end >= 0:
+        try:
+            d = json.loads(rest[start:end+1])
+            print(d.get('packets_written', 0))
+        except:
+            print(0)
+    else:
         print(0)
 else:
     print(0)
