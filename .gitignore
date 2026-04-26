@@ -1,0 +1,18 @@
+# Vagrant
+.vagrant/
+
+# Built binaries
+bin/
+spike/pcap_ring_writer/pcap_ring_writer
+spike/pcap_manager/pcap_manager
+
+# Go build cache
+*.test
+*.out
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+*.swp
