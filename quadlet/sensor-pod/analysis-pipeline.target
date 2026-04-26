@@ -1,0 +1,12 @@
+[Unit]
+Description=Sensor Pod Analysis Pipeline — Zeek, Suricata, Vector
+Documentation=https://github.com/sensor-stack/sensor-stack
+# Analysis pipeline starts only after the capture pipeline (sensor-agent readiness) is up.
+# Zeek, Suricata, and Vector are independent of each other — a crash in one
+# does NOT restart the others (no Requires= between them; only Wants= here).
+After=capture-pipeline.target sensor-agent.service
+Requires=capture-pipeline.target
+Wants=zeek.service suricata.service vector.service
+
+[Install]
+WantedBy=sensor-pod.target

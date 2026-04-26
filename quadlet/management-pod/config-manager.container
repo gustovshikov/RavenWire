@@ -1,0 +1,32 @@
+[Unit]
+Description=Config Manager — Elixir/Phoenix LiveView Management Application
+After=network.target
+
+[Container]
+Image=ghcr.io/sensor-stack/config-manager:latest
+Network=host
+UserNS=keep-id:uid=10000,gid=10000
+User=10000:10000
+DropCapability=ALL
+Volume=/data/config_manager:/data:rw
+Volume=/data/ca:/data/ca:rw
+Volume=/data/metrics:/data/metrics:rw
+PublishPort=8443:8443
+PublishPort=9090:9090
+Environment=SENSOR_DB_PATH=/data/config_manager.db
+Environment=SENSOR_CA_PATH=/data/ca
+Environment=SENSOR_PORT=8443
+Environment=SENSOR_GRPC_PORT=9090
+Environment=SENSOR_TLS_CERT=%SENSOR_TLS_CERT%
+Environment=SENSOR_TLS_KEY=%SENSOR_TLS_KEY%
+Environment=SECRET_KEY_BASE=%SECRET_KEY_BASE%
+Environment=PHX_HOST=%PHX_HOST%
+Exec=/app/bin/config_manager start
+Restart=on-failure
+
+[Service]
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=management-pod.target

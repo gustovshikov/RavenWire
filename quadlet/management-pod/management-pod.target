@@ -1,0 +1,7 @@
+[Unit]
+Description=Management Pod — Config Manager and Shared Services
+Documentation=https://github.com/sensor-stack/sensor-stack
+Wants=config-manager.service
+
+[Install]
+WantedBy=multi-user.target

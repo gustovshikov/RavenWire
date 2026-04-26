@@ -1,0 +1,11 @@
+[Unit]
+Description=Sensor Pod — Network Monitoring and Analysis Stack
+Documentation=https://github.com/sensor-stack/sensor-stack
+# Top-level target. Pulling in both pipelines as separate targets enforces
+# the strict pipeline separation: capture infrastructure and analysis tools
+# are supervised independently.
+After=capture-pipeline.target analysis-pipeline.target
+Wants=capture-pipeline.target analysis-pipeline.target
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,35 @@
+[Unit]
+Description=Suricata Intrusion Detection System
+PartOf=analysis-pipeline.target
+After=sensor-agent.service capture-pipeline.target
+Requires=sensor-agent.service capture-pipeline.target
+
+[Container]
+Image=jasonish/suricata:latest
+Network=host
+UserNS=keep-id:uid=10000,gid=10000
+User=10000:10000
+# Drop all capabilities first, then add only what AF_PACKET requires
+DropCapability=all
+AddCapability=CAP_NET_RAW
+AddCapability=CAP_NET_ADMIN
+# Config: suricata.yaml (read-only; Sensor_Agent writes BPF reload config)
+Volume=/etc/sensor/suricata:/etc/suricata:ro,z
+# Rules directory (read-write; Sensor_Agent writes updated rulesets here)
+Volume=/var/sensor/suricata/rules:/etc/suricata/rules:rw,z
+# BPF filter profile (read-only; Sensor_Agent writes updates here)
+Volume=/etc/sensor/bpf_filters.conf:/etc/sensor/bpf_filters.conf:ro,z
+# Log handoff path to Vector (read-write)
+Volume=/var/sensor/logs/suricata:/logs/suricata:rw,z
+# All node-specific values via environment variables — no hardcoded paths
+Environment=CAPTURE_IFACE=${CAPTURE_IFACE}
+Environment=SURICATA_FANOUT_GROUP=${SURICATA_FANOUT_GROUP:-2}
+Exec=suricata -c /etc/suricata/suricata.yaml --af-packet=${CAPTURE_IFACE}
+Restart=on-failure
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=analysis-pipeline.target

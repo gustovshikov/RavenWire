@@ -1,0 +1,118 @@
+# Vector production configuration for Sensor_Pod
+# Sources: Zeek file source, Suricata EVE JSON file source
+# Sinks: Splunk HEC and/or Cribl HTTP (configured via environment variables)
+# Alert webhook: HTTP POST to Sensor_Agent PCAP Manager on qualifying Suricata alerts
+# Disk-backed buffer: 1GB, FIFO drop on overflow
+
+# ── Sources ──────────────────────────────────────────────────────────────────
+
+[sources.zeek_logs]
+type = "file"
+include = ["/var/sensor/logs/zeek/*.log"]
+read_from = "beginning"
+ignore_older_secs = 86400
+
+[sources.suricata_eve]
+type = "file"
+include = ["/var/sensor/logs/suricata/eve.json"]
+read_from = "beginning"
+ignore_older_secs = 86400
+
+# ── Transforms ───────────────────────────────────────────────────────────────
+
+[transforms.parse_zeek]
+type = "remap"
+inputs = ["zeek_logs"]
+source = '''
+  . = parse_json!(string!(.message))
+  .sensor_source = "zeek"
+  .sensor_pod_id = get_env_var!("SENSOR_POD_NAME")
+  # Preserve community_id exactly as-is
+  if !exists(.community_id) {
+    .community_id = null
+  }
+  if !exists(.ts) {
+    .ts = now()
+  }
+'''
+
+[transforms.parse_suricata]
+type = "remap"
+inputs = ["suricata_eve"]
+source = '''
+  . = parse_json!(string!(.message))
+  .sensor_source = "suricata"
+  .sensor_pod_id = get_env_var!("SENSOR_POD_NAME")
+  # Preserve community_id exactly as-is
+  if !exists(.community_id) {
+    .community_id = null
+  }
+  if !exists(.timestamp) {
+    .timestamp = now()
+  }
+'''
+
+[transforms.normalize]
+type = "remap"
+inputs = ["parse_zeek", "parse_suricata"]
+source = '''
+  # Ensure community_id is always at the top level, unchanged
+  if exists(.community_id) && .community_id != null {
+    .community_id = string!(.community_id)
+  }
+  .vector_ingest_ts = now()
+'''
+
+# Route qualifying Suricata alerts to the PCAP Manager webhook
+[transforms.route_alerts]
+type = "route"
+inputs = ["parse_suricata"]
+
+[transforms.route_alerts.route]
+qualifying_alert = '.event_type == "alert" && exists(.alert.severity) && .alert.severity <= 2'
+
+# ── Alert webhook sink (Sensor_Agent PCAP Manager) ────────────────────────────
+
+[sinks.pcap_alert_webhook]
+type = "http"
+inputs = ["route_alerts.qualifying_alert"]
+uri = "${SENSOR_AGENT_ALERT_URL:-http://localhost:9092/alerts}"
+method = "post"
+encoding.codec = "json"
+
+[sinks.pcap_alert_webhook.buffer]
+type = "memory"
+max_events = 1000
+when_full = "drop_newest"
+
+# ── Splunk HEC sink ───────────────────────────────────────────────────────────
+
+[sinks.splunk_hec]
+type = "splunk_hec_logs"
+inputs = ["normalize"]
+endpoint = "${SPLUNK_HEC_URL}"
+token = "${SPLUNK_HEC_TOKEN}"
+encoding.codec = "json"
+# Skip if SPLUNK_HEC_URL is not set
+skip_unknown_fields = true
+
+[sinks.splunk_hec.buffer]
+type = "disk"
+max_size = 1073741824  # 1GB
+when_full = "drop_oldest"
+
+# ── Cribl HTTP sink ───────────────────────────────────────────────────────────
+
+[sinks.cribl_http]
+type = "http"
+inputs = ["normalize"]
+uri = "${CRIBL_URL:-http://localhost:10080/http}"
+method = "post"
+encoding.codec = "json"
+auth.strategy = "bearer"
+auth.token = "${CRIBL_TOKEN}"
+
+[sinks.cribl_http.buffer]
+type = "disk"
+max_size = 1073741824  # 1GB
+when_full = "drop_oldest"

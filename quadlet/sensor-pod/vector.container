@@ -1,0 +1,36 @@
+[Unit]
+Description=Vector Log Aggregation and Forwarding Agent
+PartOf=analysis-pipeline.target
+After=sensor-agent.service zeek.service suricata.service capture-pipeline.target
+Requires=sensor-agent.service capture-pipeline.target
+
+[Container]
+Image=timberio/vector:latest-alpine
+Network=host
+UserNS=keep-id:uid=10000,gid=10000
+User=10000:10000
+# Vector requires no elevated capabilities — drop all
+DropCapability=all
+# Config: vector.toml (read-only; Sensor_Agent Config Applier writes updates here)
+Volume=/etc/sensor/vector:/etc/vector:ro,z
+# Log handoff paths from Zeek and Suricata (read-only)
+Volume=/var/sensor/logs/zeek:/logs/zeek:ro,z
+Volume=/var/sensor/logs/suricata:/logs/suricata:ro,z
+# Disk-backed buffer for downstream sink unavailability (read-write)
+Volume=/var/sensor/vector-buffer:/var/lib/vector:rw,z
+# All forwarding endpoints and credentials via environment variables
+Environment=SPLUNK_HEC_URL=${SPLUNK_HEC_URL}
+Environment=SPLUNK_HEC_TOKEN=${SPLUNK_HEC_TOKEN}
+Environment=CRIBL_URL=${CRIBL_URL}
+Environment=CRIBL_TOKEN=${CRIBL_TOKEN}
+# Sensor_Agent alert listener endpoint for qualifying alert forwarding
+Environment=SENSOR_AGENT_ALERT_URL=${SENSOR_AGENT_ALERT_URL:-http://127.0.0.1:9091/internal/alerts}
+Exec=vector --config /etc/vector/vector.toml
+Restart=on-failure
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=analysis-pipeline.target

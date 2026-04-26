@@ -16,3 +16,8 @@ spike/pcap_manager/pcap_manager
 # Editor
 .idea/
 *.swp
+
+# Elixir/Mix
+config-manager/deps/
+config-manager/_build/
+config-manager/.elixir_ls/

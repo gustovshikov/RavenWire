@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package health;
+
+option go_package = "github.com/sensor-stack/sensor-agent/internal/health/proto";
+
+// HealthReport is streamed from Sensor_Agent to Config_Manager.
+message HealthReport {
+  string sensor_pod_id = 1;
+  int64 timestamp_unix_ms = 2;
+  repeated ContainerHealth containers = 3;
+  CaptureStats capture = 4;
+  StorageStats storage = 5;
+  ClockStats clock = 6;
+}
+
+message ContainerHealth {
+  string name = 1;
+  string state = 2;       // running, stopped, error, restarting
+  int64 uptime_seconds = 3;
+  double cpu_percent = 4;
+  uint64 memory_bytes = 5;
+}
+
+message CaptureStats {
+  map<string, ConsumerStats> consumers = 1;  // keyed by consumer name
+}
+
+message ConsumerStats {
+  uint64 packets_received = 1;
+  uint64 packets_dropped = 2;
+  double drop_percent = 3;
+  double throughput_bps = 4;
+}
+
+message StorageStats {
+  string path = 1;
+  uint64 total_bytes = 2;
+  uint64 used_bytes = 3;
+  uint64 available_bytes = 4;
+  double used_percent = 5;
+}
+
+message ClockStats {
+  int64 offset_ms = 1;       // clock offset in milliseconds
+  bool synchronized = 2;     // true if NTP/PTP synchronized
+  string source = 3;         // NTP server or PTP clock source
+}
+
+// HealthService is the bidirectional gRPC service for health streaming.
+service HealthService {
+  // StreamHealth is a bidirectional stream: Sensor_Agent sends HealthReports,
+  // Config_Manager sends acknowledgements or control hints.
+  rpc StreamHealth(stream HealthReport) returns (stream HealthAck);
+}
+
+message HealthAck {
+  string sensor_pod_id = 1;
+  int64 ack_timestamp_unix_ms = 2;
+}

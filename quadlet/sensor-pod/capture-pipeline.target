@@ -1,0 +1,10 @@
+[Unit]
+Description=Sensor Pod Capture Pipeline — AF_PACKET capture infrastructure
+Documentation=https://github.com/sensor-stack/sensor-stack
+# Capture pipeline: sensor-agent (readiness gate) + pcap-ring-writer
+# sensor-agent must be up before pcap-ring-writer starts
+After=sensor-agent.service
+Wants=sensor-agent.service pcap-ring-writer.service
+
+[Install]
+WantedBy=sensor-pod.target

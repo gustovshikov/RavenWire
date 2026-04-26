@@ -1,0 +1,48 @@
+[Unit]
+Description=Sensor Agent — Control API, Health, Config, PCAP Management
+After=network.target
+
+[Container]
+Image=ghcr.io/sensor-stack/sensor-agent:latest
+Network=host
+UserNS=keep-id:uid=10000,gid=10000
+User=10000:10000
+# Sensor_Agent requires no network capabilities — drop all
+# It accesses Podman via socket (group membership), not raw sockets
+DropCapability=all
+# Sensor config and certs (read-write; agent writes last-known-config and certs)
+Volume=/etc/sensor:/etc/sensor:rw,z
+# Runtime state: audit log, health buffer, pcap ring socket
+Volume=/var/sensor:/var/sensor:rw,z
+# Alert-driven PCAP storage and SQLite index
+Volume=/sensor/pcap:/sensor/pcap:rw,z
+# Podman socket — sensor_agent is the ONLY container with this mount
+# Enables controlled container lifecycle via the action allowlist
+Volume=/run/podman/podman.sock:/run/podman/podman.sock:rw
+# Unix socket directory shared with pcap_ring_writer
+Volume=/var/run/sensor:/var/run/sensor:rw,z
+# All node-specific values via environment variables — no hardcoded paths
+Environment=SENSOR_POD_NAME=${SENSOR_POD_NAME}
+Environment=SENSOR_ENROLLMENT_TOKEN=${SENSOR_ENROLLMENT_TOKEN}
+Environment=CONFIG_MANAGER_URL=${CONFIG_MANAGER_URL}
+Environment=CAPTURE_IFACE=${CAPTURE_IFACE}
+Environment=PODMAN_SOCKET_PATH=/run/podman/podman.sock
+Environment=CONTROL_API_PORT=${CONTROL_API_PORT:-9091}
+Environment=HEALTH_STREAM_PORT=${HEALTH_STREAM_PORT:-9090}
+Environment=PCAP_RING_SOCK=/var/run/sensor/pcap_ring.sock
+Environment=PCAP_ALERTS_DIR=/sensor/pcap/alerts
+Environment=PCAP_DB_PATH=/sensor/pcap/pcap.db
+Environment=AUDIT_LOG_PATH=/var/sensor/audit.log
+Environment=HEALTH_BUFFER_PATH=/var/sensor/health-buffer.bin
+Environment=LAST_KNOWN_CONFIG_PATH=/etc/sensor/last-known-config.json
+Environment=CERT_DIR=/etc/sensor/certs
+Environment=BPF_FILTER_PATH=/etc/sensor/bpf_filters.conf
+Exec=/usr/local/bin/sensor-agent
+Restart=on-failure
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=capture-pipeline.target
