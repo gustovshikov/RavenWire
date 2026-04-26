@@ -87,27 +87,7 @@ echo "Goal 3: pcap_ring_writer ring stats"
 
 # Check pcap_manager logs for ring stats (works even after container exits)
 # Stats are logged as multi-line JSON after "Ring stats:" label
-RING_PKTS=$(docker logs spike-pcap_manager-1 2>/dev/null | \
-  python3 -c "
-import sys, json, re
-text = sys.stdin.read()
-# Find JSON block after 'Ring stats:' — may span multiple lines
-idx = text.rfind('Ring stats:')
-if idx >= 0:
-    rest = text[idx:]
-    start = rest.find('{')
-    end = rest.find('}')
-    if start >= 0 and end >= 0:
-        try:
-            d = json.loads(rest[start:end+1])
-            print(d.get('packets_written', 0))
-        except:
-            print(0)
-    else:
-        print(0)
-else:
-    print(0)
-" 2>/dev/null || echo "0")
+RING_PKTS=$(docker logs spike-pcap_manager-1 2>/dev/null | python3 -c "import sys,json; t=sys.stdin.read(); i=t.rfind('Ring stats:'); rest=t[i:] if i>=0 else ''; s=rest.find('{'); e=rest.find('}'); print(json.loads(rest[s:e+1]).get('packets_written',0) if s>=0 and e>=0 else 0)" 2>/dev/null || echo "0")
 
 if [ "${RING_PKTS:-0}" -gt 0 ] 2>/dev/null; then
   check "pcap_ring_writer packets_written=${RING_PKTS}" "ok"
