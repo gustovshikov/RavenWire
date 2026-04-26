@@ -14,9 +14,8 @@
 # Enable JSON output for all logs
 @load tuning/json-logs
 
-# Ensure community_id is computed and logged in conn.log
-redef Community_ID::enabled = T;
-redef Community_ID::seed = 0;
+# Community ID — load the correct script for this Zeek version
+@load policy/protocols/conn/community-id-logging
 
 # Write logs to /logs/zeek/
 redef Log::default_logdir = "/logs/zeek";

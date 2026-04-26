@@ -33,11 +33,7 @@ services:
     volumes:
       - ./zeek/local.zeek:/usr/local/zeek/share/zeek/site/local.zeek:ro
       - logs:/logs
-    command: >
-      zeek
-        -i af_packet::${CAPTURE_IFACE:-eth0}
-        -C
-        /usr/local/zeek/share/zeek/site/local.zeek
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /logs/zeek && exec zeek -i af_packet::${CAPTURE_IFACE:-eth0} -C /usr/local/zeek/share/zeek/site/local.zeek"]
     restart: unless-stopped
 
   # ── Suricata ──────────────────────────────────────────────────────────────
@@ -54,11 +50,7 @@ services:
     volumes:
       - ./suricata/suricata.yaml:/etc/suricata/suricata.yaml:ro
       - logs:/logs
-    command: >
-      suricata
-        -c /etc/suricata/suricata.yaml
-        --af-packet=${CAPTURE_IFACE:-eth0}
-        -l /logs/suricata
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /logs/suricata && exec suricata -c /etc/suricata/suricata.yaml --af-packet=${CAPTURE_IFACE:-eth0} -l /logs/suricata"]
     restart: unless-stopped
 
   # ── Vector ────────────────────────────────────────────────────────────────
@@ -67,7 +59,7 @@ services:
     volumes:
       - ./vector/vector.toml:/etc/vector/vector.toml:ro
       - logs:/logs
-    command: ["--config", "/etc/vector/vector.toml"]
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /logs/vector && exec /usr/local/bin/vector --config /etc/vector/vector.toml"]
     depends_on:
       - zeek
       - suricata
