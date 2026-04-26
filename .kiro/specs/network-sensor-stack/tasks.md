@@ -58,12 +58,12 @@ All code is Go (Sensor_Agent, pcap_ring_writer) and Elixir/Phoenix (Config_Manag
     - Return structured validation errors for each invalid field; duplicate fanout group IDs across any consumers are an error
     - _Requirements: 2.1, 2.2, 2.3_
 
-  - [x]* 2.2 Write property test for capture configuration validation (Property 1)
+  - [x] 2.2 Write property test for capture configuration validation (Property 1)
     - **Property 1: Capture Consumer Fanout Group Uniqueness**
     - Generate arbitrary valid configs with 2–3 consumers; assert all fanout group IDs are distinct
     - **Validates: Requirements 2.2**
 
-  - [x]* 2.3 Write property test for invalid configuration rejection (Property 2)
+  - [x] 2.3 Write property test for invalid configuration rejection (Property 2)
     - **Property 2: Invalid Capture Configuration Rejection**
     - Generate configs with at least one invalid field (duplicate fanout ID, bad BPF, zero thread count, unknown interface); assert Sensor_Agent rejects and returns descriptive error without starting any capture process
     - **Validates: Requirements 2.3**
@@ -101,7 +101,7 @@ All code is Go (Sensor_Agent, pcap_ring_writer) and Elixir/Phoenix (Config_Manag
     - Reject any request not matching the allowlist with HTTP 403 and a local audit log entry
     - _Requirements: 11.2, 11.3, 11.4_
 
-  - [x]* 3.3 Write property test for Sensor_Agent action allowlist enforcement (Property 7)
+  - [x] 3.3 Write property test for Sensor_Agent action allowlist enforcement (Property 7)
     - **Property 7: Sensor_Agent Action Allowlist Enforcement**
     - Generate arbitrary HTTP method + path combinations; assert that only the 9 allowlisted (method, path) pairs are accepted and all others return HTTP 403 with a logged error and no container operation is performed
     - **Validates: Requirements 11.4, 15.7**
@@ -186,7 +186,7 @@ All code is Go (Sensor_Agent, pcap_ring_writer) and Elixir/Phoenix (Config_Manag
     - Update SQLite PCAP index with carved file metadata
     - _Requirements: 5.2, 5.3, 5.4, 5.5_
 
-  - [x]* 8.3 Write property test for alert-driven pre-alert window preservation (Property 4)
+  - [x] 8.3 Write property test for alert-driven pre-alert window preservation (Property 4)
     - **Property 4: Alert-Driven Pre-Alert Window Preservation**
     - Generate arbitrary alert events with varying pre/post-alert window configs; assert carved PCAP timestamps span from at least `(alert_time - pre_alert_window)` to at least `(alert_time + post_alert_window)`
     - **Validates: Requirements 5.3, 5.4**
@@ -197,7 +197,7 @@ All code is Go (Sensor_Agent, pcap_ring_writer) and Elixir/Phoenix (Config_Manag
     - Log critical error and notify Config_Manager if pruning cannot reclaim space within timeout
     - _Requirements: 5.7_
 
-  - [x]* 8.5 Write property test for PCAP storage FIFO pruning invariant (Property 3)
+  - [x] 8.5 Write property test for PCAP storage FIFO pruning invariant (Property 3)
     - **Property 3: PCAP Storage FIFO Pruning Invariant**
     - Generate arbitrary alert PCAP storage states above the critical threshold; assert that after pruning: used capacity is below the low-water mark, no SQLite index entries reference deleted files, and no files exist without index entries
     - _Note: This test covers alert-driven PCAP pruning (Req 5.7). Full PCAP Mode pruning (Req 4.5) is tested in v1.5._
@@ -223,7 +223,7 @@ All code is Go (Sensor_Agent, pcap_ring_writer) and Elixir/Phoenix (Config_Manag
     - Forward to configurable sink (Splunk HEC or Cribl HTTP endpoint, configured via environment variable)
     - _Requirements: 17.1, 17.3, 9.1, 9.2, 9.5_
 
-  - [ ]* 10.3 Write property test for Community ID preservation across output types (Property 11)
+  - [x] 10.3 Write property test for Community ID preservation across output types (Property 11)
     - **Property 11: Community_ID Preservation Across All Output Types**
     - Generate arbitrary flow events; assert that the Community_ID computed from the 5-tuple is present and identical in Zeek log output, Suricata alert output, and Vector-normalized output (raw schema mode at minimum for MVP)
     - **Validates: Requirements 17.1, 17.3**
@@ -260,7 +260,7 @@ All code is Go (Sensor_Agent, pcap_ring_writer) and Elixir/Phoenix (Config_Manag
     - Mark token as consumed (single-use) after first use regardless of approval outcome
     - _Requirements: 19.1, 19.2, 15.2_
 
-  - [ ]* 12.4 Write property test for enrollment token single-use enforcement (Property 13)
+  - [ ] 12.4 Write property test for enrollment token single-use enforcement (Property 13)
     - **Property 13: Enrollment Token Single-Use Enforcement**
     - Generate arbitrary sequences of enrollment attempts using the same token; assert the token is accepted exactly once and all subsequent uses are rejected regardless of approval state
     - **Validates: Requirements 19.1**
