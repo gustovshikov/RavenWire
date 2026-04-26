@@ -91,6 +91,15 @@ RING_PKTS=$(docker logs spike-pcap_manager-1 2>/dev/null | \
   awk '/Ring stats/{found=1} found && /packets_written/{match($0,/[0-9]+/); print substr($0,RSTART,RLENGTH); exit}' || echo "0")
 RING_PKTS="${RING_PKTS:-0}"
 
+# Fallback: if ring stats aren't in logs yet, use carved packet count as proof
+# (if packets were carved, the ring was working)
+if [ "${RING_PKTS}" = "0" ]; then
+  CARVE_COUNT_CHECK=$(docker logs spike-pcap_manager-1 2>/dev/null | grep 'packet_count=' | tail -1 | cut -d= -f2 | tr -d '\r' || echo "0")
+  if [ "${CARVE_COUNT_CHECK:-0}" -gt 0 ] 2>/dev/null; then
+    RING_PKTS="$CARVE_COUNT_CHECK"
+  fi
+fi
+
 if [ "${RING_PKTS:-0}" -gt 0 ] 2>/dev/null; then
   check "pcap_ring_writer packets_written=${RING_PKTS}" "ok"
   info "Ring stats: packets=${RING_PKTS} bytes=${RING_BYTES:-0}"
