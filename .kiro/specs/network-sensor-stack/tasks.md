@@ -260,7 +260,7 @@ All code is Go (Sensor_Agent, pcap_ring_writer) and Elixir/Phoenix (Config_Manag
     - Mark token as consumed (single-use) after first use regardless of approval outcome
     - _Requirements: 19.1, 19.2, 15.2_
 
-  - [ ] 12.4 Write property test for enrollment token single-use enforcement (Property 13)
+  - [x] 12.4 Write property test for enrollment token single-use enforcement (Property 13)
     - **Property 13: Enrollment Token Single-Use Enforcement**
     - Generate arbitrary sequences of enrollment attempts using the same token; assert the token is accepted exactly once and all subsequent uses are rejected regardless of approval state
     - **Validates: Requirements 19.1**
@@ -271,7 +271,7 @@ All code is Go (Sensor_Agent, pcap_ring_writer) and Elixir/Phoenix (Config_Manag
     - Log rejection with presenting identity
     - _Requirements: 19.4, 15.3_
 
-  - [ ]* 12.6 Write property test for certificate rejection (Property 14)
+  - [x] 12.6 Write property test for certificate rejection (Property 14)
     - **Property 14: Certificate Rejection for Invalid, Expired, or Revoked Identities**
     - Generate TLS connection attempts with (a) syntactically invalid cert, (b) expired cert, (c) cert signed by untrusted CA, (d) cert listed in CRL; assert all four cases are rejected at the TLS handshake layer with a logged rejection
     - **Validates: Requirements 15.3, 19.4**
