@@ -21,7 +21,7 @@ services:
 
   # ── Zeek ──────────────────────────────────────────────────────────────────
   zeek:
-    image: ghcr.io/zeek/zeek:latest
+    image: zeek/zeek:latest
     network_mode: host
     cap_add:
       - NET_RAW
