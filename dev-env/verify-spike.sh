@@ -88,7 +88,7 @@ echo "Goal 3: pcap_ring_writer ring stats"
 # Check pcap_manager logs for ring stats (works even after container exits)
 # Stats are logged as multi-line JSON after "Ring stats:" label
 RING_PKTS=$(docker logs spike-pcap_manager-1 2>/dev/null | \
-  awk '/Ring stats:/{found=1} found && /packets_written/{gsub(/[^0-9]/,"",$0); print $0; exit}' || echo "0")
+  awk '/Ring stats/{found=1} found && /packets_written/{match($0,/[0-9]+/); print substr($0,RSTART,RLENGTH); exit}' || echo "0")
 RING_PKTS="${RING_PKTS:-0}"
 
 if [ "${RING_PKTS:-0}" -gt 0 ] 2>/dev/null; then
