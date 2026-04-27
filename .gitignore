@@ -5,16 +5,20 @@
 bin/
 spike/pcap_ring_writer/pcap_ring_writer
 spike/pcap_manager/pcap_manager
+sensorctl/sensorctl
+sensor-agent/sensor-agent
 
 # Go build cache
 *.test
 *.out
+coverage.out
 
 # macOS
 .DS_Store
 
 # Editor
 .idea/
+.vscode/
 *.swp
 
 # Elixir/Mix
@@ -22,3 +26,44 @@ config-manager/deps/
 config-manager/_build/
 config-manager/.elixir_ls/
 config-manager/erl_crash.dump
+erl_crash.dump
+
+# Node/frontend build output
+node_modules/
+assets/node_modules/
+priv/static/assets/
+
+# Runtime state and generated data
+*.log
+*.pid
+*.sock
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.pcap
+*.pcapng
+*.evtx
+*.ndjson
+*.jsonl
+tmp/
+log/
+logs/
+data/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+
+# Local container/runtime scratch
+.podman/
+.docker/
+/pcap/
+/sensor-data/
