@@ -136,6 +136,14 @@ func (s *StreamClient) stream(done <-chan struct{}) error {
 // dial creates a gRPC client connection with mTLS if certs are present,
 // falling back to insecure transport for dev/enrollment-pending scenarios.
 func (s *StreamClient) dial() (*grpc.ClientConn, error) {
+	// Allow forcing insecure mode via env var (dev/demo deployments without server TLS)
+	if os.Getenv("GRPC_INSECURE") == "true" {
+		log.Printf("health: GRPC_INSECURE=true, connecting without TLS")
+		return grpc.NewClient(s.configManagerAddr,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+	}
+
 	certFile := s.certDir + "/sensor.crt"
 	keyFile := s.certDir + "/sensor.key"
 	caFile := s.certDir + "/ca-chain.pem"

@@ -81,6 +81,24 @@ func TestValidateConfig_EmptyConsumers(t *testing.T) {
 	}
 }
 
+func TestOverrideInterface(t *testing.T) {
+	cfg := &CaptureConfig{
+		Consumers: []ConsumerConfig{
+			{Name: "zeek", FanoutGroupID: 1, FanoutMode: FanoutHash, Interface: "eth0", ThreadCount: 4},
+			{Name: "suricata", FanoutGroupID: 2, FanoutMode: FanoutHash, Interface: "eth0", ThreadCount: 4},
+			{Name: "pcap_ring_writer", FanoutGroupID: 4, FanoutMode: FanoutHash, Interface: "eth0", ThreadCount: 1},
+		},
+	}
+
+	cfg.OverrideInterface("ens16f1")
+
+	for _, consumer := range cfg.Consumers {
+		if consumer.Interface != "ens16f1" {
+			t.Fatalf("expected %s interface to be overridden, got %q", consumer.Name, consumer.Interface)
+		}
+	}
+}
+
 // ── Property tests ────────────────────────────────────────────────────────────
 
 // consumerGen generates a valid ConsumerConfig with a unique fanout group ID.

@@ -59,15 +59,36 @@ defmodule ConfigManager.Enrollment do
            {:ok, pod} <- create_pending_pod(pod_name, public_key_pem, fingerprint) do
         Logger.info("Enrollment request received: pod=#{pod_name}, token=#{token.id}")
         Phoenix.PubSub.broadcast(ConfigManager.PubSub, "enrollments", {:enrollment_updated, pod.id})
-        :pending
+
+        # Auto-approve if AUTO_ENROLL_FIRST is set and this is the first pod
+        if auto_enroll_enabled?() do
+          Logger.info("AUTO_ENROLL_FIRST enabled — auto-approving pod #{pod_name}")
+          :auto_approve
+        else
+          :pending
+        end
       else
         {:error, reason} -> Repo.rollback(reason)
       end
     end)
     |> case do
+      {:ok, :auto_approve} ->
+        # Run approval outside the transaction so it can open its own
+        case Repo.one(from p in SensorPod, where: p.name == ^pod_name, order_by: [desc: p.inserted_at], limit: 1) do
+          nil -> {:ok, :pending}
+          pod ->
+            case approve(pod.id) do
+              {:ok, cert_bundle} -> {:ok, {:approved, cert_bundle}}
+              _ -> {:ok, :pending}
+            end
+        end
       {:ok, :pending} -> {:ok, :pending}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp auto_enroll_enabled? do
+    System.get_env("AUTO_ENROLL_FIRST", "false") in ["true", "1", "yes"]
   end
 
   # ── Approval ─────────────────────────────────────────────────────────────────
@@ -145,11 +166,12 @@ defmodule ConfigManager.Enrollment do
   Returns `{:ok, %{cert_pem, ca_chain_pem, sensor_pod_id}}` or `{:error, reason}`.
   """
   def approve_cert_bundle(%SensorPod{status: "enrolled"} = pod) do
-    # The cert PEM is not stored in the DB after issuance (only serial + expiry).
-    # The status endpoint is only used during the polling window before the Sensor_Agent
-    # receives the cert — once enrolled, the agent already has the cert.
-    # Return a minimal response so the agent knows it's approved.
-    {:ok, %{cert_pem: nil, ca_chain_pem: nil, sensor_pod_id: pod.id}}
+    {:ok,
+     %{
+       cert_pem: pod.cert_pem,
+       ca_chain_pem: pod.ca_chain_pem,
+       sensor_pod_id: pod.id
+     }}
   end
 
   def approve_cert_bundle(_pod), do: {:error, :not_enrolled}
@@ -227,7 +249,9 @@ defmodule ConfigManager.Enrollment do
     |> SensorPod.approval_changeset(%{
       status: "enrolled",
       cert_serial: cert_bundle.serial,
-      cert_expires_at: cert_bundle.expires_at |> DateTime.truncate(:second)
+      cert_expires_at: cert_bundle.expires_at |> DateTime.truncate(:second),
+      cert_pem: cert_bundle.cert_pem,
+      ca_chain_pem: cert_bundle.ca_chain_pem
     })
     |> Repo.update()
   end

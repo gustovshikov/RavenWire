@@ -5,25 +5,22 @@ After=sensor-agent.service capture-pipeline.target
 Requires=sensor-agent.service capture-pipeline.target
 
 [Container]
-Image=zeek/zeek:latest
+Image=docker.io/zeek/zeek:latest
 Network=host
-UserNS=keep-id:uid=10000,gid=10000
-User=10000:10000
 # Drop all capabilities first, then add only what AF_PACKET requires
 DropCapability=all
 AddCapability=CAP_NET_RAW
 AddCapability=CAP_NET_ADMIN
 # Config: Zeek scripts and site policy (read-only)
-Volume=/etc/sensor/zeek:/usr/local/zeek/share/zeek/site:ro,z
+Volume=/etc/sensor/zeek:/usr/local/zeek/share/zeek/site:ro
 # BPF filter profile (read-only; Sensor_Agent writes updates here)
-Volume=/etc/sensor/bpf_filters.conf:/etc/sensor/bpf_filters.conf:ro,z
+Volume=/etc/sensor/bpf_filters.conf:/etc/sensor/bpf_filters.conf:ro
 # Log handoff path to Vector (read-write)
-Volume=/var/sensor/logs/zeek:/logs/zeek:rw,z
+Volume=/var/sensor/logs/zeek:/logs/zeek:rw
 # All node-specific values via environment variables — no hardcoded paths
 Environment=CAPTURE_IFACE=${CAPTURE_IFACE}
 Environment=ZEEK_FANOUT_GROUP=${ZEEK_FANOUT_GROUP:-1}
 Exec=zeek -i af_packet::${CAPTURE_IFACE} -C /usr/local/zeek/share/zeek/site/local.zeek
-Restart=on-failure
 
 [Service]
 Restart=on-failure

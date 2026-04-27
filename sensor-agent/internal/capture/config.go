@@ -40,6 +40,18 @@ type CaptureConfig struct {
 	Consumers []ConsumerConfig `json:"consumers"`
 }
 
+// OverrideInterface sets every capture consumer to the supplied interface.
+// Node-specific interface names are deployment concerns, so CAPTURE_IFACE can
+// safely override the checked-in template config at runtime.
+func (c *CaptureConfig) OverrideInterface(iface string) {
+	if iface == "" {
+		return
+	}
+	for i := range c.Consumers {
+		c.Consumers[i].Interface = iface
+	}
+}
+
 // ValidationError describes a single configuration validation failure.
 type ValidationError struct {
 	Field   string `json:"field"`

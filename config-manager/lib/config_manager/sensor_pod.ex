@@ -27,6 +27,10 @@ defmodule ConfigManager.SensorPod do
     # SHA-256 fingerprint of the public key for display in the approval UI
     field :key_fingerprint, :string
 
+    # Issued cert PEM — stored at approval time so the status endpoint can return it
+    field :cert_pem, :string
+    field :ca_chain_pem, :string
+
     # Control API host for dispatching mode changes to the Sensor_Agent
     field :control_api_host, :string
 
@@ -52,7 +56,7 @@ defmodule ConfigManager.SensorPod do
   @doc "Changeset for approving an enrollment and recording the issued cert."
   def approval_changeset(pod, attrs) do
     pod
-    |> cast(attrs, [:status, :cert_serial, :cert_expires_at, :enrolled_by])
+    |> cast(attrs, [:status, :cert_serial, :cert_expires_at, :enrolled_by, :cert_pem, :ca_chain_pem])
     |> validate_required([:status, :cert_serial, :cert_expires_at])
     |> validate_inclusion(:status, @valid_statuses)
   end

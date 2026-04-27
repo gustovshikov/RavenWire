@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # dev-env/verify-spike.sh — Automated verification of all four spike goals
-# Uses docker exec to inspect containers directly — no path assumptions.
+# Uses the selected container runtime to inspect containers directly.
 set -euo pipefail
+
+CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-docker}"
 
 PASS=0
 FAIL=0
@@ -24,7 +26,7 @@ check() {
 }
 
 # Helper: run command inside a container
-cexec() { docker exec "$1" sh -c "$2" 2>/dev/null; }
+cexec() { $CONTAINER_RUNTIME exec "$1" sh -c "$2" 2>/dev/null; }
 
 echo ""
 echo "══════════════════════════════════════════════════"
@@ -87,14 +89,14 @@ echo "Goal 3: pcap_ring_writer ring stats"
 
 # Check pcap_manager logs for ring stats (works even after container exits)
 # Stats are logged as multi-line JSON after "Ring stats:" label
-RING_PKTS=$(docker logs spike-pcap_manager-1 2>/dev/null | \
+RING_PKTS=$($CONTAINER_RUNTIME logs spike-pcap_manager-1 2>/dev/null | \
   awk '/Ring stats/{found=1} found && /packets_written/{match($0,/[0-9]+/); print substr($0,RSTART,RLENGTH); exit}' || echo "0")
 RING_PKTS="${RING_PKTS:-0}"
 
 # Fallback: if ring stats aren't in logs yet, use carved packet count as proof
 # (if packets were carved, the ring was working)
 if [ "${RING_PKTS}" = "0" ]; then
-  CARVE_COUNT_CHECK=$(docker logs spike-pcap_manager-1 2>/dev/null | grep 'packet_count=' | tail -1 | cut -d= -f2 | tr -d '\r' || echo "0")
+  CARVE_COUNT_CHECK=$($CONTAINER_RUNTIME logs spike-pcap_manager-1 2>/dev/null | grep 'packet_count=' | tail -1 | cut -d= -f2 | tr -d '\r' || echo "0")
   if [ "${CARVE_COUNT_CHECK:-0}" -gt 0 ] 2>/dev/null; then
     RING_PKTS="$CARVE_COUNT_CHECK"
   fi
@@ -105,7 +107,7 @@ if [ "${RING_PKTS:-0}" -gt 0 ] 2>/dev/null; then
   info "Ring stats: packets=${RING_PKTS} bytes=${RING_BYTES:-0}"
 else
   # Try live socket if container is still running
-  STATS_RAW=$(docker exec spike-pcap_ring_writer-1 \
+  STATS_RAW=$($CONTAINER_RUNTIME exec spike-pcap_ring_writer-1 \
     sh -c 'printf "{\"cmd\":\"status\"}\n" | nc -U -w 2 /var/run/pcap_ring.sock 2>/dev/null' 2>/dev/null || echo "")
   RING_PKTS2=$(echo "$STATS_RAW" | python3 -c \
     "import sys,json; d=json.load(sys.stdin); print(d.get('stats',{}).get('packets_written',0))" 2>/dev/null || echo "0")
@@ -123,13 +125,13 @@ echo ""
 echo "Goal 4: Carved PCAP file valid"
 
 # Read from pcap_manager logs (works even after container exits)
-CARVE_PATH=$(docker logs spike-pcap_manager-1 2>/dev/null | grep 'carved_pcap_path=' | tail -1 | cut -d= -f2 | tr -d '\r' || echo "")
-CARVE_COUNT=$(docker logs spike-pcap_manager-1 2>/dev/null | grep 'packet_count=' | tail -1 | cut -d= -f2 | tr -d '\r' || echo "0")
+CARVE_PATH=$($CONTAINER_RUNTIME logs spike-pcap_manager-1 2>/dev/null | grep 'carved_pcap_path=' | tail -1 | cut -d= -f2 | tr -d '\r' || echo "")
+CARVE_COUNT=$($CONTAINER_RUNTIME logs spike-pcap_manager-1 2>/dev/null | grep 'packet_count=' | tail -1 | cut -d= -f2 | tr -d '\r' || echo "0")
 
 if [ -n "$CARVE_PATH" ]; then
   # Try to copy from container (works if still running or recently exited)
   LOCAL_CARVE="/tmp/$(basename "$CARVE_PATH")"
-  docker cp "spike-pcap_manager-1:${CARVE_PATH}" "$LOCAL_CARVE" 2>/dev/null || true
+  $CONTAINER_RUNTIME cp "spike-pcap_manager-1:${CARVE_PATH}" "$LOCAL_CARVE" 2>/dev/null || true
 
   if [ -f "$LOCAL_CARVE" ]; then
     MAGIC=$(xxd -l 4 "$LOCAL_CARVE" 2>/dev/null | awk '{print $2$3}' | head -1 || echo "")
@@ -171,10 +173,10 @@ echo ""
 
 if [ "$FAIL" -gt 0 ]; then
   echo "Troubleshooting tips:"
-  echo "  docker compose logs zeek        — check Zeek errors"
-  echo "  docker compose logs suricata    — check Suricata errors"
-  echo "  docker compose logs vector      — check Vector errors"
-  echo "  docker compose logs pcap_manager — check carve output"
+  echo "  ${COMPOSE:-docker compose} logs zeek        - check Zeek errors"
+  echo "  ${COMPOSE:-docker compose} logs suricata    - check Suricata errors"
+  echo "  ${COMPOSE:-docker compose} logs vector      - check Vector errors"
+  echo "  ${COMPOSE:-docker compose} logs pcap_manager - check carve output"
   echo "  See spike/README.md for detailed troubleshooting"
   exit 1
 fi

@@ -20,7 +20,7 @@ vars:
     VXLAN_PORTS: 4789
     TEREDO_PORTS: 3544
 
-default-log-dir: /var/sensor/logs/suricata
+default-log-dir: /logs/suricata
 
 stats:
   enabled: yes
@@ -30,7 +30,7 @@ outputs:
   - eve-log:
       enabled: yes
       filetype: regular
-      filename: /var/sensor/logs/suricata/eve.json
+      filename: /logs/suricata/eve.json
       # Community ID — required for cross-tool correlation
       community-id: yes
       community-id-seed: 0
@@ -76,7 +76,7 @@ logging:
     - file:
         enabled: yes
         level: info
-        filename: /var/sensor/logs/suricata/suricata.log
+        filename: /logs/suricata/suricata.log
 
 af-packet:
   - interface: default

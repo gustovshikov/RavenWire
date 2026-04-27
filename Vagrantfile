@@ -9,7 +9,7 @@
 # Usage:
 #   vagrant up
 #   vagrant ssh
-#   cd /vagrant/spike && CAPTURE_IFACE=veth0 docker-compose up
+#   cd /vagrant && CAPTURE_IFACE=veth0 docker compose -p spike -f deploy/compose/docker-compose.spike.yml up
 #
 # Traffic generation (inside VM):
 #   sudo /vagrant/dev-env/gen-traffic.sh
@@ -61,14 +61,14 @@ Vagrant.configure("2") do |config|
     ║  sensor-dev VM is ready                                      ║
     ╠══════════════════════════════════════════════════════════════╣
     ║  From your Mac (repo root):                                  ║
-    ║    sensorctl test spike          — full automated spike test ║
-    ║    sensorctl test spike --keep-running  — leave VM up after  ║
+    ║    sensorctl dev test-spike      — full automated spike test ║
+    ║    sensorctl dev test-spike --keep-running — leave VM up     ║
     ║    sensorctl env ssh             — SSH into VM               ║
     ║    sensorctl env down            — halt VM                   ║
     ║                                                              ║
     ║  Inside the VM:                                              ║
-    ║    cd /vagrant/spike                                         ║
-    ║    CAPTURE_IFACE=veth0 docker-compose up                     ║
+    ║    cd /vagrant                                               ║
+    ║    COMPOSE="docker compose" sensorctl dev test-spike --skip-boot ║
     ║    sudo /vagrant/dev-env/gen-traffic.sh                      ║
     ║    /vagrant/dev-env/verify-spike.sh                          ║
     ║                                                              ║

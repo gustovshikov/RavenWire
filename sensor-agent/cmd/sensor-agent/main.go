@@ -32,6 +32,10 @@ func main() {
 	// ── Configuration from environment ───────────────────────────────────────
 	controlPort := envOrDefault("CONTROL_API_PORT", "9091")
 	configManagerURL := envOrDefault("CONFIG_MANAGER_URL", "")
+	grpcAddr := envOrDefault("GRPC_ADDR", "") // host:port for gRPC health stream; defaults to CONFIG_MANAGER_URL if empty
+	if grpcAddr == "" {
+		grpcAddr = configManagerURL
+	}
 	captureConfigPath := envOrDefault("CAPTURE_CONFIG_PATH", capture.DefaultCaptureConfigPath)
 	bpfFilterPath := envOrDefault("BPF_FILTER_PATH", "/etc/sensor/bpf_filters.conf")
 	pcapRingSock := envOrDefault("PCAP_RING_SOCK", "/var/run/pcap_ring.sock")
@@ -77,6 +81,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("sensor-agent: failed to load capture config: %v", err)
 	}
+	captureCfg.OverrideInterface(captureIface)
 	if errs := captureCfg.Validate(); len(errs) > 0 {
 		for _, e := range errs {
 			log.Printf("sensor-agent: capture config error: %v", e)
@@ -155,7 +160,7 @@ func main() {
 	}()
 
 	if configManagerURL != "" {
-		streamClient := health.NewStreamClient(configManagerURL, certDir, healthBufferPath, healthCollector, auditLog)
+		streamClient := health.NewStreamClient(grpcAddr, certDir, healthBufferPath, healthCollector, auditLog)
 		go func() { streamClient.Run(done) }()
 	}
 

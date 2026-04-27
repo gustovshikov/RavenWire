@@ -24,6 +24,9 @@ config :logger, :console,
 
 config :phoenix, :json_library, Jason
 
+config :swoosh, :api_client, Swoosh.ApiClient.Finch
+config :swoosh, :finch_name, ConfigManager.Finch
+
 config :config_manager, :clock_drift_threshold_ms, 100
 
 import_config "#{config_env()}.exs"

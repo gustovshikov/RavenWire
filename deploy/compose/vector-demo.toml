@@ -1,0 +1,52 @@
+# Vector demo configuration — writes to local files instead of Splunk/Cribl
+# Used for the live demo deployment on 172.16.10.38
+
+[sources.zeek_logs]
+type = "file"
+include = ["/logs/zeek/*.log"]
+read_from = "beginning"
+ignore_older_secs = 86400
+
+[sources.suricata_eve]
+type = "file"
+include = ["/logs/suricata/eve.json"]
+read_from = "beginning"
+ignore_older_secs = 86400
+
+[transforms.parse_zeek]
+type = "remap"
+inputs = ["zeek_logs"]
+source = '''
+  parsed, err = parse_json(string!(.message))
+  if err == null {
+    . = parsed
+  }
+  .sensor_source = "zeek"
+  if !exists(.community_id) { .community_id = null }
+'''
+
+[transforms.parse_suricata]
+type = "remap"
+inputs = ["suricata_eve"]
+source = '''
+  parsed, err = parse_json(string!(.message))
+  if err == null {
+    . = parsed
+  }
+  .sensor_source = "suricata"
+  if !exists(.community_id) { .community_id = null }
+'''
+
+[transforms.normalize]
+type = "remap"
+inputs = ["parse_zeek", "parse_suricata"]
+source = '''
+  .vector_ingest_ts = now()
+'''
+
+# Write all normalized events to a local file for demo visibility
+[sinks.local_file]
+type = "file"
+inputs = ["normalize"]
+path = "/logs/vector/normalized-%Y-%m-%d.log"
+encoding.codec = "json"

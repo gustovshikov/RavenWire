@@ -13,7 +13,7 @@ This spike validates the four highest-risk MVP assumptions before the full platf
 
 - Linux host with a mirror or TAP interface available (e.g., `eth0`, `ens3`, `mirror0`)
 - Go 1.21+ (for building `pcap_ring_writer` and `pcap_manager`)
-- Docker or Podman with Compose support (`docker-compose` or `podman-compose`)
+- Docker or Podman with Compose support (`docker compose` or `podman compose`)
 - `CAP_NET_RAW` available to the container runtime (or run as root for the spike)
 - At least 1 GB free in `/dev/shm` (default ring size is 512 MB)
 - Wireshark or `tcpdump` for verifying carved PCAPs
@@ -33,7 +33,7 @@ export PRE_ALERT_WINDOW_SECONDS=5
 export POST_ALERT_WINDOW_SECONDS=3
 
 # Start everything
-docker-compose up
+docker compose -p spike -f deploy/compose/docker-compose.spike.yml up
 ```
 
 The `pcap_manager` service runs once, waits `ALERT_DELAY_SECONDS`, fires a simulated alert, and exits. All other services run continuously.
@@ -46,11 +46,11 @@ The `pcap_manager` service runs once, waits `ALERT_DELAY_SECONDS`, fires a simul
 
 ```bash
 # Check Zeek conn.log
-docker-compose logs zeek
+docker compose -p spike -f deploy/compose/docker-compose.spike.yml logs zeek
 ls -la /var/lib/docker/volumes/spike_logs/_data/zeek/
 
 # Check Suricata EVE JSON
-docker-compose logs suricata
+docker compose -p spike -f deploy/compose/docker-compose.spike.yml logs suricata
 ls -la /var/lib/docker/volumes/spike_logs/_data/suricata/eve.json
 ```
 
@@ -182,7 +182,7 @@ The carved PCAP should contain packets timestamped from `(alert_time - PRE_ALERT
 
 ### Zeek not producing logs
 - Verify `CAPTURE_IFACE` is set to a real interface with traffic
-- Check `docker-compose logs zeek` for AF_PACKET bind errors
+- Check `docker compose -p spike -f deploy/compose/docker-compose.spike.yml logs zeek` for AF_PACKET bind errors
 - Ensure `CAP_NET_RAW` and `CAP_NET_ADMIN` are granted
 - Try `zeek -i af_packet::eth0 -C` manually inside the container
 
@@ -192,13 +192,13 @@ The carved PCAP should contain packets timestamped from `(alert_time - PRE_ALERT
 - Ensure the interface name in `suricata.yaml` matches `CAPTURE_IFACE`
 
 ### Vector output.json empty
-- Check `docker-compose logs vector` for source errors
+- Check `docker compose -p spike -f deploy/compose/docker-compose.spike.yml logs vector` for source errors
 - Verify `/logs/zeek/*.log` and `/logs/suricata/eve.json` exist and are non-empty
 - Check Vector's buffer directory permissions
 
 ### pcap_ring_writer not writing packets
 - Verify `/dev/shm` is mounted and has sufficient space (`df -h /dev/shm`)
-- Check `docker-compose logs pcap_ring_writer` for socket bind errors
+- Check `docker compose -p spike -f deploy/compose/docker-compose.spike.yml logs pcap_ring_writer` for socket bind errors
 - Confirm `CAP_NET_RAW` is granted to the container
 - Test the control socket: `echo '{"cmd":"status"}' | nc -U /var/run/pcap_ring.sock`
 

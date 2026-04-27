@@ -157,6 +157,109 @@ func (c *Collector) Collect() HealthReport {
 	return report
 }
 
+// dockerContainer is the Docker API container list response format.
+type dockerContainer struct {
+	Names  []string `json:"Names"`
+	State  string   `json:"State"`
+	Status string   `json:"Status"`
+	ID     string   `json:"Id"`
+}
+
+// dockerContainerStats is the Docker API stats response format.
+type dockerContainerStats struct {
+	Name     string `json:"name"`
+	CPUStats struct {
+		CPUUsage struct {
+			TotalUsage uint64 `json:"total_usage"`
+		} `json:"cpu_usage"`
+		SystemCPUUsage uint64 `json:"system_cpu_usage"`
+		OnlineCPUs     int    `json:"online_cpus"`
+	} `json:"cpu_stats"`
+	PreCPUStats struct {
+		CPUUsage struct {
+			TotalUsage uint64 `json:"total_usage"`
+		} `json:"cpu_usage"`
+		SystemCPUUsage uint64 `json:"system_cpu_usage"`
+	} `json:"precpu_stats"`
+	MemoryStats struct {
+		Usage uint64 `json:"usage"`
+	} `json:"memory_stats"`
+}
+
+// scrapeContainers queries the Docker/Podman socket for container stats.
+func (c *Collector) scrapeContainers() []ContainerHealth {
+	client := &http.Client{
+		Transport: &http.Transport{
+			Dial: func(_, _ string) (net.Conn, error) {
+				return net.Dial("unix", c.podmanSock)
+			},
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	// Try Docker API first, fall back to Podman libpod API
+	containers := c.fetchContainersDocker(client)
+	if containers == nil {
+		containers = c.fetchContainersPodman(client)
+	}
+	return containers
+}
+
+// fetchContainersDocker uses the Docker-compatible API (/containers/json).
+func (c *Collector) fetchContainersDocker(client *http.Client) []ContainerHealth {
+	listResp, err := client.Get("http://d/containers/json?all=true")
+	if err != nil {
+		return nil
+	}
+	defer listResp.Body.Close()
+
+	var containers []dockerContainer
+	if err := json.NewDecoder(listResp.Body).Decode(&containers); err != nil {
+		return nil
+	}
+
+	result := make([]ContainerHealth, 0, len(containers))
+	for _, ct := range containers {
+		name := ""
+		if len(ct.Names) > 0 {
+			name = ct.Names[0]
+			// Docker prefixes names with "/"
+			if len(name) > 0 && name[0] == '/' {
+				name = name[1:]
+			}
+		}
+		ch := ContainerHealth{
+			Name:  name,
+			State: ct.State,
+		}
+		// Fetch per-container stats (non-streaming)
+		if s := c.fetchDockerStats(client, ct.ID); s != nil {
+			cpuDelta := float64(s.CPUStats.CPUUsage.TotalUsage - s.PreCPUStats.CPUUsage.TotalUsage)
+			sysDelta := float64(s.CPUStats.SystemCPUUsage - s.PreCPUStats.SystemCPUUsage)
+			if sysDelta > 0 && s.CPUStats.OnlineCPUs > 0 {
+				ch.CPUPercent = (cpuDelta / sysDelta) * float64(s.CPUStats.OnlineCPUs) * 100.0
+			}
+			ch.MemoryBytes = s.MemoryStats.Usage
+		}
+		result = append(result, ch)
+	}
+	return result
+}
+
+// fetchDockerStats fetches stats for a single container by ID.
+func (c *Collector) fetchDockerStats(client *http.Client, id string) *dockerContainerStats {
+	resp, err := client.Get("http://d/containers/" + id + "/stats?stream=false")
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	var s dockerContainerStats
+	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
+		return nil
+	}
+	return &s
+}
+
 // podmanContainerInspect is the subset of Podman's container inspect response we need.
 type podmanContainerInspect struct {
 	Names  []string `json:"Names"`
@@ -172,44 +275,27 @@ type podmanContainerStats struct {
 	UpTime      uint64  `json:"UpTime"` // nanoseconds
 }
 
-// scrapeContainers queries the Podman socket for container stats.
-func (c *Collector) scrapeContainers() []ContainerHealth {
-	client := &http.Client{
-		Transport: &http.Transport{
-			Dial: func(_, _ string) (net.Conn, error) {
-				return net.Dial("unix", c.podmanSock)
-			},
-		},
-		Timeout: 5 * time.Second,
-	}
-
-	// Fetch container list
+// fetchContainersPodman uses the Podman libpod API.
+func (c *Collector) fetchContainersPodman(client *http.Client) []ContainerHealth {
 	listResp, err := client.Get("http://d/v4.0.0/libpod/containers/json?all=true")
 	if err != nil {
-		log.Printf("health: failed to query Podman container list: %v", err)
 		return nil
 	}
 	defer listResp.Body.Close()
 
 	var containers []podmanContainerInspect
 	if err := json.NewDecoder(listResp.Body).Decode(&containers); err != nil {
-		log.Printf("health: failed to decode Podman container list: %v", err)
 		return nil
 	}
 
-	// Fetch stats for all containers in one call
-	statsMap := c.scrapeContainerStats(client)
-
+	statsMap := c.scrapePodmanStats(client)
 	result := make([]ContainerHealth, 0, len(containers))
 	for _, ct := range containers {
 		name := ""
 		if len(ct.Names) > 0 {
 			name = ct.Names[0]
 		}
-		ch := ContainerHealth{
-			Name:  name,
-			State: ct.State,
-		}
+		ch := ContainerHealth{Name: name, State: ct.State}
 		if s, ok := statsMap[name]; ok {
 			ch.CPUPercent = s.CPUPercent
 			ch.MemoryBytes = s.MemUsage
@@ -220,24 +306,19 @@ func (c *Collector) scrapeContainers() []ContainerHealth {
 	return result
 }
 
-// scrapeContainerStats fetches per-container CPU/memory stats from Podman.
-func (c *Collector) scrapeContainerStats(client *http.Client) map[string]podmanContainerStats {
+// scrapePodmanStats fetches per-container CPU/memory stats from Podman.
+func (c *Collector) scrapePodmanStats(client *http.Client) map[string]podmanContainerStats {
 	resp, err := client.Get("http://d/v4.0.0/libpod/containers/stats?stream=false")
 	if err != nil {
-		log.Printf("health: failed to query Podman container stats: %v", err)
 		return nil
 	}
 	defer resp.Body.Close()
-
-	// Podman returns a JSON object with a "Stats" array
 	var body struct {
 		Stats []podmanContainerStats `json:"Stats"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		log.Printf("health: failed to decode Podman stats: %v", err)
 		return nil
 	}
-
 	m := make(map[string]podmanContainerStats, len(body.Stats))
 	for _, s := range body.Stats {
 		m[s.Name] = s

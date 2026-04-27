@@ -17,8 +17,8 @@
 # Community ID — required for cross-tool correlation
 @load policy/protocols/conn/community-id-logging
 
-# Write logs to /var/sensor/logs/zeek/
-redef Log::default_logdir = "/var/sensor/logs/zeek";
+# Write logs to the Quadlet-mounted handoff path consumed by Vector.
+redef Log::default_logdir = "/logs/zeek";
 
 # Log rotation: rotate every hour
 redef Log::default_rotation_interval = 1hr;
@@ -34,8 +34,3 @@ redef Log::default_writer = Log::WRITER_ASCII;
 # File extraction (for Strelka submission in v1)
 # @load base/frameworks/files
 # @load policy/frameworks/files/extract-all-files
-
-# Suppress noisy notices
-redef Notice::not_suppressed_types += {
-    Notice::Weird
-};

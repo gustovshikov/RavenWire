@@ -11,6 +11,17 @@ defmodule ConfigManagerWeb.EnrollmentController do
          {:ok, pod_name} <- Map.fetch(params, "pod_name"),
          {:ok, public_key_pem} <- Map.fetch(params, "public_key") do
       case Enrollment.submit(token, pod_name, public_key_pem) do
+        {:ok, {:approved, cert_bundle}} ->
+          # AUTO_ENROLL_FIRST — cert issued immediately, return 200 with cert
+          conn
+          |> put_status(200)
+          |> json(%{
+            status: "approved",
+            cert_pem: cert_bundle.cert_pem,
+            ca_chain_pem: cert_bundle.ca_chain_pem,
+            sensor_pod_id: cert_bundle.sensor_pod_id
+          })
+
         {:ok, :pending} ->
           conn
           |> put_status(202)

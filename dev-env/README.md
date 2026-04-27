@@ -24,10 +24,10 @@ export PATH="$PWD/bin:$PATH"
 
 # Run the full automated spike test
 # (boots VM, starts stack, generates traffic, verifies, halts VM)
-sensorctl test spike
+sensorctl dev test-spike
 ```
 
-That's it. `sensorctl test spike` handles everything end-to-end.
+That's it. `sensorctl dev test-spike` handles everything end-to-end.
 
 ## Manual Setup (if you prefer step-by-step)
 
@@ -54,8 +54,8 @@ vagrant ssh       # SSH into the VM
 
 ```bash
 # Inside the VM
-cd /vagrant/spike
-CAPTURE_IFACE=veth0 docker-compose up -d
+cd /vagrant
+CAPTURE_IFACE=veth0 docker compose -p spike -f deploy/compose/docker-compose.spike.yml up -d
 
 # In a second terminal (inside VM), generate traffic
 sudo /vagrant/dev-env/gen-traffic.sh

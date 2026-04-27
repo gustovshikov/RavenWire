@@ -123,7 +123,7 @@ func remoteTestCmd() *cobra.Command {
 		Use:   "test",
 		Short: "Sync repo to remote server and run the full spike test suite",
 		Long: `Pushes to GitHub, pulls on the remote server, then runs:
-  1. docker-compose up (spike stack)
+  1. docker/podman Compose up (spike stack)
   2. gen-traffic.sh (traffic on veth1)
   3. verify-spike.sh (all 4 goals)
 Results are streamed back over SSH.`,
@@ -201,11 +201,11 @@ func remoteStatusCmd() *cobra.Command {
 				label string
 				cmd   string
 			}{
-				{"Docker", "docker info --format '{{.ServerVersion}}' 2>/dev/null || echo 'not running'"},
+				{"Container runtime", "${CONTAINER_RUNTIME:-docker} info --format '{{.ServerVersion}}' 2>/dev/null || ${CONTAINER_RUNTIME:-docker} info 2>/dev/null | head -5 || echo 'not running'"},
 				{"Veth pair", "ip link show veth0 veth1 2>/dev/null | grep -E 'veth|state' || echo 'not found'"},
 				{"Ring buffer (/dev/shm)", "df -h /dev/shm | tail -1"},
 				{"Repo", "cd ~/RavenWire && git log --oneline -3 2>/dev/null || echo 'not cloned'"},
-				{"Spike stack", "cd ~/RavenWire/spike && docker-compose ps 2>/dev/null || echo 'not running'"},
+				{"Spike stack", "cd ~/RavenWire && ${COMPOSE:-docker compose} -p spike -f deploy/compose/docker-compose.spike.yml ps 2>/dev/null || echo 'not running'"},
 				{"Carved PCAPs", "ls -lh /tmp/alert_carve_*.pcap 2>/dev/null || echo 'none'"},
 			}
 
@@ -244,7 +244,7 @@ dnf install -y -q \
   jq nmap-ncat \
   make gcc
 
-# Docker
+# Docker (default remote development runtime)
 if ! command -v docker &>/dev/null; then
   echo "==> Installing Docker"
   dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
@@ -415,9 +415,9 @@ func runRemoteTest(cfg remoteTestConfig) error {
 	// Step 3: Start spike stack
 	fmt.Println("\n[3] Starting spike stack...")
 	startCmd := fmt.Sprintf(`
-		cd %s/spike
+		cd %s
 		CAPTURE_IFACE=%s ALERT_DELAY_SECONDS=%d PRE_ALERT_WINDOW_SECONDS=5 POST_ALERT_WINDOW_SECONDS=3 \
-		docker compose up -d 2>&1
+		${COMPOSE:-docker compose} -p spike -f deploy/compose/docker-compose.spike.yml up -d 2>&1
 		echo "Stack started"
 	`, remoteRepoDir, cfg.captureIface, cfg.alertDelaySecs)
 	if err := sshRun(cfg.host, cfg.user, cfg.keyFile, startCmd); err != nil {
@@ -447,7 +447,7 @@ func runRemoteTest(cfg remoteTestConfig) error {
 	if verifyErr != nil {
 		fmt.Println("\n[7] Collecting diagnostics...")
 		diagCmd := fmt.Sprintf(`
-			echo "=== docker compose logs ===" && cd %s/spike && docker compose logs --tail=30 2>&1
+			echo "=== compose logs ===" && cd %s && ${COMPOSE:-docker compose} -p spike -f deploy/compose/docker-compose.spike.yml logs --tail=30 2>&1
 			echo "=== ring stats ===" && echo '{"cmd":"status"}' | nc -U -w 2 /var/run/pcap_ring.sock 2>/dev/null | python3 -m json.tool || echo "unavailable"
 			echo "=== carved pcaps ===" && ls -lh /tmp/alert_carve_*.pcap 2>/dev/null || echo "none"
 		`, remoteRepoDir)
@@ -456,7 +456,7 @@ func runRemoteTest(cfg remoteTestConfig) error {
 
 	// Step 8: Stop stack
 	fmt.Println("\n[8] Stopping spike stack...")
-	stopCmd := fmt.Sprintf("cd %s/spike && docker compose down 2>&1", remoteRepoDir)
+	stopCmd := fmt.Sprintf("cd %s && ${COMPOSE:-docker compose} -p spike -f deploy/compose/docker-compose.spike.yml down 2>&1", remoteRepoDir)
 	_ = sshRun(cfg.host, cfg.user, cfg.keyFile, stopCmd)
 
 	// Result

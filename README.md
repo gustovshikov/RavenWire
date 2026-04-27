@@ -155,7 +155,10 @@ Planned for v1.5.
 ├── sensor-agent/            # Go Sensor Agent and health/control interfaces
 ├── sensorctl/               # Development CLI for local testing and operations
 ├── config/sensor/           # Sensor config examples: BPF, capture, Zeek, Suricata, Vector
-├── quadlet/                 # Podman Quadlet definitions for management and sensor pods
+├── deploy/
+│   ├── compose/             # Docker/Compose development and spike manifests
+│   └── quadlet/             # Podman Quadlet production deployment units
+├── docs/                    # Development, Podman production, and enrollment guides
 ├── spike/                   # Phase 0.5 capture and PCAP carving validation
 ├── dev-env/                 # Vagrant/VirtualBox development environment
 └── Vagrantfile              # Reproducible Linux dev VM entry point
@@ -186,7 +189,7 @@ export PATH="$PWD/bin:$PATH"
 ### Run the automated spike test
 
 ```bash
-sensorctl test spike
+sensorctl dev test-spike
 ```
 
 This command boots the VM, starts the spike stack, generates traffic, verifies capture behavior, and halts the VM.
@@ -194,12 +197,38 @@ This command boots the VM, starts the spike stack, generates traffic, verifies c
 Useful variants:
 
 ```bash
-sensorctl test spike --keep-running
-sensorctl test spike --skip-boot
+sensorctl dev test-spike --keep-running
+sensorctl dev test-spike --skip-boot
 sensorctl test verify
 sensorctl env ssh
 sensorctl env down
 ```
+
+The legacy `sensorctl test spike` command remains available, but new development workflows should use `sensorctl dev ...`.
+
+### Runtime-aware commands
+
+```bash
+sensorctl runtime detect
+sensorctl runtime docker test-spike
+sensorctl runtime podman test-spike
+```
+
+Override the runtime when needed:
+
+```bash
+CONTAINER_RUNTIME=podman COMPOSE="podman compose" sensorctl test spike
+```
+
+### Production-ish Podman path
+
+```bash
+sensorctl podman install
+sensorctl podman start sensor-pod
+sensorctl podman status
+```
+
+Podman + systemd Quadlet is the deployment target; Docker/Compose is for local development convenience.
 
 ---
 
@@ -208,7 +237,7 @@ sensorctl env down
 Use this path on a Linux host or inside the development VM.
 
 ```bash
-cd spike
+cd .
 
 # Set the capture interface.
 # This should be a mirror/TAP/test interface, not your management NIC.
@@ -221,7 +250,7 @@ export PRE_ALERT_WINDOW_SECONDS=5
 export POST_ALERT_WINDOW_SECONDS=3
 
 # Start the stack
-docker-compose up
+docker compose -p spike -f deploy/compose/docker-compose.spike.yml up
 ```
 
 Verify output:
@@ -429,6 +458,12 @@ sensorctl env up
 sensorctl env ssh
 sensorctl env down
 ```
+
+More detail:
+
+- [Development](docs/development.md)
+- [Production Podman](docs/production-podman.md)
+- [Enrollment](docs/enrollment.md)
 
 ---
 

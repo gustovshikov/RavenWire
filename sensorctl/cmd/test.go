@@ -61,14 +61,14 @@ func isVMRunning() bool {
 
 func testSpikeCmd() *cobra.Command {
 	var (
-		captureIface       string
-		ringSizeMB         int
-		alertDelaySecs     int
-		preWindowSecs      int
-		postWindowSecs     int
+		captureIface        string
+		ringSizeMB          int
+		alertDelaySecs      int
+		preWindowSecs       int
+		postWindowSecs      int
 		trafficDurationSecs int
-		skipVMBoot         bool
-		keepRunning        bool
+		skipVMBoot          bool
+		keepRunning         bool
 	)
 
 	cmd := &cobra.Command{
@@ -77,7 +77,7 @@ func testSpikeCmd() *cobra.Command {
 		Long: `Runs the complete Phase 0.5 spike validation:
 
   1. Boot the Vagrant VM (if not already running)
-  2. Start the spike docker-compose stack
+  2. Start the spike Compose stack
   3. Generate test traffic on veth1
   4. Wait for pcap_manager to fire a simulated alert and carve a PCAP
   5. Run verify-spike.sh and report results
@@ -92,6 +92,8 @@ func testSpikeCmd() *cobra.Command {
 				trafficDurationSecs: trafficDurationSecs,
 				skipVMBoot:          skipVMBoot,
 				keepRunning:         keepRunning,
+				containerRuntime:    runtimeCommand("docker"),
+				composeCommand:      composeCommand("docker"),
 			})
 		},
 	}
@@ -134,6 +136,8 @@ type spikeTestConfig struct {
 	trafficDurationSecs int
 	skipVMBoot          bool
 	keepRunning         bool
+	containerRuntime    string
+	composeCommand      string
 }
 
 func runSpikeTest(cfg spikeTestConfig) error {
@@ -188,12 +192,17 @@ func runSpikeTest(cfg spikeTestConfig) error {
 	}
 
 	// ── Step 3: Start spike stack ────────────────────────────────────────────
-	printStep("Starting spike docker-compose stack")
+	printStep("Starting spike Compose stack")
 	composeEnv := fmt.Sprintf(
 		"CAPTURE_IFACE=%s RING_SIZE_MB=%d ALERT_DELAY_SECONDS=%d PRE_ALERT_WINDOW_SECONDS=%d POST_ALERT_WINDOW_SECONDS=%d",
 		cfg.captureIface, cfg.ringSizeMB, cfg.alertDelaySecs, cfg.preWindowSecs, cfg.postWindowSecs,
 	)
-	startCmd := fmt.Sprintf("cd /vagrant/spike && %s docker-compose up -d 2>&1", composeEnv)
+	compose := cfg.composeCommand
+	if strings.TrimSpace(compose) == "" {
+		compose = vmComposeCommand()
+	}
+	spikeFile := "/vagrant/deploy/compose/docker-compose.spike.yml"
+	startCmd := fmt.Sprintf("cd /vagrant && %s %s -p spike -f %s up -d 2>&1", composeEnv, compose, spikeFile)
 	if err := vmSSH(startCmd); err != nil {
 		return fmt.Errorf("failed to start spike stack: %w", err)
 	}
@@ -226,13 +235,13 @@ func runSpikeTest(cfg spikeTestConfig) error {
 
 	// ── Step 6: Run verification ─────────────────────────────────────────────
 	printStep("Running spike verification")
-	verifyErr := vmSSH("bash /vagrant/dev-env/verify-spike.sh")
+	verifyErr := vmSSH(fmt.Sprintf("CONTAINER_RUNTIME=%s COMPOSE=%q bash /vagrant/dev-env/verify-spike.sh", shellQuote(runtimeOrDefault(cfg.containerRuntime)), compose))
 
 	// ── Step 7: Collect logs on failure ─────────────────────────────────────
 	if verifyErr != nil {
 		printStep("Collecting diagnostic logs")
 		diagCmds := []string{
-			"cd /vagrant/spike && docker-compose logs --tail=50 2>&1",
+			fmt.Sprintf("cd /vagrant && %s -p spike -f %s logs --tail=50 2>&1", compose, spikeFile),
 			"echo '---ring-stats---' && echo '{\"cmd\":\"status\"}' | nc -U -w 2 /var/run/pcap_ring.sock 2>/dev/null | jq . || echo 'control socket unavailable'",
 			"echo '---carved-pcaps---' && ls -lh /tmp/alert_carve_*.pcap 2>/dev/null || echo 'none found'",
 			"echo '---veth-status---' && ip link show veth0 veth1 2>&1",
@@ -244,7 +253,7 @@ func runSpikeTest(cfg spikeTestConfig) error {
 
 	// ── Step 8: Stop stack ───────────────────────────────────────────────────
 	printStep("Stopping spike stack")
-	_ = vmSSH("cd /vagrant/spike && docker-compose down 2>&1")
+	_ = vmSSH(fmt.Sprintf("cd /vagrant && %s -p spike -f %s down 2>&1", compose, spikeFile))
 
 	// ── Step 9: Halt VM (unless --keep-running) ──────────────────────────────
 	if !cfg.keepRunning {
@@ -271,6 +280,27 @@ func runSpikeTest(cfg spikeTestConfig) error {
 	fmt.Printf("  # then proceed with task 1 in tasks.md\n")
 
 	return nil
+}
+
+func vmComposeCommand() string {
+	if compose := strings.TrimSpace(os.Getenv("COMPOSE")); compose != "" {
+		return compose
+	}
+	return "docker compose"
+}
+
+func runtimeOrDefault(runtime string) string {
+	if strings.TrimSpace(runtime) != "" {
+		return runtime
+	}
+	if runtime := strings.TrimSpace(os.Getenv("CONTAINER_RUNTIME")); runtime != "" {
+		return runtime
+	}
+	return "docker"
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 // writeTestReport writes a simple text report to a file.

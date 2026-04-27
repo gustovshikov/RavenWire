@@ -21,3 +21,4 @@ spike/pcap_manager/pcap_manager
 config-manager/deps/
 config-manager/_build/
 config-manager/.elixir_ls/
+config-manager/erl_crash.dump
