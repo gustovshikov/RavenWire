@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package health;
 
-option go_package = "github.com/sensor-stack/sensor-agent/internal/health/proto";
+option go_package = "github.com/ravenwire/ravenwire/sensor-agent/internal/health/proto";
 
 // HealthReport is streamed from Sensor_Agent to Config_Manager.
 message HealthReport {

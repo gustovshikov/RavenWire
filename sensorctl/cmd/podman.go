@@ -9,46 +9,56 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func podmanCmd() *cobra.Command {
-	podman := &cobra.Command{
-		Use:   "podman",
-		Short: "Manage Podman/Quadlet deployment units",
-		Long:  "Podman commands target the production-ish local path: Podman containers managed by systemd Quadlet units.",
-	}
-
-	podman.AddCommand(podmanInstallCmd())
-	podman.AddCommand(podmanStartCmd())
-	podman.AddCommand(podmanStatusCmd())
-
-	return podman
-}
-
-func podmanInstallCmd() *cobra.Command {
+func installCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "install",
-		Short: "Install Quadlet units into the user systemd container directory",
+		Short: "Install RavenWire Quadlet units",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return installQuadlet()
 		},
 	}
 }
 
-func podmanStartCmd() *cobra.Command {
+func startCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "start <unit>",
-		Short: "Start a Quadlet target or service, such as sensor-pod",
-		Args:  cobra.ExactArgs(1),
+		Use:   "start [unit]",
+		Short: "Start a RavenWire target or service",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			unit := normalizeSystemdUnit(args[0])
+			unit := defaultUnit(args, "sensor-pod")
 			return runShell("", fmt.Sprintf("systemctl --user start %s", shellQuote(unit)))
 		},
 	}
 }
 
-func podmanStatusCmd() *cobra.Command {
+func stopCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "stop [unit]",
+		Short: "Stop a RavenWire target or service",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			unit := defaultUnit(args, "sensor-pod")
+			return runShell("", fmt.Sprintf("systemctl --user stop %s", shellQuote(unit)))
+		},
+	}
+}
+
+func restartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "restart [unit]",
+		Short: "Restart a RavenWire target or service",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			unit := defaultUnit(args, "sensor-pod")
+			return runShell("", fmt.Sprintf("systemctl --user restart %s", shellQuote(unit)))
+		},
+	}
+}
+
+func statusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status [unit]",
-		Short: "Show Podman systemd status",
+		Short: "Show RavenWire unit status",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
@@ -58,6 +68,26 @@ func podmanStatusCmd() *cobra.Command {
 			return runShell("", fmt.Sprintf("systemctl --user status %s --no-pager", shellQuote(unit)))
 		},
 	}
+}
+
+func logsCmd() *cobra.Command {
+	var lines int
+
+	cmd := &cobra.Command{
+		Use:   "logs [unit]",
+		Short: "Show RavenWire systemd journal logs",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return runShell("", fmt.Sprintf("journalctl --user -u sensor-pod.target -u management-pod.target -n %d --no-pager", lines))
+			}
+			unit := normalizeSystemdUnit(args[0])
+			return runShell("", fmt.Sprintf("journalctl --user -u %s -n %d --no-pager", shellQuote(unit), lines))
+		},
+	}
+
+	cmd.Flags().IntVarP(&lines, "lines", "n", 200, "Number of journal lines to show")
+	return cmd
 }
 
 func installQuadlet() error {
@@ -72,11 +102,13 @@ func installQuadlet() error {
 	}
 
 	src := filepath.Join(root, "deploy", "quadlet")
-	dst := filepath.Join(home, ".config", "containers", "systemd")
+	quadletDst := filepath.Join(home, ".config", "containers", "systemd")
+	systemdDst := filepath.Join(home, ".config", "systemd", "user")
 
 	commands := []string{
-		fmt.Sprintf("mkdir -p %s", shellQuote(dst)),
-		fmt.Sprintf("find %s -type f \\( -name '*.container' -o -name '*.target' -o -name '*.network' -o -name '*.volume' \\) -exec cp {} %s/ \\;", shellQuote(src), shellQuote(dst)),
+		fmt.Sprintf("mkdir -p %s %s", shellQuote(quadletDst), shellQuote(systemdDst)),
+		fmt.Sprintf("find %s -type f \\( -name '*.container' -o -name '*.network' -o -name '*.volume' \\) -exec cp {} %s/ \\;", shellQuote(src), shellQuote(quadletDst)),
+		fmt.Sprintf("find %s -type f -name '*.target' -exec cp {} %s/ \\;", shellQuote(src), shellQuote(systemdDst)),
 		"systemctl --user daemon-reload",
 	}
 
@@ -86,8 +118,15 @@ func installQuadlet() error {
 		}
 	}
 
-	fmt.Println("Quadlet units installed. Try `sensorctl podman start sensor-pod`.")
+	fmt.Println("Quadlet units installed. Try `sensorctl start sensor-pod`.")
 	return nil
+}
+
+func defaultUnit(args []string, fallback string) string {
+	if len(args) == 0 {
+		return normalizeSystemdUnit(fallback)
+	}
+	return normalizeSystemdUnit(args[0])
 }
 
 func normalizeSystemdUnit(name string) string {

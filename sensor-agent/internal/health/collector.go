@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sensor-stack/sensor-agent/internal/audit"
-	"github.com/sensor-stack/sensor-agent/internal/capture"
-	healthpb "github.com/sensor-stack/sensor-agent/internal/health/proto"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/audit"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/capture"
+	healthpb "github.com/ravenwire/ravenwire/sensor-agent/internal/health/proto"
 	"golang.org/x/sys/unix"
 )
 
@@ -269,10 +269,10 @@ type podmanContainerInspect struct {
 
 // podmanContainerStats is the subset of Podman's /stats response we need.
 type podmanContainerStats struct {
-	Name        string  `json:"Name"`
-	CPUPercent  float64 `json:"CPUPercent"`
-	MemUsage    uint64  `json:"MemUsage"`
-	UpTime      uint64  `json:"UpTime"` // nanoseconds
+	Name       string  `json:"Name"`
+	CPUPercent float64 `json:"CPUPercent"`
+	MemUsage   uint64  `json:"MemUsage"`
+	UpTime     uint64  `json:"UpTime"` // nanoseconds
 }
 
 // fetchContainersPodman uses the Podman libpod API.

@@ -12,10 +12,10 @@ import (
 type FanoutMode string
 
 const (
-	FanoutHash      FanoutMode = "PACKET_FANOUT_HASH"
+	FanoutHash       FanoutMode = "PACKET_FANOUT_HASH"
 	FanoutRoundRobin FanoutMode = "PACKET_FANOUT_RR"
-	FanoutCPU       FanoutMode = "PACKET_FANOUT_CPU"
-	FanoutRollover  FanoutMode = "PACKET_FANOUT_ROLLOVER"
+	FanoutCPU        FanoutMode = "PACKET_FANOUT_CPU"
+	FanoutRollover   FanoutMode = "PACKET_FANOUT_ROLLOVER"
 )
 
 var validFanoutModes = map[FanoutMode]bool{

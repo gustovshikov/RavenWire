@@ -85,16 +85,16 @@ af-packet:
     cluster-type: cluster_flow
     defrag: yes
     use-mmap: yes
-    mmap-locked: yes
+    mmap-locked: no
     tpacket-v3: yes
-    ring-size: 2048
-    block-size: 32768
+    ring-size: 1025
+    block-size: 131072
     block-timeout: 10
     use-emergency-flush: yes
     buffer-size: 32768
     # BPF filter path — updated by Sensor_Agent on hot-reload
     bpf-filter: ""
-    threads: auto
+    threads: 1
 
 detect:
   profile: medium

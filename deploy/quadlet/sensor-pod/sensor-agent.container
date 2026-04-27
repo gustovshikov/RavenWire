@@ -23,11 +23,11 @@ Environment=SENSOR_POD_NAME=${SENSOR_POD_NAME}
 Environment=SENSOR_ENROLLMENT_TOKEN=${SENSOR_ENROLLMENT_TOKEN}
 Environment=CONFIG_MANAGER_URL=${CONFIG_MANAGER_URL}
 Environment=GRPC_ADDR=${GRPC_ADDR}
-Environment=GRPC_INSECURE=${GRPC_INSECURE:-true}
+Environment=GRPC_INSECURE=true
 Environment=CAPTURE_IFACE=${CAPTURE_IFACE}
 Environment=PODMAN_SOCKET_PATH=/run/podman/podman.sock
-Environment=CONTROL_API_PORT=${CONTROL_API_PORT:-9091}
-Environment=HEALTH_STREAM_PORT=${HEALTH_STREAM_PORT:-9090}
+Environment=CONTROL_API_PORT=9091
+Environment=HEALTH_STREAM_PORT=9090
 Environment=PCAP_RING_SOCK=/var/run/sensor/pcap_ring.sock
 Environment=PCAP_ALERTS_DIR=/sensor/pcap/alerts
 Environment=PCAP_DB_PATH=/sensor/pcap/pcap.db

@@ -1,4 +1,4 @@
-# Implementation Plan: Network Sensor Stack (MVP — Phases 0–1)
+# Implementation Plan: RavenWire (MVP — Phases 0–1)
 
 ## Overview
 
@@ -332,14 +332,15 @@ All code is Go (Sensor_Agent, pcap_ring_writer) and Elixir/Phoenix (Config_Manag
     - Download resulting archive via Config_Manager
     - _Requirements: 25.4_
 
-- [x] 17. Internal dev CLI — sensorctl (Phase 1)
-  - [x] 17.1 Implement minimal sensorctl binary (Go)
-    - `sensorctl enroll --manager <url> --token <token> --name <name>` — trigger Sensor_Agent enrollment
-    - `sensorctl status [--sensor <id>]` — print current health snapshot from Sensor_Agent
-    - `sensorctl show-drops [--sensor <id>]` — print per-consumer packet/drop counters
-    - `sensorctl collect-support-bundle --sensor <id> --output <path>` — trigger support bundle and download
-    - All commands use the Sensor_Agent mTLS control API; credentials via env vars or config file
-    - _Note: This is an internal development tool, not a stable public API. Full public CLI is Phase 5._
+- [x] 17. Operations CLI — sensorctl (Phase 1)
+  - [x] 17.1 Implement sensorctl binary (Go)
+    - `sensorctl install` — install Podman Quadlet units
+    - `sensorctl start|stop|restart|status|logs [unit]` — manage RavenWire systemd units
+    - `sensorctl enroll --manager <url> --token <token>` — enroll a sensor
+    - `sensorctl agent status --sensor <url>` — print current Sensor_Agent health snapshot
+    - `sensorctl agent show-drops --sensor <url>` — print per-consumer packet/drop counters
+    - `sensorctl agent collect-support-bundle --sensor <url> --output <path>` — trigger support bundle and download
+    - Sensor Agent commands use the mTLS control API; credentials via env vars or config file
     - _Requirements: 30.1, 30.2 (internal subset)_
 
 - [x] 18. Checkpoint — Phase 0 integration validation
@@ -358,7 +359,7 @@ All code is Go (Sensor_Agent, pcap_ring_writer) and Elixir/Phoenix (Config_Manag
   - Ensure health dashboard updates within 2 seconds of state changes
   - Ensure mode switching (Alert-Driven ↔ mode config) works without pod restart
   - Ensure support bundle generation produces a sanitized archive
-  - Ensure sensorctl dev commands work against a running Sensor_Agent
+  - Ensure sensorctl operations commands work against the Podman/Quadlet deployment path
   - Ensure all tests pass; ask the user if questions arise.
 
 ---

@@ -2,9 +2,9 @@
 
 ## Introduction
 
-This feature extends the Network Sensor Stack to allow an operator to view and change the monitored network interface for a Sensor_Pod directly from the Config_Manager web UI, without requiring manual environment variable edits, pod restarts, or SSH access to the host. The monitored interface is the mirror/TAP port from which Zeek, Suricata, and pcap_ring_writer each bind their own AF_PACKET socket. Changing the interface requires all three capture consumers to rebind their sockets to the new interface; the Sensor_Agent mediates this operation through its existing narrow control API.
+This feature extends RavenWire to allow an operator to view and change the monitored network interface for a Sensor_Pod directly from the Config_Manager web UI, without requiring manual environment variable edits, pod restarts, or SSH access to the host. The monitored interface is the mirror/TAP port from which Zeek, Suricata, and pcap_ring_writer each bind their own AF_PACKET socket. Changing the interface requires all three capture consumers to rebind their sockets to the new interface; the Sensor_Agent mediates this operation through its existing narrow control API.
 
-The feature must preserve the Sensor_Stack's core security invariant: the Config_Manager never accesses the Podman socket directly, and all container lifecycle operations are mediated exclusively through the Sensor_Agent's control API.
+The feature must preserve RavenWire's core security invariant: the Config_Manager never accesses the Podman socket directly, and all container lifecycle operations are mediated exclusively through the Sensor_Agent's control API.
 
 ---
 
@@ -18,7 +18,7 @@ The feature must preserve the Sensor_Stack's core security invariant: the Config
 - **Config_Manager**: The Elixir/Phoenix LiveView web application running in the Management_Pod, providing real-time health visibility and configuration management for all Sensor_Pods.
 - **Sensor_Agent**: The Go binary running in each Sensor_Pod that is the sole process with Podman socket access and the sole mediator of all container lifecycle and configuration operations.
 - **Sensor_Pod**: The Podman pod hosting Zeek, Suricata, Vector, Sensor_Agent, and pcap_ring_writer for a single monitored network segment.
-- **mTLS**: Mutual TLS — the transport security mode used for all pod-to-pod communication in the Sensor_Stack.
+- **mTLS**: Mutual TLS — the transport security mode used for all pod-to-pod communication in RavenWire.
 - **AF_PACKET socket**: The Linux kernel socket type used by each Capture_Consumer to receive raw packets from the Monitored_Interface.
 - **Fanout_Group**: A PACKET_FANOUT group ID assigned to a Capture_Consumer's AF_PACKET socket for intra-tool worker scaling. Each consumer has a distinct, validated group ID.
 - **BPF_Filter**: A Berkeley Packet Filter program applied per AF_PACKET socket to drop elephant flows before packets reach userspace.

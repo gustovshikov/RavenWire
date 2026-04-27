@@ -1,0 +1,47 @@
+.dockerignore
+
+# Git/editor/local state
+.git
+.DS_Store
+.idea/
+.vscode/
+
+# Mix/Elixir generated content
+_build/
+deps/
+.elixir_ls/
+erl_crash.dump
+*.ez
+
+# Node/frontend generated content
+node_modules/
+assets/node_modules/
+priv/static/assets/
+
+# Runtime data and local databases
+*.log
+*.pid
+*.sock
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+tmp/
+log/
+logs/
+data/
+
+# Local env and secret material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+
+# Test/build noise
+coverage/
+cover/

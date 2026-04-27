@@ -1,0 +1,42 @@
+.dockerignore
+
+# Git/editor/local state
+.git
+.DS_Store
+.idea/
+.vscode/
+
+# Go build/test output
+sensor-agent
+pcap-ring-writer
+sensorctl
+*.test
+*.out
+coverage.out
+bin/
+
+# Runtime data and logs
+*.log
+*.pid
+*.sock
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.pcap
+*.pcapng
+tmp/
+log/
+logs/
+data/
+
+# Local env and secret material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx

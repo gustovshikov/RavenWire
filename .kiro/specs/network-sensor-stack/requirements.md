@@ -2,9 +2,9 @@
 
 ## Introduction
 
-The Network Sensor Stack is a containerized (Podman) network monitoring and analysis system designed to handle high-throughput traffic up to 25Gbps. It integrates Zeek, Suricata, Strelka, Vector, and optionally netsniff-ng into a strict two-pipeline architecture: a Capture Pipeline and an Analysis Pipeline. Each capture consumer attaches independently to the monitored interface using its own AF_PACKET socket and fanout group, with PACKET_FANOUT used for intra-tool worker scaling rather than inter-tool duplication.
+RavenWire is a containerized (Podman) network monitoring and analysis system for standing up and managing sensor pods. The MVP integrates Zeek, Suricata, Vector, Sensor_Agent, and pcap_ring_writer into a strict capture and analysis architecture. Each capture consumer attaches independently to the monitored interface using its own AF_PACKET socket and fanout group, with PACKET_FANOUT used for intra-tool scaling rather than inter-tool duplication.
 
-The baseline deployment consists of two pods: a **Management Pod** hosting the Config Manager and Strelka cluster, and one or more **Sensor Pods** each handling packet capture and analysis for a monitored network segment. The system supports two operational modes — Full PCAP Mode and Alert-Driven PCAP Mode — switchable via a Phoenix LiveView web interface hosted in the Management Pod.
+The baseline deployment consists of two pod types: a **Management Pod** hosting the Config Manager, and one or more **Sensor Pods** each handling packet capture and analysis for a monitored network segment. Alert-Driven PCAP Mode is the MVP path. Full PCAP mode, Strelka, Arkime, and specialized capture engines are roadmap extensions.
 
 > **Capture Architecture Note:** Each capture consumer (Zeek, Suricata, netsniff-ng) binds its own AF_PACKET socket to the monitored interface with a distinct fanout group ID. PACKET_FANOUT distributes traffic across each tool's internal worker threads for intra-tool scaling — it does not duplicate the stream between tools. All consumers receive the full traffic stream independently from the same mirrored/TAP interface. BPF filters are applied per-socket to shed elephant flows before packets reach userspace.
 
@@ -18,11 +18,11 @@ The baseline deployment consists of two pods: a **Management Pod** hosting the C
 
 ## Glossary
 
-- **Sensor_Stack**: The complete containerized network monitoring system described in this document.
-- **Management_Pod**: The Podman pod hosting the Config_Manager and Strelka cluster. Runs once per deployment and serves all Sensor_Pods.
+- **RavenWire**: The complete containerized network monitoring system described in this document.
+- **Management_Pod**: The Podman pod hosting the Config_Manager. Runs once per deployment and serves all Sensor_Pods.
 - **Sensor_Pod**: The Podman pod hosting Zeek, Suricata, Vector, and optionally netsniff-ng for a single monitored network segment. One or more Sensor_Pods connect to a shared Management_Pod.
 - **Capture_Pipeline**: The subsystem responsible for receiving raw packets from the network interface via AF_PACKET and distributing them to analysis tools within a Sensor_Pod.
-- **Analysis_Pipeline**: The subsystem comprising Zeek, Suricata, and Strelka that performs protocol analysis, signature matching, and file extraction.
+- **Analysis_Pipeline**: The subsystem comprising Zeek, Suricata, and Vector log processing in the MVP.
 - **AF_PACKET socket/ring**: The Linux kernel AF_PACKET socket and associated ring buffer. Each capture consumer binds its own socket with a distinct fanout group ID; PACKET_FANOUT distributes traffic across that tool's internal worker threads. The term "AF_PACKET socket/ring" is used throughout to emphasize that each consumer has its own independent socket, not a shared ring.
 - **BPF_Filter**: A Berkeley Packet Filter program applied per AF_PACKET socket to drop elephant flows in the kernel before packets are copied to userspace.
 - **Elephant_Flow**: A high-volume, low-security-value traffic class (e.g., storage replication, encrypted media streams, trusted bulk transfers) that is a candidate for BPF_Filter exclusion.
@@ -42,7 +42,7 @@ The baseline deployment consists of two pods: a **Management Pod** hosting the C
 - **Rule_Repository**: A remote source of Suricata rules, Strelka YARA rules, or Zeek packages, identified by a URL and access credentials, polled on a configurable schedule by the Management_Pod.
 - **Rule_Store**: The persistent, deduplicated local store of all Suricata rules, Strelka YARA rules, and Zeek packages managed by the Config_Manager in the Management_Pod.
 - **PCAP_Carve**: A targeted extraction of packets from stored PCAP files matching a specific time range and 5-tuple, returned to a requesting client over HTTPS.
-- **mTLS**: Mutual TLS — a transport security mode in which both client and server present certificates for authentication, used for all pod-to-pod communication in the Sensor_Stack.
+- **mTLS**: Mutual TLS — a transport security mode in which both client and server present certificates for authentication, used for all pod-to-pod communication in RavenWire.
 
 ---
 
@@ -54,13 +54,13 @@ The baseline deployment consists of two pods: a **Management Pod** hosting the C
 
 #### Acceptance Criteria
 
-1. THE Sensor_Stack SHALL deploy as exactly two pod types: one Management_Pod and one or more Sensor_Pods.
-2. **[MVP]** THE Management_Pod SHALL contain the Config_Manager container. **[v1]** THE Management_Pod SHALL additionally contain Strelka frontend and Strelka backend containers when Strelka is enabled.
-3. Each Sensor_Pod SHALL contain Zeek, Suricata, and Vector containers, with netsniff-ng as an optional container controlled by the active capture mode.
-4. THE Management_Pod and Sensor_Pods SHALL communicate over a defined network interface; all endpoints (Strelka submission URL, Config_Manager address) SHALL be configurable via environment variables.
-5. THE Sensor_Stack SHALL define all container configurations in a declarative format (e.g., Podman Quadlet or Compose) that can be replicated across multiple Nodes without modification to container images.
-6. All per-Node configuration (interface name, storage paths, forwarding destinations, Strelka endpoint, Config_Manager address) SHALL be exposed exclusively through environment variables or mounted configuration files with no hardcoded Node-specific values in container images.
-7. WHEN a new Sensor_Pod is provisioned with the same declarative configuration pointing at the existing Management_Pod, THE Sensor_Stack SHALL begin operating on that Node without requiring changes to any existing Node's configuration.
+1. RavenWire SHALL deploy as exactly two pod types: one Management_Pod and one or more Sensor_Pods.
+2. THE Management_Pod SHALL contain the Config_Manager container.
+3. Each Sensor_Pod SHALL contain Sensor_Agent, Zeek, Suricata, Vector, and pcap_ring_writer containers.
+4. THE Management_Pod and Sensor_Pods SHALL communicate over a defined network interface; all endpoints SHALL be configurable via environment variables or mounted configuration.
+5. RavenWire SHALL define deployment container configurations as Podman Quadlet units that can be replicated across multiple Nodes without modification to container images.
+6. All per-Node configuration (interface name, storage paths, forwarding destinations, Config_Manager address) SHALL be exposed exclusively through environment variables or mounted configuration files with no hardcoded Node-specific values in container images.
+7. WHEN a new Sensor_Pod is provisioned with the same declarative configuration pointing at the existing Management_Pod, RavenWire SHALL begin operating on that Node without requiring changes to any existing Node's configuration.
 
 ---
 
@@ -79,7 +79,7 @@ The baseline deployment consists of two pods: a **Management Pod** hosting the C
    - Encrypted media streams identified by destination IP/port ranges
    - Configurable trusted internal bulk transfer flows by source/destination CIDR
 6. WHEN the BPF_Filter file is updated, THE Sensor_Agent SHALL validate the new filter profile and apply it as follows: for pcap_ring_writer-owned sockets, the filter SHALL be applied or reloaded through the pcap_ring_writer control interface; for Zeek and Suricata, the Sensor_Agent SHALL write the updated tool-specific capture configuration and trigger a controlled capture reload. THE Sensor_Agent SHALL report whether each filter was applied live or required a socket rebind, and SHALL report the event to the Config_Manager.
-7. **[MVP]** THE Sensor_Agent SHALL report capture validation status, active fanout group assignments, active BPF profile, and per-consumer packet/drop counters to the Config_Manager. **[v1]** THE Capture_Pipeline SHALL sustain packet processing at a throughput of at least 10Gbps without dropping security-relevant packets under nominal load on validated hardware. **[v2]** THE Sensor_Stack SHALL validate 25Gbps operation on hardware meeting the 25Gbps benchmark profile.
+7. **[MVP]** THE Sensor_Agent SHALL report capture validation status, active fanout group assignments, active BPF profile, and per-consumer packet/drop counters to the Config_Manager. **[v1]** THE Capture_Pipeline SHALL sustain packet processing at a throughput of at least 10Gbps without dropping security-relevant packets under nominal load on validated hardware. **[v2]** RavenWire SHALL validate 25Gbps operation on hardware meeting the 25Gbps benchmark profile.
 
 ---
 
@@ -274,7 +274,7 @@ The baseline deployment consists of two pods: a **Management Pod** hosting the C
 
 **Local Rule Store**
 
-1. THE Management_Pod SHALL maintain a persistent Rule_Store containing all Suricata rules and Strelka YARA rules managed by the Sensor_Stack.
+1. THE Management_Pod SHALL maintain a persistent Rule_Store containing all Suricata rules and Strelka YARA rules managed by RavenWire.
 2. THE Rule_Store SHALL deduplicate rules by a stable rule identifier (Suricata SID for signatures, rule name/hash for YARA) so that the same rule sourced from multiple repositories is stored exactly once.
 3. THE Config_Manager SHALL provide a UI view of all rules in the Rule_Store, filterable by type (Suricata / YARA), source repository, category, and enabled/disabled state.
 4. THE Config_Manager SHALL allow an operator to manually upload individual Suricata rule files or YARA rule files directly into the Rule_Store.
@@ -326,14 +326,14 @@ The baseline deployment consists of two pods: a **Management Pod** hosting the C
 #### Acceptance Criteria
 
 1. ALL network communication between Sensor_Pods and the Management_Pod — including Strelka file submissions, health streaming, PCAP carve requests, and config distribution — SHALL be encrypted with mTLS, with both client and server presenting certificates for mutual authentication.
-2. THE Sensor_Stack SHALL include a certificate management mechanism that provisions and rotates mTLS certificates for all pods; certificate configuration SHALL be managed via the Config_Manager.
+2. RavenWire SHALL include a certificate management mechanism that provisions and rotates mTLS certificates for all pods; certificate configuration SHALL be managed via the Config_Manager.
 3. IF a pod presents an invalid or expired certificate, THE receiving service SHALL reject the connection and log the rejection with the presenting pod's identity.
-4. ALL containers in both the Management_Pod and Sensor_Pods SHALL run as a dedicated non-root OS user (e.g., `sensor-svc`); no container in the Sensor_Stack SHALL run as root unless a specific capability cannot be achieved otherwise, in which case the exception SHALL be explicitly documented with justification.
+4. ALL containers in both the Management_Pod and Sensor_Pods SHALL run as a dedicated non-root OS user (e.g., `sensor-svc`); no container in RavenWire SHALL run as root unless a specific capability cannot be achieved otherwise, in which case the exception SHALL be explicitly documented with justification.
 5. Container definitions SHALL explicitly drop all Linux capabilities not required for operation and SHALL not use `--privileged` mode.
 6. THE Zeek and Suricata containers SHALL use only the minimum capabilities required for AF_PACKET socket access (`CAP_NET_RAW`, `CAP_NET_ADMIN`) and SHALL drop all others.
 7. THE Sensor_Agent SHALL maintain an explicit allowlist of manageable containers and permitted actions; any request outside the allowlist SHALL be rejected and logged.
 8. THE Sensor_Agent SHALL not expose arbitrary container start, exec, or image-pull functionality.
-9. THE Sensor_Stack SHOULD apply SELinux or AppArmor profiles to all containers; Podman with SELinux is the recommended configuration.
+9. RavenWire SHOULD apply SELinux or AppArmor profiles to all containers; Podman with SELinux is the recommended configuration.
 
 ---
 
@@ -358,7 +358,7 @@ The baseline deployment consists of two pods: a **Management Pod** hosting the C
 
 #### Acceptance Criteria
 
-1. THE Sensor_Stack SHALL compute and attach Community_ID to all Zeek logs, Suricata alerts, Strelka file results, Vector-normalized events, PCAP carve metadata, and downstream forwarding outputs.
+1. RavenWire SHALL compute and attach Community_ID to all Zeek logs, Suricata alerts, Strelka file results, Vector-normalized events, PCAP carve metadata, and downstream forwarding outputs.
 2. THE Config_Manager SHALL expose Community_ID as a primary pivot field in the PCAP carve API and UI.
 3. THE Vector transformation pipeline SHALL preserve Community_ID through all normalization and forwarding stages without modification.
 
@@ -441,9 +441,9 @@ The baseline deployment consists of two pods: a **Management Pod** hosting the C
 
 #### Acceptance Criteria
 
-1. THE Sensor_Stack SHALL include benchmark profiles for 1Gbps, 10Gbps, and 25Gbps operation.
+1. RavenWire SHALL include benchmark profiles for 1Gbps, 10Gbps, and 25Gbps operation.
 2. Each benchmark profile SHALL define: average and minimum packet size, flows per second, new connections per second, protocol mix, Suricata ruleset size, Zeek package set, file extraction enabled/disabled, PCAP mode, disk write target, CPU/NIC/RAM baseline, and acceptable packet loss threshold.
-3. THE Sensor_Stack SHALL include a benchmark execution tool that runs a defined profile against a Sensor_Pod and reports measured throughput, packet drop rate, CPU utilization, and memory utilization.
+3. RavenWire SHALL include a benchmark execution tool that runs a defined profile against a Sensor_Pod and reports measured throughput, packet drop rate, CPU utilization, and memory utilization.
 4. THE 25Gbps benchmark profile SHALL document that Full_PCAP_Mode at line rate requires local NVMe-backed storage as the primary write target; remote NFS/iSCSI as the sole write target is not supported at this throughput tier.
 
 ---
@@ -473,8 +473,8 @@ The baseline deployment consists of two pods: a **Management Pod** hosting the C
 2. WHEN Management_Pod connectivity is restored, THE Sensor_Agent SHALL reconcile buffered health metrics and confirm configuration state with the Config_Manager.
 3. THE Config_Manager SHALL support backup and restore of all persistent state: pool configurations, rule store, enrollment records, certificate authority, metric history, and audit log.
 4. THE Config_Manager SHALL provide a one-click support bundle generator that produces a sanitized archive containing: container logs, host tuning parameters, NIC stats, packet drop counters, Vector buffer status, Suricata stats, Zeek stats, disk usage, rule versions, certificate status, and recent configuration change history — with all sensitive values (IPs, credentials, keys) redacted by default.
-5. THE Sensor_Stack SHALL expose Prometheus-compatible metrics endpoints on both the Management_Pod and each Sensor_Pod for integration with external monitoring systems.
-6. THE Sensor_Stack SHALL expose health check, readiness, and liveness endpoints on all pod services for integration with container orchestration and monitoring tooling.
+5. RavenWire SHALL expose Prometheus-compatible metrics endpoints on both the Management_Pod and each Sensor_Pod for integration with external monitoring systems.
+6. RavenWire SHALL expose health check, readiness, and liveness endpoints on all pod services for integration with container orchestration and monitoring tooling.
 
 ---
 
@@ -484,9 +484,9 @@ The baseline deployment consists of two pods: a **Management Pod** hosting the C
 
 #### Acceptance Criteria
 
-1. WHERE Arkime is enabled for a Sensor_Pool, THE Sensor_Stack SHALL deploy Arkime as a first-class indexed session search and PCAP retrieval layer.
+1. WHERE Arkime is enabled for a Sensor_Pool, RavenWire SHALL deploy Arkime as a first-class indexed session search and PCAP retrieval layer.
 2. WHEN Arkime is enabled, THE Arkime instance SHALL index sessions from the Sensor_Pod's capture stream.
-3. THE Sensor_Stack SHALL preserve correlation links between Arkime session IDs, Zeek UIDs, Suricata alert IDs, Community_ID, and PCAP carve metadata.
+3. RavenWire SHALL preserve correlation links between Arkime session IDs, Zeek UIDs, Suricata alert IDs, Community_ID, and PCAP carve metadata.
 4. THE Config_Manager SHALL allow operators to enable or disable Arkime per Sensor_Pool.
 5. WHEN Arkime is enabled, THE Config_Manager SHALL expose Arkime session links in the PCAP carve API response.
 
@@ -511,9 +511,9 @@ The baseline deployment consists of two pods: a **Management Pod** hosting the C
 
 #### Acceptance Criteria
 
-1. THE Sensor_Stack SHALL publish a Software Bill of Materials (SBOM) for all released container images.
-2. Container images and release artifacts SHALL be signed; THE Sensor_Stack SHALL document the verification procedure.
-3. THE Sensor_Stack SHALL support vulnerability scanning of bundled images and dependencies.
+1. RavenWire SHALL publish a Software Bill of Materials (SBOM) for all released container images.
+2. Container images and release artifacts SHALL be signed; RavenWire SHALL document the verification procedure.
+3. RavenWire SHALL support vulnerability scanning of bundled images and dependencies.
 4. THE Config_Manager SHALL display running component versions and surface known update availability.
 
 ---
@@ -524,8 +524,8 @@ The baseline deployment consists of two pods: a **Management Pod** hosting the C
 
 #### Acceptance Criteria
 
-1. THE Sensor_Stack SHALL support fully air-gapped installation and operation with no runtime dependency on external network connectivity.
-2. THE Sensor_Stack SHALL provide offline bundles containing: container images, rule updates, Zeek packages, YARA repositories, and documentation.
+1. RavenWire SHALL support fully air-gapped installation and operation with no runtime dependency on external network connectivity.
+2. RavenWire SHALL provide offline bundles containing: container images, rule updates, Zeek packages, YARA repositories, and documentation.
 3. THE Config_Manager SHALL support importing offline update bundles through both the UI and CLI.
 
 ---
@@ -536,9 +536,9 @@ The baseline deployment consists of two pods: a **Management Pod** hosting the C
 
 #### Acceptance Criteria
 
-1. THE Sensor_Stack SHALL provide a CLI tool (`sensorctl`) covering all platform operations.
-2. `sensorctl` SHALL support at minimum the following commands: enroll, status, validate-config, apply-config, benchmark, carve-pcap, collect-support-bundle, rotate-certs, test-rules, show-drops.
-3. THE Sensor_Stack SHALL provide a fully documented public REST API covering all platform operations.
+1. RavenWire SHALL provide a CLI tool (`sensorctl`) covering all platform operations.
+2. `sensorctl` SHALL support at minimum the following commands: install, start, stop, restart, status, logs, enroll, test, agent status, agent show-drops, and agent collect-support-bundle.
+3. RavenWire SHALL provide a fully documented public REST API covering all platform operations.
 4. THE Config_Manager UI SHALL be built on top of the same public REST API that operators can automate against.
 
 ---
@@ -551,8 +551,8 @@ The baseline deployment consists of two pods: a **Management Pod** hosting the C
 
 1. THE Config_Manager SHALL enforce role-based permissions for PCAP carve and PCAP download actions.
 2. THE Config_Manager SHALL optionally require a justification field for PCAP export requests.
-3. THE Sensor_Stack SHALL calculate a SHA256 hash for every exported PCAP file.
-4. THE Sensor_Stack SHALL generate a chain-of-custody manifest for every PCAP export containing: requesting user identity, request timestamp, Sensor_Pod ID, query parameters, file hash, and result status.
+3. RavenWire SHALL calculate a SHA256 hash for every exported PCAP file.
+4. RavenWire SHALL generate a chain-of-custody manifest for every PCAP export containing: requesting user identity, request timestamp, Sensor_Pod ID, query parameters, file hash, and result status.
 
 ---
 
@@ -562,6 +562,6 @@ The baseline deployment consists of two pods: a **Management Pod** hosting the C
 
 #### Acceptance Criteria
 
-1. THE Sensor_Stack SHALL document and support three Management_Pod deployment models: single-node, active/passive HA, and restore-from-backup.
+1. RavenWire SHALL document and support three Management_Pod deployment models: single-node, active/passive HA, and restore-from-backup.
 2. WHEN the Management_Pod is unavailable, Sensor_Pods SHALL continue operating using the last known valid configuration.
 3. WHEN Management_Pod connectivity is restored after an outage, THE Sensor_Agent SHALL verify the integrity and recency of any configuration updates received and SHALL reject stale or unsigned configuration pushes.

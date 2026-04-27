@@ -18,9 +18,9 @@ Volume=/var/run/sensor:/var/run/sensor:rw
 Volume=/etc/sensor/bpf_filters.conf:/etc/sensor/bpf_filters.conf:ro
 # All node-specific values via environment variables — no hardcoded paths
 Environment=CAPTURE_IFACE=${CAPTURE_IFACE}
-Environment=PCAP_RING_FANOUT_GROUP=${PCAP_RING_FANOUT_GROUP:-4}
+Environment=PCAP_RING_FANOUT_GROUP=4
 Environment=RING_PATH=/dev/shm/sensor_pcap_ring
-Environment=RING_SIZE_MB=${RING_SIZE_MB:-4096}
+Environment=RING_SIZE_MB=512
 Environment=CONTROL_SOCK=/var/run/sensor/pcap_ring.sock
 
 [Service]

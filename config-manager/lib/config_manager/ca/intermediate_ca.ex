@@ -101,7 +101,7 @@ defmodule ConfigManager.CA.IntermediateCA do
     cert =
       X509.Certificate.self_signed(
         key,
-        "/CN=Config Manager Intermediate CA/O=Sensor Stack",
+        "/CN=RavenWire Manager Intermediate CA/O=RavenWire",
         template: :ca,
         validity: X509.Certificate.Validity.new(not_before, not_after)
       )
@@ -128,7 +128,7 @@ defmodule ConfigManager.CA.IntermediateCA do
       cert =
         X509.Certificate.new(
           public_key,
-          "/CN=#{pod_name}/O=Sensor Stack/OU=Sensor Pod",
+          "/CN=#{pod_name}/O=RavenWire/OU=Sensor Pod",
           state.ca_cert,
           state.ca_key,
           serial: serial,

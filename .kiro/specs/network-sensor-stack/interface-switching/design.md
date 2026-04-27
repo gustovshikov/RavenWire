@@ -6,7 +6,7 @@ The Interface Switching feature extends the Sensor_Agent control API with a `swi
 
 The core challenge is that three independent capture consumers — Zeek, Suricata, and pcap_ring_writer — each hold their own AF_PACKET socket bound to the current interface. Changing the interface requires all three to release their sockets and rebind to the new interface in a coordinated sequence, with rollback if any step fails.
 
-The feature preserves the Sensor_Stack's fundamental security invariant: the Config_Manager never touches the Podman socket, and all container lifecycle operations are mediated exclusively through the Sensor_Agent's narrow control API.
+The feature preserves RavenWire's fundamental security invariant: the Config_Manager never touches the Podman socket, and all container lifecycle operations are mediated exclusively through the Sensor_Agent's narrow control API.
 
 ### Key Design Decisions
 
@@ -115,7 +115,7 @@ graph TB
 
 ### Sensor_Agent: New `switch-interface` Control Action
 
-The `switch-interface` action is added as the 10th entry in the Sensor_Agent's control API allowlist:
+The `switch-interface` action is added as the **12th entry** in the Sensor_Agent's control API allowlist. The current 11 routes are: `reload-zeek`, `reload-suricata`, `restart-vector`, `switch-capture-mode`, `apply-pool-config`, `rotate-cert`, `report-health`, `carve-pcap`, `validate-config`, `support-bundle`, and `download-support-bundle`.
 
 | Action | Method | Path | Description |
 |---|---|---|---|
@@ -147,7 +147,9 @@ The action is asynchronous. A 202 is returned immediately after validation passe
 
 ### Sensor_Agent: Interface Monitor (new sub-module)
 
-A new sub-module within the Sensor_Agent polls the host's network interfaces at a configurable interval (default 30s) and includes the Interface_Inventory in the health report.
+A new sub-module within the Sensor_Agent polls the host's network interfaces at a configurable interval (default 30s) and includes the Interface_Inventory in the health report. It is wired into the `health.Collector`'s `Run` loop — the collector calls the Interface Monitor on each tick and includes the result in the assembled `HealthReport`.
+
+The Interface Monitor reuses the existing `readiness.Checker` pattern: it calls `net.Interfaces()` from the Go standard library to enumerate interfaces, checks link state via `/sys/class/net/{iface}/operstate` (same as `checkInterface()` in `readiness/checker.go`), and probes AF_PACKET support by attempting a short-lived socket bind (same as `checkAFPacket()`).
 
 ```go
 // InterfaceInfo represents a single interface in the inventory
@@ -167,18 +169,16 @@ type InterfaceInventory struct {
 }
 ```
 
-The Interface Monitor uses `net.Interfaces()` from the Go standard library to enumerate interfaces and checks link state via `SIOCGIFFLAGS`. AF_PACKET support is verified by attempting a probe socket bind (immediately closed) on each candidate interface.
-
 ### Sensor_Agent: Capture Manager — Rebind Orchestrator
 
-The existing Capture Manager module gains a `RebindAll(targetIface string) error` method that implements the stop-all-then-start-all sequence:
+The existing `capture.Manager` struct (in `capture/manager.go`) gains a `RebindAll(targetIface string) error` method and a `sync.Mutex`-protected `operationInProgress` boolean. The `RebindAll` method implements the stop-all-then-start-all sequence:
 
 ```
 RebindAll(targetIface):
   1. Record previous_iface = active_interface
-  2. Stop Zeek (SIGTERM, wait up to 10s)
-  3. Stop Suricata (SIGTERM, wait up to 10s)
-  4. Stop pcap_ring_writer (Unix socket "stop" command, wait up to 5s)
+  2. Stop Zeek: sendSignalToProcess("zeek", syscall.SIGTERM), wait up to 10s
+  3. Stop Suricata: sendSignalToProcess("suricata", syscall.SIGTERM), wait up to 10s
+  4. Stop pcap_ring_writer: Unix socket "stop" command, wait up to 5s
   5. For each consumer in [Zeek, Suricata, pcap_ring_writer]:
        a. Create new AF_PACKET socket on targetIface
        b. Apply existing BPF_Filter profile
@@ -188,7 +188,7 @@ RebindAll(targetIface):
   7. Start Suricata on new socket
   8. Start Zeek on new socket
   9. Update active_interface = targetIface
-  10. Persist to last-known-config.json
+  10. Persist active_interface to last-known-config.json (Bundle.ActiveInterface field)
   11. Return nil
 
 ROLLBACK:
@@ -198,17 +198,17 @@ ROLLBACK:
   4. Return error with consumer name + reason
 ```
 
-Zeek and Suricata are stopped via their container management interface (SIGTERM to the container process, managed by Podman). pcap_ring_writer is stopped via its existing Unix socket control interface (`stop` command), consistent with how BPF filter reloads are handled today.
+Zeek and Suricata are stopped via `sendSignalToProcess("zeek", syscall.SIGTERM)` and `sendSignalToProcess("suricata", syscall.SIGTERM)` respectively — the same `/proc`-scanning helper already used in `capture/manager.go` for BPF reloads. The Sensor_Agent does NOT use Podman container management for this; it signals the processes directly. pcap_ring_writer is stopped via its existing Unix socket control interface (`stop` command), consistent with how BPF filter reloads are handled today.
 
 ### Sensor_Agent: Busy Flag
 
-A single `sync.Mutex`-protected boolean `operationInProgress` is checked at the start of every control action handler. If set, the handler returns `BUSY` immediately without acquiring the lock for the operation itself. The flag is set before any state-mutating work begins and cleared in a `defer` on both success and failure paths.
+A `sync.Mutex`-protected boolean `operationInProgress` is added to the existing `capture.Manager` struct (or a thin operation coordinator that wraps it). It is checked at the start of every control action handler. If set, the handler returns `BUSY` immediately. The flag is set before any state-mutating work begins and cleared in a `defer` on both success and failure paths.
 
 This serializes: BPF filter reload, config apply, cert rotation, capture mode switch, and interface switch.
 
 ### Config_Manager: LiveView Interface Selector
 
-The per-Sensor_Pod dashboard entry gains an interface selector component:
+The interface selector is added to the existing `ConfigManagerWeb.DashboardLive` module. The per-Sensor_Pod dashboard card gains:
 
 - Displays the currently active `Monitored_Interface` (from the latest health report)
 - Renders a dropdown populated from the `InterfaceInventory` reported by that pod's Sensor_Agent
@@ -220,10 +220,11 @@ The per-Sensor_Pod dashboard entry gains an interface selector component:
 
 ### Config_Manager: Health Aggregator — Switch Event Handling
 
-The Health Aggregator processes two new event types from the health stream:
+The gRPC server (`ConfigManager.Health.GrpcServer`) already calls `Registry.update(pod_id, report)` for every incoming `HealthReport`. Switch event handling is added to the Registry's existing `handle_cast({:update, ...})` callback in `health/registry.ex` — it inspects the `switch_event` field of the decoded report and broadcasts the appropriate PubSub message:
 
-- `switch_complete`: updates the displayed active interface, clears in-progress state, persists `desired_interface`
-- `switch_failed`: clears in-progress state, surfaces error with rollback details
+- `switch_complete`: broadcasts `{:switch_complete, pod_id, new_iface}`, persists `desired_interface`
+- `switch_failed` / `switch_rolled_back`: broadcasts `{:switch_failed, pod_id, reason, restored_iface}`
+- `ROLLBACK_FAILED`: broadcasts `{:pod_degraded, pod_id, :rollback_failed, reason}`
 
 ### Config_Manager: Persistence
 
@@ -288,38 +289,34 @@ message SwitchEvent {
 
 ### Updated `last-known-config.json`
 
-The `active_interface` field is added to the persisted config:
+The `last-known-config.json` file currently stores a `Bundle` struct (from `config/applier.go`). The `active_interface` field is added directly to the `Bundle` struct so it is persisted alongside the existing config fields. The file format becomes:
 
 ```json
 {
-  "capture_mode": "alert_driven",
-  "active_interface": "eth1",
-  "bpf_filter_profile": "...",
-  "fanout_groups": {
-    "zeek": 1,
-    "suricata": 2,
-    "pcap_ring_writer": 4
-  }
+  "type": "pool_config",
+  "bundle_b64": "",
+  "config": {},
+  "version": 3,
+  "updated_by": "config-manager",
+  "active_interface": "eth1"
 }
 ```
 
+The `active_interface` field is written by `RebindAll` immediately after a successful switch, and read at startup by `main.go` before calling `captureCfg.OverrideInterface()`.
+
+> **Future / Roadmap**: A dedicated `last-known-interface.json` sidecar file (separate from the Bundle) was considered for cleaner separation of concerns. This can be revisited if the Bundle struct grows unwieldy.
+
 ### Updated `sensor_pods` Ecto Schema
 
+The current `SensorPod` schema (`config-manager/lib/config_manager/sensor_pod.ex`) has fields: `name`, `pool_id`, `status`, `cert_serial`, `cert_expires_at`, `last_seen_at`, `enrolled_at`, `enrolled_by`, `public_key_pem`, `key_fingerprint`, `cert_pem`, `ca_chain_pem`, `control_api_host`, `pcap_ring_size_mb`, `pre_alert_window_sec`, `post_alert_window_sec`, `alert_severity_threshold`.
+
+One new field is added:
+
 ```elixir
-schema "sensor_pods" do
-  field :id, :string
-  field :name, :string
-  field :pool_id, :string
-  field :status, :string
-  field :cert_serial, :string
-  field :cert_expires_at, :utc_datetime
-  field :last_seen_at, :utc_datetime
-  field :enrolled_at, :utc_datetime
-  field :enrolled_by, :string
-  field :desired_interface, :string    # NEW: last successfully applied interface
-  timestamps()
-end
+field :desired_interface, :string   # NEW: last successfully applied interface name
 ```
+
+A corresponding Ecto migration adds the column to the `sensor_pods` table.
 
 ### Audit Log Entry for Interface Switch
 

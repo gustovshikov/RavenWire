@@ -1,6 +1,6 @@
 [Unit]
 Description=Sensor Pod — Network Monitoring and Analysis Stack
-Documentation=https://github.com/sensor-stack/sensor-stack
+Documentation=https://github.com/ravenwire/ravenwire
 # Top-level target. Pulling in both pipelines as separate targets enforces
 # the strict pipeline separation: capture infrastructure and analysis tools
 # are supervised independently.

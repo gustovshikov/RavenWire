@@ -19,7 +19,7 @@ Volume=/etc/sensor/bpf_filters.conf:/etc/sensor/bpf_filters.conf:ro
 Volume=/var/sensor/logs/zeek:/logs/zeek:rw
 # All node-specific values via environment variables — no hardcoded paths
 Environment=CAPTURE_IFACE=${CAPTURE_IFACE}
-Environment=ZEEK_FANOUT_GROUP=${ZEEK_FANOUT_GROUP:-1}
+Environment=ZEEK_FANOUT_GROUP=1
 Exec=zeek -i af_packet::${CAPTURE_IFACE} -C /usr/local/zeek/share/zeek/site/local.zeek
 
 [Service]

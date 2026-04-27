@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sensor-stack/sensor-agent/internal/audit"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/audit"
 )
 
 func newTestApplier(t *testing.T) (*Applier, string) {
@@ -35,8 +35,8 @@ func TestApplySuricataRulesMap(t *testing.T) {
 
 	// Patch the rules dir path by calling the internal helper directly.
 	rules := map[string]string{
-		"local.rules":   "alert tcp any any -> any any (msg:\"test\"; sid:1;)\n",
-		"custom.rules":  "alert udp any any -> any any (msg:\"udp\"; sid:2;)\n",
+		"local.rules":  "alert tcp any any -> any any (msg:\"test\"; sid:1;)\n",
+		"custom.rules": "alert udp any any -> any any (msg:\"udp\"; sid:2;)\n",
 	}
 
 	if err := applier.applySuricataRulesMap(rules, rulesDir); err != nil {

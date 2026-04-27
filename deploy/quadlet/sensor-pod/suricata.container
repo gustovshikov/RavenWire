@@ -20,7 +20,7 @@ Volume=/etc/sensor/bpf_filters.conf:/etc/sensor/bpf_filters.conf:ro
 Volume=/var/sensor/logs/suricata:/logs/suricata:rw
 # All node-specific values via environment variables — no hardcoded paths
 Environment=CAPTURE_IFACE=${CAPTURE_IFACE}
-Environment=SURICATA_FANOUT_GROUP=${SURICATA_FANOUT_GROUP:-2}
+Environment=SURICATA_FANOUT_GROUP=2
 Exec=-c /etc/suricata/suricata.yaml --af-packet=${CAPTURE_IFACE} -l /logs/suricata
 
 [Service]

@@ -8,19 +8,19 @@ import (
 func Root() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "sensorctl",
-		Short: "Network Sensor Stack development and operations CLI",
-		Long: `sensorctl manages RavenWire development, enrollment, and Podman deployment workflows.
-
-Phase 1 internal dev tool — not a stable public API.`,
+		Short: "RavenWire operations CLI",
+		Long:  "sensorctl installs, starts, enrolls, and inspects RavenWire Podman/Quadlet sensor stacks.",
 	}
 
-	root.AddCommand(devCmd())
-	root.AddCommand(envCmd())
+	root.AddCommand(agentCmd())
 	root.AddCommand(enrollCmd())
-	root.AddCommand(podmanCmd())
-	root.AddCommand(runtimeCmd())
+	root.AddCommand(installCmd())
+	root.AddCommand(startCmd())
+	root.AddCommand(stopCmd())
+	root.AddCommand(restartCmd())
+	root.AddCommand(statusCmd())
+	root.AddCommand(logsCmd())
 	root.AddCommand(testCmd())
-	root.AddCommand(remoteCmd())
 
 	return root
 }

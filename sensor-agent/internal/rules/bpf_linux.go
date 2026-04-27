@@ -3,7 +3,7 @@
 package rules
 
 import (
-	"github.com/sensor-stack/sensor-agent/internal/capture"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/capture"
 )
 
 // compileBPFDryRun validates a BPF filter by compiling it via SO_ATTACH_FILTER

@@ -1,12 +1,12 @@
-# Design Document: Network Sensor Stack
+# Design Document: RavenWire
 
 ## Overview
 
-The Network Sensor Stack is a containerized (Podman) network monitoring and analysis system designed for high-throughput traffic capture and analysis up to 25Gbps. It deploys as two pod types: a single **Management_Pod** providing centralized configuration, rule management, and health visibility, and one or more **Sensor_Pods** each performing independent packet capture and analysis for a monitored network segment.
+RavenWire is a containerized (Podman) network monitoring and analysis system for standing up and managing independently deployable network sensor pods. It deploys as two pod types: a single **Management_Pod** providing centralized configuration, enrollment, and health visibility, and one or more **Sensor_Pods** each performing independent packet capture and analysis for a monitored network segment.
 
-The system integrates Zeek (protocol analysis), Suricata (signature detection), Strelka (file analysis), and Vector (log aggregation) as its core analysis stack. Each capture consumer attaches independently to the monitored interface via its own AF_PACKET socket with a distinct PACKET_FANOUT group, ensuring intra-tool worker scaling without inter-tool coupling. BPF filters shed elephant flows in the kernel before any packet reaches userspace.
+The MVP integrates Zeek (protocol analysis), Suricata (signature detection), Vector (log aggregation), Sensor_Agent, and pcap_ring_writer as its core stack. Each capture consumer attaches independently to the monitored interface via its own AF_PACKET socket with a distinct PACKET_FANOUT group, ensuring intra-tool worker scaling without inter-tool coupling. BPF filters shed elephant flows in the kernel before any packet reaches userspace.
 
-Two operational modes are supported: **Full PCAP Mode** (netsniff-ng writes all packets to a three-tier storage hierarchy) and **Alert-Driven PCAP Mode** (a rolling ring buffer preserves pre/post-alert packet windows on qualifying detections). Mode switching is live and does not require a pod restart.
+The mainline MVP supports **Alert-Driven PCAP Mode**, where a rolling ring buffer preserves pre/post-alert packet windows on qualifying detections. Full PCAP mode, Strelka, Arkime, and specialized capture engines are roadmap extensions, not part of the clean deployment path.
 
 All pod-to-pod communication uses mutual TLS. The Sensor_Agent is the sole process with Podman socket access in each Sensor_Pod, enforcing a narrow control API that prevents the management plane from becoming a host-compromise path.
 
@@ -1006,16 +1006,16 @@ Requirements are phased to define a buildable MVP and a clear progression to the
 | Phase | Label | Scope |
 |---|---|---|
 | Phase 0 | MVP | Proof of capture: Zeek + Suricata with distinct AF_PACKET fanout groups, BPF filter validation, Vector forwarding, basic packet/drop metrics, local-only config files |
-| Phase 1 | MVP | Sensor Agent, Config Manager basic enrollment + health dashboard + mode switching, mTLS, Community ID, local PCAP file index, Alert-Driven PCAP Ring, Splunk/Cribl output, basic support bundle, internal dev CLI (`sensorctl enroll`, `status`, `show-drops`, `collect-support-bundle`) |
+| Phase 1 | MVP | Sensor Agent, Config Manager basic enrollment + health dashboard, mTLS, Community ID, local PCAP file index, Alert-Driven PCAP Ring, Splunk/Cribl output, basic support bundle, `sensorctl` operations CLI |
 | Phase 2 | v1 | Sensor pools, rule store (Suricata + YARA + Zeek packages), config versioning, rollback, RBAC + local auth, PCAP carve API, chain of custody |
 | Phase 3 | v1 | Strelka sightings, schema normalization (ECS/OCSF/CIM), Splunk workflow action, health metric history, benchmark tooling (1Gbps + 10Gbps profiles) |
 | Phase 4 | v1.5 | Full PCAP Mode (netsniff-ng + NVMe Tier 0 + FIFO pruning), GitOps detection workflow, SSO/SAML/OIDC, canary rollout, detection testing against uploaded PCAPs, Management Pod HA |
 | Phase 5 | v2 | Arkime optional integration, air-gapped bundles, signed releases/SBOM, full public sensorctl CLI, full public REST API documentation, 25Gbps benchmark profile |
 | Phase 6 | future | AF_XDP/DPDK/PF_RING pluggable capture engines, advanced benchmark automation |
 
-**MVP scope** (Phases 0–1) is intentionally narrow: a working sensor with secure enrollment, Community ID, alert-driven PCAP, Splunk/Cribl forwarding, and a basic internal CLI for development use. Everything else is additive.
+**MVP scope** (Phases 0–1) is intentionally narrow: a working sensor with secure enrollment, Community ID, alert-driven PCAP, Splunk/Cribl forwarding, and a single Podman/Quadlet operations path. Everything else is additive.
 
-> **Internal dev CLI note:** A minimal `sensorctl` binary covering `enroll`, `status`, `show-drops`, and `collect-support-bundle` is included in Phase 1 for development and testing convenience. It is not a stable public API. The full documented public CLI and REST API are Phase 5 deliverables.
+> **CLI note:** `sensorctl` is the primary operator surface. Lab tools may exist for capture validation, but they do not define a separate deployment path.
 
 ---
 
@@ -1105,7 +1105,7 @@ Requirements are phased to define a buildable MVP and a clear progression to the
 
 ### Property 11: Community_ID Preservation Across All Output Types
 
-*For any* network flow event processed by the Sensor_Stack, the Community_ID computed from the flow's 5-tuple SHALL be present and identical in: the Zeek connection log, the Suricata alert (if triggered), the Strelka file result (if a file was extracted), the Vector-normalized output in all configured schema modes (raw, ECS, OCSF, CIM), and the PCAP carve metadata.
+*For any* network flow event processed by RavenWire, the Community_ID computed from the flow's 5-tuple SHALL be present and identical in: the Zeek connection log, the Suricata alert (if triggered), the Strelka file result (if a file was extracted), the Vector-normalized output in all configured schema modes (raw, ECS, OCSF, CIM), and the PCAP carve metadata.
 
 **Validates: Requirements 17.1, 17.3, 18.3**
 

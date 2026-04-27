@@ -1,19 +1,17 @@
-// sensorctl — Network Sensor Stack development and operations CLI
+// sensorctl — RavenWire operations CLI
 //
-// Phase 1 internal dev tool. Not a stable public API.
-// Full public CLI is Phase 5.
+// Phase 1 operations tool. Not a stable public API.
 //
 // Usage:
 //   sensorctl <command> [flags]
 //
 // Commands:
-//   env up        — boot the Vagrant dev VM
-//   env down      — halt the Vagrant dev VM
-//   env status    — show VM status
-//   env ssh       — SSH into the VM
-//   env provision — re-run provisioner
-//   test spike    — run the full spike test suite (spin up, traffic, verify, report)
-//   test verify   — run verify-spike.sh against a running VM (no traffic gen)
+//   install  — install Quadlet units
+//   start    — start the sensor pod
+//   status   — show unit status
+//   logs     — show systemd journal logs
+//   enroll   — enroll a sensor with the manager
+//   test     — run local RavenWire checks
 
 package main
 
@@ -21,7 +19,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sensor-stack/sensorctl/cmd"
+	"github.com/ravenwire/ravenwire/sensorctl/cmd"
 )
 
 func main() {

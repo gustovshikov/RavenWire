@@ -1,6 +1,6 @@
 [Unit]
 Description=Sensor Pod Analysis Pipeline — Zeek, Suricata, Vector
-Documentation=https://github.com/sensor-stack/sensor-stack
+Documentation=https://github.com/ravenwire/ravenwire
 # Analysis pipeline starts only after the capture pipeline (sensor-agent readiness) is up.
 # Zeek, Suricata, and Vector are independent of each other — a crash in one
 # does NOT restart the others (no Requires= between them; only Wants= here).

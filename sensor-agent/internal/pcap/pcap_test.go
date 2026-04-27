@@ -221,10 +221,10 @@ func writeMockPCAP(t *rapid.T, path string, timestampsMs []int64) {
 	// Global header (24 bytes)
 	gh := make([]byte, 24)
 	binary.LittleEndian.PutUint32(gh[0:], 0xa1b2c3d4) // magic
-	binary.LittleEndian.PutUint16(gh[4:], 2)           // major
-	binary.LittleEndian.PutUint16(gh[6:], 4)           // minor
-	binary.LittleEndian.PutUint32(gh[16:], 65535)      // snaplen
-	binary.LittleEndian.PutUint32(gh[20:], 1)          // link type (Ethernet)
+	binary.LittleEndian.PutUint16(gh[4:], 2)          // major
+	binary.LittleEndian.PutUint16(gh[6:], 4)          // minor
+	binary.LittleEndian.PutUint32(gh[16:], 65535)     // snaplen
+	binary.LittleEndian.PutUint32(gh[20:], 1)         // link type (Ethernet)
 	f.Write(gh)
 
 	pktData := []byte{0x00, 0x01, 0x02, 0x03}

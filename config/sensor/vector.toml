@@ -1,6 +1,6 @@
 # Vector production configuration for Sensor_Pod
 # Sources: Zeek file source, Suricata EVE JSON file source
-# Sinks: Splunk HEC and/or Cribl HTTP (configured via environment variables)
+# Sinks: local console plus alert webhook
 # Alert webhook: HTTP POST to Sensor_Agent PCAP Manager on qualifying Suricata alerts
 # Disk-backed buffer: 1GB, FIFO drop on overflow
 
@@ -69,14 +69,14 @@ type = "route"
 inputs = ["parse_suricata"]
 
 [transforms.route_alerts.route]
-qualifying_alert = '.event_type == "alert" && exists(.alert.severity) && .alert.severity <= 2'
+qualifying_alert = '.event_type == "alert" && exists(.alert.severity) && ((to_int(.alert.severity) ?? 999) <= 2)'
 
 # ── Alert webhook sink (Sensor_Agent PCAP Manager) ────────────────────────────
 
 [sinks.pcap_alert_webhook]
 type = "http"
 inputs = ["route_alerts.qualifying_alert"]
-uri = "${SENSOR_AGENT_ALERT_URL:-http://localhost:9092/alerts}"
+uri = "${SENSOR_AGENT_ALERT_URL}"
 method = "post"
 encoding.codec = "json"
 
@@ -85,34 +85,9 @@ type = "memory"
 max_events = 1000
 when_full = "drop_newest"
 
-# ── Splunk HEC sink ───────────────────────────────────────────────────────────
+# ── Local normalized event sink ───────────────────────────────────────────────
 
-[sinks.splunk_hec]
-type = "splunk_hec_logs"
+[sinks.normalized_console]
+type = "console"
 inputs = ["normalize"]
-endpoint = "${SPLUNK_HEC_URL}"
-token = "${SPLUNK_HEC_TOKEN}"
 encoding.codec = "json"
-# Skip if SPLUNK_HEC_URL is not set
-skip_unknown_fields = true
-
-[sinks.splunk_hec.buffer]
-type = "disk"
-max_size = 1073741824  # 1GB
-when_full = "drop_oldest"
-
-# ── Cribl HTTP sink ───────────────────────────────────────────────────────────
-
-[sinks.cribl_http]
-type = "http"
-inputs = ["normalize"]
-uri = "${CRIBL_URL:-http://localhost:10080/http}"
-method = "post"
-encoding.codec = "json"
-auth.strategy = "bearer"
-auth.token = "${CRIBL_TOKEN}"
-
-[sinks.cribl_http.buffer]
-type = "disk"
-max_size = 1073741824  # 1GB
-when_full = "drop_oldest"

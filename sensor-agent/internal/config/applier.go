@@ -1,8 +1,8 @@
 package config
 
 import (
-	"encoding/json"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -10,16 +10,16 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/sensor-stack/sensor-agent/internal/audit"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/audit"
 )
 
 // Bundle is a configuration bundle sent from Config_Manager.
 type Bundle struct {
-	Type       string            `json:"type"`        // "pool_config", "suricata_rules", "zeek_policy", "vector_config", "bpf_filter"
-	BundleB64  string            `json:"bundle_b64,omitempty"` // base64-encoded tar.gz for rule bundles
-	Config     map[string]string `json:"config,omitempty"`     // key=path, value=content for config files
-	Version    int               `json:"version"`
-	UpdatedBy  string            `json:"updated_by"`
+	Type      string            `json:"type"`                 // "pool_config", "suricata_rules", "zeek_policy", "vector_config", "bpf_filter"
+	BundleB64 string            `json:"bundle_b64,omitempty"` // base64-encoded tar.gz for rule bundles
+	Config    map[string]string `json:"config,omitempty"`     // key=path, value=content for config files
+	Version   int               `json:"version"`
+	UpdatedBy string            `json:"updated_by"`
 }
 
 // Applier writes configuration files and signals services to reload.

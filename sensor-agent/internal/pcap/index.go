@@ -13,8 +13,8 @@ import (
 type PcapFile struct {
 	ID          int64  `json:"id"`
 	FilePath    string `json:"file_path"`
-	StartTime   int64  `json:"start_time"`   // Unix ms
-	EndTime     int64  `json:"end_time"`     // Unix ms
+	StartTime   int64  `json:"start_time"` // Unix ms
+	EndTime     int64  `json:"end_time"`   // Unix ms
 	Interface   string `json:"interface"`
 	PacketCount int64  `json:"packet_count"`
 	ByteCount   int64  `json:"byte_count"`

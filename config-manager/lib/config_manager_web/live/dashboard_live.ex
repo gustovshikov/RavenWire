@@ -156,7 +156,7 @@ defmodule ConfigManagerWeb.DashboardLive do
     ~H"""
     <div class="p-6 max-w-7xl mx-auto">
       <div class="flex items-center justify-between mb-6">
-        <h1 class="text-2xl font-bold text-gray-900">Sensor Pod Health Dashboard</h1>
+        <h1 class="text-2xl font-bold text-gray-900">RavenWire Sensor Health</h1>
         <div class="flex items-center gap-4">
           <a href="/enrollment" class="text-sm text-blue-600 hover:underline">Enrollment</a>
           <a href="/pcap-config" class="text-sm text-blue-600 hover:underline">PCAP Config</a>

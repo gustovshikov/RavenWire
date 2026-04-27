@@ -1,12 +1,9 @@
 //go:build linux
 
-// pcap_ring_writer — production AF_PACKET ring buffer writer.
+// pcap_ring_writer — RavenWire AF_PACKET ring buffer writer.
 //
-// Upgraded from spike/pcap_ring_writer with:
-//   - SO_TIMESTAMPNS for kernel-accurate packet timestamps
-//   - RING_MAX_PACKETS configurable via env var
-//   - Control socket authentication: restricted to sensor-svc UID only
-//   - Proper Unix socket framing (length-prefixed JSON, no nc dependency)
+// This binary is shared by the development Compose stack and production Podman
+// deployment so capture behavior stays consistent across environments.
 //
 // Environment variables:
 //
@@ -64,7 +61,7 @@ type pcapPacketHeader struct {
 // ── Ring buffer ───────────────────────────────────────────────────────────────
 
 type packetRecord struct {
-	TimestampNs int64  // Unix nanoseconds (SO_TIMESTAMPNS)
+	TimestampNs int64 // Unix nanoseconds (SO_TIMESTAMPNS)
 	CapLen      uint32
 	OrigLen     uint32
 	Offset      uint64

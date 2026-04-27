@@ -1,0 +1,39 @@
+.dockerignore
+
+# Git/editor/local state
+.git
+.DS_Store
+.idea/
+.vscode/
+
+# Go build/test output
+pcap_manager
+*.test
+*.out
+coverage.out
+bin/
+
+# Runtime data and captures
+*.log
+*.pid
+*.sock
+*.db
+*.sqlite
+*.sqlite3
+*.pcap
+*.pcapng
+tmp/
+log/
+logs/
+data/
+
+# Local env and secret material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx

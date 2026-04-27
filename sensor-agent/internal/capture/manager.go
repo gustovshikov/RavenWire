@@ -24,11 +24,11 @@ type Manager struct {
 
 // ReloadEvent describes a BPF filter reload result for a single consumer.
 type ReloadEvent struct {
-	Consumer    string    `json:"consumer"`
-	Applied     bool      `json:"applied"`
-	LiveReload  bool      `json:"live_reload"` // true = applied live; false = required socket rebind
-	Error       string    `json:"error,omitempty"`
-	Timestamp   time.Time `json:"timestamp"`
+	Consumer   string    `json:"consumer"`
+	Applied    bool      `json:"applied"`
+	LiveReload bool      `json:"live_reload"` // true = applied live; false = required socket rebind
+	Error      string    `json:"error,omitempty"`
+	Timestamp  time.Time `json:"timestamp"`
 }
 
 // NewManager creates a new Capture Manager.

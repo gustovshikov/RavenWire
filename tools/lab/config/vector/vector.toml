@@ -1,0 +1,92 @@
+# Vector lab capture configuration
+# Collects Zeek and Suricata logs, preserves community_id, writes to file sink
+# Disk-backed buffer, 100MB
+
+# ── Sources ──────────────────────────────────────────────────────────────────
+
+[sources.zeek_logs]
+type = "file"
+include = ["/logs/zeek/*.log"]
+read_from = "beginning"
+# Zeek writes JSON-lines; each line is a complete record
+multiline = { mode = "halt_before", start_pattern = "^\\{", condition_pattern = "^\\{", timeout_ms = 1000 }
+
+[sources.suricata_eve]
+type = "file"
+include = ["/logs/suricata/eve.json"]
+read_from = "beginning"
+
+# ── Transforms ───────────────────────────────────────────────────────────────
+
+# Parse Zeek JSON and tag with source
+[transforms.parse_zeek]
+type = "remap"
+inputs = ["zeek_logs"]
+source = '''
+  # Parse the raw JSON line
+  . = parse_json!(string!(.message))
+
+  # Tag the source
+  .sensor_source = "zeek"
+
+  # Preserve community_id exactly as-is — do not rename or modify
+  # Zeek emits it as "community_id" in conn.log and protocol logs
+  # No transformation needed; field passes through unchanged.
+
+  # Ensure we have a timestamp
+  if !exists(.ts) {
+    .ts = now()
+  }
+'''
+
+# Parse Suricata EVE JSON and tag with source
+[transforms.parse_suricata]
+type = "remap"
+inputs = ["suricata_eve"]
+source = '''
+  # Parse the raw JSON line
+  . = parse_json!(string!(.message))
+
+  # Tag the source
+  .sensor_source = "suricata"
+
+  # Preserve community_id exactly as-is — Suricata emits it as "community_id"
+  # in EVE JSON when community-id: yes is set in suricata.yaml.
+  # No transformation needed; field passes through unchanged.
+
+  # Ensure we have a timestamp
+  if !exists(.timestamp) {
+    .timestamp = now()
+  }
+'''
+
+# Merge both streams and apply normalization while preserving community_id
+[transforms.normalize]
+type = "remap"
+inputs = ["parse_zeek", "parse_suricata"]
+source = '''
+  # Normalize: ensure community_id is always at the top level
+  # Both Zeek and Suricata already emit it there; this is a safety assertion.
+  if exists(.community_id) {
+    # community_id is present — preserve it unchanged
+    .community_id = string!(.community_id)
+  }
+
+  # Add pipeline metadata
+  .vector_ingest_ts = now()
+'''
+
+# ── Sinks ─────────────────────────────────────────────────────────────────────
+
+# Primary sink: write normalized events to file (one JSON record per line)
+[sinks.file_output]
+type = "file"
+inputs = ["normalize"]
+path = "/logs/vector/output.json"
+encoding.codec = "json"
+
+# Disk-backed buffer, 100MB
+[sinks.file_output.buffer]
+type = "disk"
+max_size = 268435488  # 256 MB minimum required by Vector
+when_full = "block"

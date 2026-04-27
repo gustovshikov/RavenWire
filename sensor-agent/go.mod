@@ -1,4 +1,4 @@
-module github.com/sensor-stack/sensor-agent
+module github.com/ravenwire/ravenwire/sensor-agent
 
 go 1.25.0
 

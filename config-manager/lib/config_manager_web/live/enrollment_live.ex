@@ -92,7 +92,7 @@ defmodule ConfigManagerWeb.EnrollmentLive do
     ~H"""
     <div class="p-6 max-w-7xl mx-auto">
       <div class="flex items-center justify-between mb-6">
-        <h1 class="text-2xl font-bold text-gray-900">Sensor Pod Enrollment</h1>
+        <h1 class="text-2xl font-bold text-gray-900">RavenWire Enrollment</h1>
         <a href="/" class="text-sm text-blue-600 hover:underline">← Dashboard</a>
       </div>
 

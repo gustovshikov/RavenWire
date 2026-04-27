@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sensor-stack/sensor-agent/internal/config"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/config"
 )
 
 // TestValidateBundleSuricataRulesEmpty verifies that a bundle with neither
@@ -63,7 +63,7 @@ func TestValidateBundleSuricataRulesMapMultipleFiles(t *testing.T) {
 	bundle := config.Bundle{
 		Type: "suricata_rules",
 		Config: map[string]string{
-			"good.rules":  "alert tcp any any -> any any (msg:\"good\"; sid:1;)\n",
+			"good.rules":   "alert tcp any any -> any any (msg:\"good\"; sid:1;)\n",
 			"custom.rules": "alert udp any any -> any any (msg:\"custom\"; sid:2;)\n",
 		},
 		Version:   1,

@@ -10,17 +10,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sensor-stack/sensor-agent/internal/audit"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/audit"
 )
 
 // CarveRequest is a request to carve a PCAP window.
 type CarveRequest struct {
-	CommunityID    string `json:"community_id,omitempty"`
-	StartTimeMs    int64  `json:"start_time_ms"`
-	EndTimeMs      int64  `json:"end_time_ms"`
-	PreAlertMs     int64  `json:"pre_alert_ms,omitempty"`
-	PostAlertMs    int64  `json:"post_alert_ms,omitempty"`
-	OutputPath     string `json:"output_path,omitempty"`
+	CommunityID string `json:"community_id,omitempty"`
+	StartTimeMs int64  `json:"start_time_ms"`
+	EndTimeMs   int64  `json:"end_time_ms"`
+	PreAlertMs  int64  `json:"pre_alert_ms,omitempty"`
+	PostAlertMs int64  `json:"post_alert_ms,omitempty"`
+	OutputPath  string `json:"output_path,omitempty"`
 }
 
 // CarveResult is the result of a PCAP carve operation.
@@ -34,25 +34,25 @@ type CarveResult struct {
 
 // AlertEvent is an alert forwarded from Vector.
 type AlertEvent struct {
-	CommunityID string  `json:"community_id"`
-	Severity    int     `json:"severity"`
-	Timestamp   int64   `json:"timestamp_ms"`
-	SID         string  `json:"sid,omitempty"`
-	Message     string  `json:"message,omitempty"`
+	CommunityID string `json:"community_id"`
+	Severity    int    `json:"severity"`
+	Timestamp   int64  `json:"timestamp_ms"`
+	SID         string `json:"sid,omitempty"`
+	Message     string `json:"message,omitempty"`
 }
 
 // Manager controls the pcap_ring_writer and handles alert-driven PCAP carving.
 type Manager struct {
-	ringSocket      string
-	alertsDir       string
-	index           *Index
-	auditLog        *audit.Logger
-	severityThresh  int
-	preAlertMs      int64
-	postAlertMs     int64
-	criticalPct     float64
-	lowWaterPct     float64
-	mode            string // "alert_driven" or "full_pcap"
+	ringSocket     string
+	alertsDir      string
+	index          *Index
+	auditLog       *audit.Logger
+	severityThresh int
+	preAlertMs     int64
+	postAlertMs    int64
+	criticalPct    float64
+	lowWaterPct    float64
+	mode           string // "alert_driven" or "full_pcap"
 }
 
 // NewManager creates a new PCAP Manager.

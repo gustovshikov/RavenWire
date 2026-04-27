@@ -13,16 +13,16 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/sensor-stack/sensor-agent/internal/api"
-	"github.com/sensor-stack/sensor-agent/internal/audit"
-	"github.com/sensor-stack/sensor-agent/internal/capture"
-	"github.com/sensor-stack/sensor-agent/internal/certs"
-	"github.com/sensor-stack/sensor-agent/internal/config"
-	"github.com/sensor-stack/sensor-agent/internal/health"
-	"github.com/sensor-stack/sensor-agent/internal/pcap"
-	"github.com/sensor-stack/sensor-agent/internal/readiness"
-	"github.com/sensor-stack/sensor-agent/internal/rules"
-	"github.com/sensor-stack/sensor-agent/internal/support"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/api"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/audit"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/capture"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/certs"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/config"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/health"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/pcap"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/readiness"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/rules"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/support"
 )
 
 func main() {

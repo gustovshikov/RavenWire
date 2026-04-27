@@ -15,8 +15,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/sensor-stack/sensor-agent/internal/audit"
-	healthpb "github.com/sensor-stack/sensor-agent/internal/health/proto"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/audit"
+	healthpb "github.com/ravenwire/ravenwire/sensor-agent/internal/health/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"

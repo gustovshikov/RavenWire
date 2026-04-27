@@ -78,7 +78,7 @@ defmodule ConfigManager.CA.CertRejectionPropertyTest do
     cert =
       X509.Certificate.new(
         pub,
-        "/CN=#{pod_name}/O=Sensor Stack/OU=Sensor Pod",
+        "/CN=#{pod_name}/O=RavenWire/OU=Sensor Pod",
         ca_cert,
         ca_key,
         serial: :crypto.strong_rand_bytes(16) |> :binary.decode_unsigned(),
@@ -117,7 +117,7 @@ defmodule ConfigManager.CA.CertRejectionPropertyTest do
     cert =
       X509.Certificate.new(
         leaf_pub,
-        "/CN=#{pod_name}/O=Sensor Stack/OU=Sensor Pod",
+        "/CN=#{pod_name}/O=RavenWire/OU=Sensor Pod",
         untrusted_ca,
         untrusted_key,
         serial: :crypto.strong_rand_bytes(16) |> :binary.decode_unsigned(),

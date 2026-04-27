@@ -1,4 +1,4 @@
-module github.com/sensor-stack/sensorctl
+module github.com/ravenwire/ravenwire/sensorctl
 
 go 1.22
 

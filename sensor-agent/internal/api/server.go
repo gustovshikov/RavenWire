@@ -9,23 +9,23 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/sensor-stack/sensor-agent/internal/audit"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/audit"
 )
 
 // allowedRoutes is the exact set of (method, path) pairs the Control API accepts.
 // Any request not in this set is rejected with HTTP 403.
 var allowedRoutes = map[string]string{
-	"POST /control/reload/zeek":              "reload-zeek",
-	"POST /control/reload/suricata":          "reload-suricata",
-	"POST /control/restart/vector":           "restart-vector",
-	"POST /control/capture-mode":             "switch-capture-mode",
-	"POST /control/config":                   "apply-pool-config",
-	"POST /control/cert/rotate":              "rotate-cert",
-	"GET /health":                            "report-health",
-	"POST /control/pcap/carve":              "carve-pcap",
-	"POST /control/config/validate":          "validate-config",
-	"POST /control/support-bundle":           "support-bundle",
-	"GET /control/support-bundle/download":   "download-support-bundle",
+	"POST /control/reload/zeek":            "reload-zeek",
+	"POST /control/reload/suricata":        "reload-suricata",
+	"POST /control/restart/vector":         "restart-vector",
+	"POST /control/capture-mode":           "switch-capture-mode",
+	"POST /control/config":                 "apply-pool-config",
+	"POST /control/cert/rotate":            "rotate-cert",
+	"GET /health":                          "report-health",
+	"POST /control/pcap/carve":             "carve-pcap",
+	"POST /control/config/validate":        "validate-config",
+	"POST /control/support-bundle":         "support-bundle",
+	"GET /control/support-bundle/download": "download-support-bundle",
 }
 
 // Handler is a function that handles a specific control action.

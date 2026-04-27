@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/sensor-stack/sensor-agent/internal/config"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/config"
 )
 
 // ValidationError describes a single rule validation failure.

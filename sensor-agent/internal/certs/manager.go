@@ -15,7 +15,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/sensor-stack/sensor-agent/internal/audit"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/audit"
 )
 
 // Manager handles certificate enrollment, storage, and rotation.

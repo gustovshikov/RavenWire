@@ -25,7 +25,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sensor-stack/sensor-agent/internal/audit"
+	"github.com/ravenwire/ravenwire/sensor-agent/internal/audit"
 )
 
 // BundleConfig holds paths and settings for bundle collection.
@@ -376,16 +376,16 @@ func (g *BundleGenerator) collectCertStatus() ([]byte, error) {
 	remaining := cert.NotAfter.Sub(now)
 
 	status := map[string]any{
-		"subject":      cert.Subject.CommonName,
-		"issuer":       cert.Issuer.CommonName,
-		"serial":       cert.SerialNumber.String(),
-		"not_before":   cert.NotBefore.UTC().Format(time.RFC3339),
-		"not_after":    cert.NotAfter.UTC().Format(time.RFC3339),
-		"remaining":    remaining.String(),
-		"expired":      now.After(cert.NotAfter),
-		"dns_names":    cert.DNSNames,
-		"key_algo":     cert.PublicKeyAlgorithm.String(),
-		"sig_algo":     cert.SignatureAlgorithm.String(),
+		"subject":    cert.Subject.CommonName,
+		"issuer":     cert.Issuer.CommonName,
+		"serial":     cert.SerialNumber.String(),
+		"not_before": cert.NotBefore.UTC().Format(time.RFC3339),
+		"not_after":  cert.NotAfter.UTC().Format(time.RFC3339),
+		"remaining":  remaining.String(),
+		"expired":    now.After(cert.NotAfter),
+		"dns_names":  cert.DNSNames,
+		"key_algo":   cert.PublicKeyAlgorithm.String(),
+		"sig_algo":   cert.SignatureAlgorithm.String(),
 	}
 
 	return json.MarshalIndent(status, "", "  ")

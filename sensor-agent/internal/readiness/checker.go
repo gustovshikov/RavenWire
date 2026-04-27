@@ -27,11 +27,11 @@ type ReadinessReport struct {
 
 // Config holds thresholds for readiness checks.
 type Config struct {
-	Interface          string
-	MinDiskWriteMBps   float64 // minimum disk write speed in MB/s
-	MinStorageGB       float64 // minimum available storage in GB
-	MaxClockOffsetMs   int64   // maximum acceptable clock offset in milliseconds
-	PCAPStoragePath    string  // path to check for available storage
+	Interface        string
+	MinDiskWriteMBps float64 // minimum disk write speed in MB/s
+	MinStorageGB     float64 // minimum available storage in GB
+	MaxClockOffsetMs int64   // maximum acceptable clock offset in milliseconds
+	PCAPStoragePath  string  // path to check for available storage
 }
 
 // DefaultConfig returns a Config with sensible defaults.

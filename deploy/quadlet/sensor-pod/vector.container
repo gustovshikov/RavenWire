@@ -18,12 +18,13 @@ Volume=/var/sensor/logs/vector:/logs/vector:rw
 # Disk-backed buffer for downstream sink unavailability (read-write)
 Volume=/var/sensor/vector-buffer:/var/lib/vector:rw
 # All forwarding endpoints and credentials via environment variables
+Environment=SENSOR_POD_NAME=${SENSOR_POD_NAME}
 Environment=SPLUNK_HEC_URL=${SPLUNK_HEC_URL}
 Environment=SPLUNK_HEC_TOKEN=${SPLUNK_HEC_TOKEN}
 Environment=CRIBL_URL=${CRIBL_URL}
 Environment=CRIBL_TOKEN=${CRIBL_TOKEN}
 # Sensor_Agent alert listener endpoint for qualifying alert forwarding
-Environment=SENSOR_AGENT_ALERT_URL=${SENSOR_AGENT_ALERT_URL:-http://127.0.0.1:9091/internal/alerts}
+Environment=SENSOR_AGENT_ALERT_URL=http://127.0.0.1:9091/internal/alerts
 Exec=--config /etc/vector/vector.toml
 
 [Service]

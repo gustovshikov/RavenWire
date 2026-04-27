@@ -17,7 +17,8 @@ Extend the Sensor_Agent (Go) with a `switch-interface` control action, an Interf
 - [ ] 2. Implement Interface Monitor sub-module in Sensor_Agent (Go)
   - [ ] 2.1 Implement interface enumeration and inventory builder
     - Use `net.Interfaces()` to enumerate all host interfaces
-    - Check link state via `SIOCGIFFLAGS`; probe AF_PACKET support via a short-lived probe socket bind
+    - Check link state via `/sys/class/net/{iface}/operstate` (reusing the same approach as `checkInterface()` in `readiness/checker.go`)
+    - Probe AF_PACKET support via a short-lived socket bind (reusing the same approach as `checkAFPacket()` in `readiness/checker.go`)
     - Populate `InterfaceInfo` fields: `Name`, `LinkUp`, `AFPacketOK`, `IsLoopback`, `IsActive`
     - Return a complete `InterfaceInventory` with `ActiveIface` and `LastRefreshed`
     - _Requirements: 1.1, 1.2_
@@ -28,13 +29,13 @@ Extend the Sensor_Agent (Go) with a `switch-interface` control action, an Interf
     - **Validates: Requirements 1.1, 1.2**
 
   - [ ] 2.3 Wire Interface Monitor into the health report assembly loop
-    - Poll at configurable interval (default 30s); include `InterfaceInventory` in every `HealthReport`
-    - On inventory change between polls, emit an updated health report immediately
+    - Wire the Interface Monitor into the existing `health.Collector` — call it from `Collect()` and include `InterfaceInventory` in the `HealthReport` struct and `ToProto()` conversion
+    - Poll at configurable interval (default 30s); on inventory change between polls, emit an updated health report immediately
     - _Requirements: 1.3, 1.4, 1.5_
 
 - [ ] 3. Implement `switch-interface` control action handler in Sensor_Agent (Go)
   - [ ] 3.1 Add `switch-interface` to the control API allowlist
-    - Register `POST /control/switch-interface` as the 10th allowlisted route
+    - Register `POST /control/switch-interface` as the **12th** allowlisted route in `sensor-agent/internal/api/server.go` (the current 11 routes are: `reload-zeek`, `reload-suricata`, `restart-vector`, `switch-capture-mode`, `apply-pool-config`, `rotate-cert`, `report-health`, `carve-pcap`, `validate-config`, `support-bundle`, `download-support-bundle`)
     - Parse `{"target_interface": "<name>"}` request body
     - Return 202 on validation pass (async); return 400/409/422 on synchronous rejection
     - _Requirements: 2.1_
@@ -77,7 +78,10 @@ Extend the Sensor_Agent (Go) with a `switch-interface` control action, an Interf
 
 - [ ] 4. Implement coordinated rebind orchestrator in Capture Manager (Go)
   - [ ] 4.1 Implement `RebindAll(targetIface string) error` in Capture Manager
-    - Stop Zeek (SIGTERM, wait up to 10s; force-kill on timeout), Suricata (same), pcap_ring_writer (Unix socket `stop`, wait up to 5s)
+    - Add `RebindAll` method and `sync.Mutex`-protected `operationInProgress` boolean to the existing `capture.Manager` struct in `capture/manager.go`
+    - Stop Zeek via `sendSignalToProcess("zeek", syscall.SIGTERM)` (wait up to 10s; force-kill on timeout) — same `/proc`-scanning helper already in the file
+    - Stop Suricata via `sendSignalToProcess("suricata", syscall.SIGTERM)` (same pattern)
+    - Stop pcap_ring_writer via Unix socket `stop` command (wait up to 5s) — same pattern as `sendBPFToPcapRingWriter`
     - For each consumer: create new AF_PACKET socket on `targetIface`, apply existing BPF filter profile, join existing fanout group ID
     - On any bind failure, immediately invoke rollback; return error with `failed_consumer` and `failure_reason`
     - Start consumers in order: pcap_ring_writer → Suricata → Zeek
@@ -116,9 +120,10 @@ Extend the Sensor_Agent (Go) with a `switch-interface` control action, an Interf
 
 - [ ] 5. Persist active interface in Sensor_Agent (Go)
   - [ ] 5.1 Add `active_interface` field to `last-known-config.json` read/write
-    - Write `active_interface` to `/etc/sensor/last-known-config.json` immediately after a successful `RebindAll`
-    - On startup, read `active_interface` from the file and run `HostReadinessChecker` against it before binding any consumer
-    - If the startup readiness check fails, log a critical error and halt capture startup without binding to any fallback
+    - Add `ActiveInterface string` field to the existing `Bundle` struct in `config/applier.go` (JSON tag: `"active_interface,omitempty"`)
+    - Write `active_interface` to the Bundle in `last-known-config.json` immediately after a successful `RebindAll`
+    - On startup in `main.go`, read `active_interface` from the loaded Bundle and use it instead of (or to override) `CAPTURE_IFACE` env var; run `HostReadinessChecker` against it before binding any consumer
+    - If the startup readiness check fails for the persisted interface, log a critical error and halt capture startup without binding to any fallback
     - _Requirements: 7.1, 7.5_
 
   - [ ]* 5.2 Write property test for startup halt on bad persisted interface (Property 14)
@@ -148,17 +153,18 @@ Extend the Sensor_Agent (Go) with a `switch-interface` control action, an Interf
 
 - [ ] 8. Extend Config_Manager Health Aggregator for switch events (Elixir)
   - [ ] 8.1 Deserialize `InterfaceInventory` and `SwitchEvent` from incoming `HealthReport` protobuf messages
-    - Update the gRPC health stream server to decode the new fields 7 and 8
-    - Update the in-memory Sensor Registry state per pod with the latest inventory and any switch event
+    - Update the gRPC health stream server (`health/grpc_server.ex`) to decode the new fields 7 and 8
+    - The existing `handle_report` function already calls `Registry.update(pod_id, report)` — the decoded fields will be available on the report struct automatically once the proto stubs are regenerated
     - _Requirements: 1.3, 3.5_
 
   - [ ] 8.2 Handle `switch_complete` event
-    - On `SwitchEvent.outcome == SUCCESS`: update the pod's displayed active interface, clear `switch_state = :in_progress`, persist `desired_interface` to the database
+    - Add a `check_switch_event/3` helper to the Registry's `handle_cast({:update, ...})` callback in `health/registry.ex` (same pattern as the existing `check_clock_drift/3`)
+    - On `SwitchEvent.outcome == SUCCESS`: broadcast `{:switch_complete, pod_id, new_iface}` via PubSub; persist `desired_interface` to the database
     - _Requirements: 5.5, 5.7_
 
   - [ ] 8.3 Handle `switch_failed` and `switch_rolled_back` events
-    - On `FAILED` or `ROLLED_BACK`: clear `switch_state`, surface failure reason and restored interface in the LiveView assign
-    - On `ROLLBACK_FAILED`: mark pod as degraded; do not re-enable the switch control until the pod recovers
+    - In the same `check_switch_event/3` helper: on `FAILED` or `ROLLED_BACK`, broadcast `{:switch_failed, pod_id, reason, restored_iface}` via PubSub
+    - On `ROLLBACK_FAILED`: broadcast `{:pod_degraded, pod_id, :rollback_failed, reason}` (same pattern as `:clock_drift`); do not re-enable the switch control until the pod recovers
     - _Requirements: 4.5, 5.6_
 
   - [ ]* 8.4 Write property test for LiveView state transitions on switch events (Property 12)
@@ -180,15 +186,16 @@ Extend the Sensor_Agent (Go) with a `switch-interface` control action, an Interf
 
 - [ ] 10. Implement interface selector LiveView component in Config_Manager (Elixir)
   - [ ] 10.1 Add active interface display to the per-pod health dashboard entry
-    - Show the currently active `Monitored_Interface` label on each pod's dashboard card
+    - Extend the existing `ConfigManagerWeb.DashboardLive` module (`dashboard_live.ex`) — add the active `Monitored_Interface` label to each pod's dashboard card in the `render/1` function
     - Show drift warning badge when `drift_detected` is true
     - _Requirements: 5.1_
 
   - [ ] 10.2 Implement interface selection dropdown and switch button
-    - Render a dropdown populated from `InterfaceInventory.interfaces` for the pod
+    - Add to the existing `DashboardLive` render: a dropdown populated from `InterfaceInventory.interfaces` for the pod
     - Disable (but show) interfaces where `link_up == false`, `af_packet_ok == false`, or `is_loopback == true`
     - Disable the dropdown and button while `switch_state == :in_progress`; show a spinner
     - Show a confirmation modal before dispatching the `switch-interface` action
+    - Add `switch_interface/2` function to `ConfigManager.SensorAgentClient` that POSTs `{"target_interface": name}` to `POST /control/switch-interface` on the pod (same mTLS pattern as existing functions in that module)
     - _Requirements: 5.2, 5.3, 5.4_
 
   - [ ]* 10.3 Write property test for in-progress state disables duplicate requests (Property 11)
@@ -202,6 +209,7 @@ Extend the Sensor_Agent (Go) with a `switch-interface` control action, an Interf
     - _Requirements: 6.2_
 
   - [ ] 10.5 Implement switch outcome display
+    - Add `handle_info` clauses to `DashboardLive` for `{:switch_complete, pod_id, new_iface}`, `{:switch_failed, pod_id, reason, restored_iface}`, and `{:pod_degraded, pod_id, :rollback_failed, reason}` PubSub messages
     - On `switch_complete`: update the active interface label via LiveView push; clear spinner
     - On `switch_failed` / `switch_rolled_back`: show error banner with failure reason and restored interface name; re-enable the control
     - On `ROLLBACK_FAILED`: show critical error banner; keep control disabled

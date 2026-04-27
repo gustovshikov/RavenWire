@@ -1,6 +1,6 @@
 [Unit]
 Description=Management Pod — Config Manager and Shared Services
-Documentation=https://github.com/sensor-stack/sensor-stack
+Documentation=https://github.com/ravenwire/ravenwire
 Wants=config-manager.service
 
 [Install]

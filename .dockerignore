@@ -1,0 +1,53 @@
+.git
+.gitignore
+.dockerignore
+
+# Local/editor state
+.DS_Store
+.idea/
+.vscode/
+.vagrant/
+
+# Build outputs and dependency caches
+bin/
+**/_build/
+**/deps/
+**/node_modules/
+**/.elixir_ls/
+**/*.test
+**/*.out
+coverage.out
+
+# Runtime data and logs
+**/*.log
+**/*.pid
+**/*.sock
+**/*.db
+**/*.db-*
+**/*.sqlite
+**/*.sqlite3
+**/*.pcap
+**/*.pcapng
+tmp/
+log/
+logs/
+data/
+
+# Local env and secret material
+.env
+.env.*
+!.env.example
+**/*.pem
+**/*.key
+**/*.crt
+**/*.csr
+**/*.p12
+**/*.pfx
+erl_crash.dump
+**/erl_crash.dump
+
+# Container/runtime scratch
+.podman/
+.docker/
+/pcap/
+/sensor-data/
