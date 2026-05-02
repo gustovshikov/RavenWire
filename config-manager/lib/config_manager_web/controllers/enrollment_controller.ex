@@ -19,18 +19,27 @@ defmodule ConfigManagerWeb.EnrollmentController do
             status: "approved",
             cert_pem: cert_bundle.cert_pem,
             ca_chain_pem: cert_bundle.ca_chain_pem,
-            sensor_pod_id: cert_bundle.sensor_pod_id
+            sensor_pod_id: cert_bundle.sensor_pod_id,
+            config_json: cert_bundle.config_json
           })
 
         {:ok, :pending} ->
           conn
           |> put_status(202)
-          |> json(%{status: "pending", message: "Enrollment request received; awaiting operator approval"})
+          |> json(%{
+            status: "pending",
+            message: "Enrollment request received; awaiting operator approval"
+          })
 
         {:error, :token_invalid} ->
           conn
           |> put_status(401)
-          |> json(%{error: %{code: "TOKEN_INVALID", message: "Enrollment token is invalid or has already been used"}})
+          |> json(%{
+            error: %{
+              code: "TOKEN_INVALID",
+              message: "Enrollment token is invalid or has already been used"
+            }
+          })
 
         {:error, :token_expired} ->
           conn
@@ -46,7 +55,12 @@ defmodule ConfigManagerWeb.EnrollmentController do
       :error ->
         conn
         |> put_status(400)
-        |> json(%{error: %{code: "MISSING_FIELDS", message: "token, pod_name, and public_key are required"}})
+        |> json(%{
+          error: %{
+            code: "MISSING_FIELDS",
+            message: "token, pod_name, and public_key are required"
+          }
+        })
     end
   end
 
@@ -57,11 +71,19 @@ defmodule ConfigManagerWeb.EnrollmentController do
     import Ecto.Query
     alias ConfigManager.{Repo, SensorPod}
 
-    case Repo.one(from p in SensorPod, where: p.name == ^pod_name, order_by: [desc: p.inserted_at], limit: 1) do
+    case Repo.one(
+           from(p in SensorPod,
+             where: p.name == ^pod_name,
+             order_by: [desc: p.inserted_at],
+             limit: 1
+           )
+         ) do
       nil ->
         conn
         |> put_status(404)
-        |> json(%{error: %{code: "NOT_FOUND", message: "No enrollment record found for pod #{pod_name}"}})
+        |> json(%{
+          error: %{code: "NOT_FOUND", message: "No enrollment record found for pod #{pod_name}"}
+        })
 
       %SensorPod{status: "enrolled"} = pod ->
         # Approved — return cert bundle
@@ -71,7 +93,8 @@ defmodule ConfigManagerWeb.EnrollmentController do
               status: "approved",
               cert_pem: cert_bundle.cert_pem,
               ca_chain_pem: cert_bundle.ca_chain_pem,
-              sensor_pod_id: cert_bundle.sensor_pod_id
+              sensor_pod_id: cert_bundle.sensor_pod_id,
+              config_json: cert_bundle.config_json
             })
 
           {:error, _reason} ->
@@ -108,14 +131,19 @@ defmodule ConfigManagerWeb.EnrollmentController do
           status: "approved",
           cert_pem: cert_bundle.cert_pem,
           ca_chain_pem: cert_bundle.ca_chain_pem,
-          sensor_pod_id: cert_bundle.sensor_pod_id
+          sensor_pod_id: cert_bundle.sensor_pod_id,
+          config_json: cert_bundle.config_json
         })
 
       {:error, :not_found} ->
-        conn |> put_status(404) |> json(%{error: %{code: "NOT_FOUND", message: "Enrollment request not found"}})
+        conn
+        |> put_status(404)
+        |> json(%{error: %{code: "NOT_FOUND", message: "Enrollment request not found"}})
 
       {:error, reason} ->
-        conn |> put_status(422) |> json(%{error: %{code: "APPROVAL_FAILED", message: inspect(reason)}})
+        conn
+        |> put_status(422)
+        |> json(%{error: %{code: "APPROVAL_FAILED", message: inspect(reason)}})
     end
   end
 
@@ -126,10 +154,14 @@ defmodule ConfigManagerWeb.EnrollmentController do
         json(conn, %{status: "denied"})
 
       {:error, :not_found} ->
-        conn |> put_status(404) |> json(%{error: %{code: "NOT_FOUND", message: "Enrollment request not found"}})
+        conn
+        |> put_status(404)
+        |> json(%{error: %{code: "NOT_FOUND", message: "Enrollment request not found"}})
 
       {:error, reason} ->
-        conn |> put_status(422) |> json(%{error: %{code: "DENIAL_FAILED", message: inspect(reason)}})
+        conn
+        |> put_status(422)
+        |> json(%{error: %{code: "DENIAL_FAILED", message: inspect(reason)}})
     end
   end
 end

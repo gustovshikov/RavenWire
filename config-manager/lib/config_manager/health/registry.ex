@@ -71,6 +71,7 @@ defmodule ConfigManager.Health.Registry do
     Phoenix.PubSub.broadcast(ConfigManager.PubSub, "sensor_pods", {:pod_updated, pod_id})
 
     state = check_clock_drift(pod_id, report, state)
+    state = check_bpf_restart_pending(pod_id, report, state)
 
     {:noreply, state}
   end
@@ -109,6 +110,57 @@ defmodule ConfigManager.Health.Registry do
         )
 
         reasons = state.degraded |> Map.get(pod_id, MapSet.new()) |> MapSet.delete(:clock_drift)
+
+        if MapSet.size(reasons) == 0 do
+          %{state | degraded: Map.delete(state.degraded, pod_id)}
+        else
+          %{state | degraded: Map.put(state.degraded, pod_id, reasons)}
+        end
+
+      true ->
+        state
+    end
+  end
+
+  # Req 4.7: Check if any capture consumer has bpf_restart_pending set.
+  defp check_bpf_restart_pending(pod_id, report, state) do
+    consumers =
+      get_in(report, [Access.key(:capture), Access.key(:consumers)]) || %{}
+
+    any_pending =
+      Enum.any?(consumers, fn {_name, stats} ->
+        Map.get(stats, :bpf_restart_pending, false) == true
+      end)
+
+    currently_degraded =
+      state.degraded
+      |> Map.get(pod_id, MapSet.new())
+      |> MapSet.member?(:bpf_restart_pending)
+
+    cond do
+      any_pending and not currently_degraded ->
+        Phoenix.PubSub.broadcast(
+          ConfigManager.PubSub,
+          "sensor_pods",
+          {:pod_degraded, pod_id, :bpf_restart_pending, nil}
+        )
+
+        reasons =
+          state.degraded |> Map.get(pod_id, MapSet.new()) |> MapSet.put(:bpf_restart_pending)
+
+        %{state | degraded: Map.put(state.degraded, pod_id, reasons)}
+
+      not any_pending and currently_degraded ->
+        Phoenix.PubSub.broadcast(
+          ConfigManager.PubSub,
+          "sensor_pods",
+          {:pod_recovered, pod_id, :bpf_restart_pending}
+        )
+
+        reasons =
+          state.degraded
+          |> Map.get(pod_id, MapSet.new())
+          |> MapSet.delete(:bpf_restart_pending)
 
         if MapSet.size(reasons) == 0 do
           %{state | degraded: Map.delete(state.degraded, pod_id)}

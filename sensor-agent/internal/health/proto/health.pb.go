@@ -239,10 +239,34 @@ type ConsumerStats struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	PacketsReceived uint64  `protobuf:"varint,1,opt,name=packets_received,json=packetsReceived,proto3" json:"packets_received,omitempty"`
-	PacketsDropped  uint64  `protobuf:"varint,2,opt,name=packets_dropped,json=packetsDropped,proto3" json:"packets_dropped,omitempty"`
-	DropPercent     float64 `protobuf:"fixed64,3,opt,name=drop_percent,json=dropPercent,proto3" json:"drop_percent,omitempty"`
-	ThroughputBps   float64 `protobuf:"fixed64,4,opt,name=throughput_bps,json=throughputBps,proto3" json:"throughput_bps,omitempty"`
+	PacketsReceived   uint64  `protobuf:"varint,1,opt,name=packets_received,json=packetsReceived,proto3" json:"packets_received,omitempty"`
+	PacketsDropped    uint64  `protobuf:"varint,2,opt,name=packets_dropped,json=packetsDropped,proto3" json:"packets_dropped,omitempty"`
+	DropPercent       float64 `protobuf:"fixed64,3,opt,name=drop_percent,json=dropPercent,proto3" json:"drop_percent,omitempty"`
+	ThroughputBps     float64 `protobuf:"fixed64,4,opt,name=throughput_bps,json=throughputBps,proto3" json:"throughput_bps,omitempty"`
+	// NOTE: bpf_restart_pending (field 5) added manually. The rawDesc byte array
+	// does not include this field; regenerate with protoc when next available.
+	// Req 4.7: true when a BPF filter change has been written but the container
+	// restart has not yet completed.
+	BpfRestartPending bool `protobuf:"varint,5,opt,name=bpf_restart_pending,json=bpfRestartPending,proto3" json:"bpf_restart_pending,omitempty"`
+
+	// NOTE: Fields 6-12 added manually for Req 7.x per-consumer health stats.
+	// The rawDesc byte array does not include these fields; regenerate with protoc
+	// when next available.
+
+	// Req 7.7: true when drop_percent exceeds drop_alert_thresh_pct.
+	DropAlert bool `protobuf:"varint,6,opt,name=drop_alert,json=dropAlert,proto3" json:"drop_alert,omitempty"`
+	// Req 7.1: pcap_ring_writer packets written.
+	PacketsWritten uint64 `protobuf:"varint,7,opt,name=packets_written,json=packetsWritten,proto3" json:"packets_written,omitempty"`
+	// Req 7.1: pcap_ring_writer bytes written.
+	BytesWritten uint64 `protobuf:"varint,8,opt,name=bytes_written,json=bytesWritten,proto3" json:"bytes_written,omitempty"`
+	// Req 7.2: pcap_ring_writer ring wrap count.
+	WrapCount uint64 `protobuf:"varint,9,opt,name=wrap_count,json=wrapCount,proto3" json:"wrap_count,omitempty"`
+	// Req 7.1: pcap_ring_writer socket drops from PACKET_STATISTICS.
+	SocketDrops uint64 `protobuf:"varint,10,opt,name=socket_drops,json=socketDrops,proto3" json:"socket_drops,omitempty"`
+	// Req 7.1: pcap_ring_writer socket freeze queue drops from PACKET_STATISTICS.
+	SocketFreezeQueueDrops uint64 `protobuf:"varint,11,opt,name=socket_freeze_queue_drops,json=socketFreezeQueueDrops,proto3" json:"socket_freeze_queue_drops,omitempty"`
+	// Req 7.2: true when wrap_count delta > 1 since last interval.
+	OverwriteRisk bool `protobuf:"varint,12,opt,name=overwrite_risk,json=overwriteRisk,proto3" json:"overwrite_risk,omitempty"`
 }
 
 func (x *ConsumerStats) Reset() {
@@ -303,6 +327,62 @@ func (x *ConsumerStats) GetThroughputBps() float64 {
 		return x.ThroughputBps
 	}
 	return 0
+}
+
+func (x *ConsumerStats) GetBpfRestartPending() bool {
+	if x != nil {
+		return x.BpfRestartPending
+	}
+	return false
+}
+
+func (x *ConsumerStats) GetDropAlert() bool {
+	if x != nil {
+		return x.DropAlert
+	}
+	return false
+}
+
+func (x *ConsumerStats) GetPacketsWritten() uint64 {
+	if x != nil {
+		return x.PacketsWritten
+	}
+	return 0
+}
+
+func (x *ConsumerStats) GetBytesWritten() uint64 {
+	if x != nil {
+		return x.BytesWritten
+	}
+	return 0
+}
+
+func (x *ConsumerStats) GetWrapCount() uint64 {
+	if x != nil {
+		return x.WrapCount
+	}
+	return 0
+}
+
+func (x *ConsumerStats) GetSocketDrops() uint64 {
+	if x != nil {
+		return x.SocketDrops
+	}
+	return 0
+}
+
+func (x *ConsumerStats) GetSocketFreezeQueueDrops() uint64 {
+	if x != nil {
+		return x.SocketFreezeQueueDrops
+	}
+	return 0
+}
+
+func (x *ConsumerStats) GetOverwriteRisk() bool {
+	if x != nil {
+		return x.OverwriteRisk
+	}
+	return false
 }
 
 type StorageStats struct {

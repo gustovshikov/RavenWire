@@ -7,6 +7,7 @@ defmodule Health.ConsumerStats do
   field :packets_dropped, 2, type: :uint64, json_name: "packetsDropped"
   field :drop_percent, 3, type: :double, json_name: "dropPercent"
   field :throughput_bps, 4, type: :double, json_name: "throughputBps"
+  field :bpf_restart_pending, 5, type: :bool, json_name: "bpfRestartPending"
 end
 
 defmodule Health.CaptureStats.ConsumersEntry do

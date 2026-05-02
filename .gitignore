@@ -7,6 +7,8 @@ spike/pcap_ring_writer/pcap_ring_writer
 spike/pcap_manager/pcap_manager
 sensorctl/sensorctl
 sensor-agent/sensor-agent
+sensor-agent/pcap-ring-writer
+sensor-agent/internal/config/sensor_config
 
 # Go build cache
 *.test

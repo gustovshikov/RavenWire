@@ -1,6 +1,7 @@
 [Unit]
 Description=Config Manager — Elixir/Phoenix LiveView Management Application
 After=network.target
+PartOf=management-pod.target
 
 [Container]
 Image=localhost/ravenwire/config-manager:test

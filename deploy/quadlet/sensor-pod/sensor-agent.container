@@ -7,16 +7,19 @@ Image=localhost/ravenwire/sensor-agent:test
 Network=host
 DropCapability=all
 AddCapability=CAP_NET_RAW
+AddCapability=CAP_NET_ADMIN
+AddCapability=CAP_KILL
+PodmanArgs=--pid=host
 # Sensor config and certs (read-write; agent writes last-known-config and certs)
 Volume=/etc/sensor:/etc/sensor:rw
 # Runtime state: audit log, health buffer, pcap ring socket
 Volume=/var/sensor:/var/sensor:rw
 # Alert-driven PCAP storage and SQLite index
 Volume=/sensor/pcap:/sensor/pcap:rw
-# Podman socket — sensor_agent is the ONLY container with this mount
+# Podman socket — sensor_agent is the ONLY container with this mount.
 # Enables controlled container lifecycle via the action allowlist
-Volume=/run/podman/podman.sock:/run/podman/podman.sock:rw
-# Unix socket directory shared with pcap_ring_writer
+Volume=%t/podman/podman.sock:/run/podman/podman.sock:rw
+# Runtime control sockets shared with capture services
 Volume=/var/run/sensor:/var/run/sensor:rw
 # All node-specific values via environment variables — no hardcoded paths
 Environment=SENSOR_POD_NAME=${SENSOR_POD_NAME}
@@ -25,8 +28,11 @@ Environment=CONFIG_MANAGER_URL=${CONFIG_MANAGER_URL}
 Environment=GRPC_ADDR=${GRPC_ADDR}
 Environment=GRPC_INSECURE=true
 Environment=CAPTURE_IFACE=${CAPTURE_IFACE}
+Environment=MIN_DISK_WRITE_MBPS=${MIN_DISK_WRITE_MBPS}
+Environment=MIN_STORAGE_GB=${MIN_STORAGE_GB}
 Environment=PODMAN_SOCKET_PATH=/run/podman/podman.sock
 Environment=CONTROL_API_PORT=9091
+Environment=ALERT_LISTENER_ADDR=:9092
 Environment=HEALTH_STREAM_PORT=9090
 Environment=PCAP_RING_SOCK=/var/run/sensor/pcap_ring.sock
 Environment=PCAP_ALERTS_DIR=/sensor/pcap/alerts
@@ -35,7 +41,9 @@ Environment=AUDIT_LOG_PATH=/var/sensor/audit.log
 Environment=HEALTH_BUFFER_PATH=/var/sensor/health-buffer.bin
 Environment=LAST_KNOWN_CONFIG_PATH=/etc/sensor/last-known-config.json
 Environment=CERT_DIR=/etc/sensor/certs
+Environment=CAPTURE_CONFIG_PATH=/etc/sensor/capture.conf
 Environment=BPF_FILTER_PATH=/etc/sensor/bpf_filters.conf
+Environment=ENROLLMENT_PORT=9093
 
 [Service]
 Restart=on-failure

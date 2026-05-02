@@ -10,9 +10,10 @@ Network=host
 # Drop all capabilities first, then add only CAP_NET_RAW for AF_PACKET socket
 DropCapability=all
 AddCapability=CAP_NET_RAW
+AddCapability=CAP_NET_ADMIN
 # Memory-mapped ring buffer in shared memory (read-write)
 Volume=/dev/shm:/dev/shm:rw
-# Unix socket directory shared with sensor_agent PCAP Manager
+# Runtime control socket directory shared with sensor-agent
 Volume=/var/run/sensor:/var/run/sensor:rw
 # BPF filter profile (read-only; Sensor_Agent sends updates via control socket)
 Volume=/etc/sensor/bpf_filters.conf:/etc/sensor/bpf_filters.conf:ro
@@ -22,6 +23,7 @@ Environment=PCAP_RING_FANOUT_GROUP=4
 Environment=RING_PATH=/dev/shm/sensor_pcap_ring
 Environment=RING_SIZE_MB=512
 Environment=CONTROL_SOCK=/var/run/sensor/pcap_ring.sock
+Environment=SENSOR_SVC_UID=${SENSOR_SVC_UID}
 
 [Service]
 Restart=on-failure

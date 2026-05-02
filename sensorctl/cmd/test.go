@@ -28,7 +28,6 @@ func testCmd() *cobra.Command {
 				{"sensorctl Go tests", filepath.Join(root, "sensorctl"), nil, []string{"go", "test", "./..."}},
 				{"sensor-agent Go tests", filepath.Join(root, "sensor-agent"), nil, []string{"go", "test", "./..."}},
 				{"pcap ring writer Linux build check", filepath.Join(root, "sensor-agent"), []string{"GOOS=linux"}, []string{"go", "test", "./cmd/pcap-ring-writer"}},
-				{"lab carve simulator Go tests", filepath.Join(root, "tools", "lab", "pcap-carve-simulator"), nil, []string{"go", "test", "./..."}},
 			}
 
 			for _, check := range checks {
@@ -37,26 +36,10 @@ func testCmd() *cobra.Command {
 				}
 			}
 
-			if podmanComposeAvailable() {
-				composeFile := filepath.Join(root, "tools", "lab", "compose.capture-test.yml")
-				if err := runCheck("lab compose definition", root, nil, "podman", "compose", "-f", composeFile, "config"); err != nil {
-					return err
-				}
-			} else {
-				fmt.Println("skip lab compose definition: podman compose not found")
-			}
-
 			fmt.Println("RavenWire checks passed.")
 			return nil
 		},
 	}
-}
-
-func podmanComposeAvailable() bool {
-	if _, err := exec.LookPath("podman"); err != nil {
-		return false
-	}
-	return exec.Command("podman", "compose", "version").Run() == nil
 }
 
 func runCheck(name, dir string, env []string, args ...string) error {

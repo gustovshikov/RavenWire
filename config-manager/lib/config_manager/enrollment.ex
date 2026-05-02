@@ -58,7 +58,12 @@ defmodule ConfigManager.Enrollment do
            {:ok, fingerprint} <- compute_key_fingerprint(public_key_pem),
            {:ok, pod} <- create_pending_pod(pod_name, public_key_pem, fingerprint) do
         Logger.info("Enrollment request received: pod=#{pod_name}, token=#{token.id}")
-        Phoenix.PubSub.broadcast(ConfigManager.PubSub, "enrollments", {:enrollment_updated, pod.id})
+
+        Phoenix.PubSub.broadcast(
+          ConfigManager.PubSub,
+          "enrollments",
+          {:enrollment_updated, pod.id}
+        )
 
         # Auto-approve if AUTO_ENROLL_FIRST is set and this is the first pod
         if auto_enroll_enabled?() do
@@ -74,16 +79,28 @@ defmodule ConfigManager.Enrollment do
     |> case do
       {:ok, :auto_approve} ->
         # Run approval outside the transaction so it can open its own
-        case Repo.one(from p in SensorPod, where: p.name == ^pod_name, order_by: [desc: p.inserted_at], limit: 1) do
-          nil -> {:ok, :pending}
+        case Repo.one(
+               from(p in SensorPod,
+                 where: p.name == ^pod_name,
+                 order_by: [desc: p.inserted_at],
+                 limit: 1
+               )
+             ) do
+          nil ->
+            {:ok, :pending}
+
           pod ->
             case approve(pod.id) do
               {:ok, cert_bundle} -> {:ok, {:approved, cert_bundle}}
               _ -> {:ok, :pending}
             end
         end
-      {:ok, :pending} -> {:ok, :pending}
-      {:error, reason} -> {:error, reason}
+
+      {:ok, :pending} ->
+        {:ok, :pending}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -111,7 +128,8 @@ defmodule ConfigManager.Enrollment do
        %{
          cert_pem: cert_bundle.cert_pem,
          ca_chain_pem: cert_bundle.ca_chain_pem,
-         sensor_pod_id: enrolled_pod.id
+         sensor_pod_id: enrolled_pod.id,
+         config_json: default_sensor_config_json()
        }}
     end
   end
@@ -130,7 +148,13 @@ defmodule ConfigManager.Enrollment do
         case pod |> SensorPod.revocation_changeset() |> Repo.update() do
           {:ok, _} ->
             Logger.info("Enrollment denied: pod_id=#{pod_id}")
-            Phoenix.PubSub.broadcast(ConfigManager.PubSub, "enrollments", {:enrollment_updated, pod_id})
+
+            Phoenix.PubSub.broadcast(
+              ConfigManager.PubSub,
+              "enrollments",
+              {:enrollment_updated, pod_id}
+            )
+
             {:ok, :denied}
 
           {:error, changeset} ->
@@ -143,7 +167,7 @@ defmodule ConfigManager.Enrollment do
 
   @doc "Returns all pending enrollment requests."
   def list_pending do
-    Repo.all(from p in SensorPod, where: p.status == "pending", order_by: [asc: p.inserted_at])
+    Repo.all(from(p in SensorPod, where: p.status == "pending", order_by: [asc: p.inserted_at]))
   end
 
   @doc "Returns all pending enrollment requests (alias for list_pending/0)."
@@ -151,7 +175,7 @@ defmodule ConfigManager.Enrollment do
 
   @doc "Returns all enrolled pods."
   def list_enrolled_pods do
-    Repo.all(from p in SensorPod, where: p.status == "enrolled", order_by: [asc: p.name])
+    Repo.all(from(p in SensorPod, where: p.status == "enrolled", order_by: [asc: p.name]))
   end
 
   @doc "Approves a pending enrollment (alias for approve/1)."
@@ -170,7 +194,8 @@ defmodule ConfigManager.Enrollment do
      %{
        cert_pem: pod.cert_pem,
        ca_chain_pem: pod.ca_chain_pem,
-       sensor_pod_id: pod.id
+       sensor_pod_id: pod.id,
+       config_json: default_sensor_config_json()
      }}
   end
 
@@ -254,5 +279,17 @@ defmodule ConfigManager.Enrollment do
       ca_chain_pem: cert_bundle.ca_chain_pem
     })
     |> Repo.update()
+  end
+
+  defp default_sensor_config_json do
+    Jason.encode!(%{
+      severity_threshold: 2,
+      alert_listener_addr: "http://127.0.0.1:9092",
+      sinks: [],
+      capture_workers: 1,
+      tpacket_block_size_mb: 4,
+      tpacket_frame_count: 4096,
+      drop_alert_thresh_pct: 1.0
+    })
   end
 end

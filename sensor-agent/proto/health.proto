@@ -31,6 +31,7 @@ message ConsumerStats {
   uint64 packets_dropped = 2;
   double drop_percent = 3;
   double throughput_bps = 4;
+  bool bpf_restart_pending = 5;  // Req 4.7: true when BPF filter change written but restart not yet completed
 }
 
 message StorageStats {

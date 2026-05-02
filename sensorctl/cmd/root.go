@@ -20,6 +20,7 @@ func Root() *cobra.Command {
 	root.AddCommand(restartCmd())
 	root.AddCommand(statusCmd())
 	root.AddCommand(logsCmd())
+	root.AddCommand(uninstallCmd())
 	root.AddCommand(testCmd())
 
 	return root

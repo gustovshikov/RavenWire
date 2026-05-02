@@ -12,7 +12,7 @@ sensorctl
 RavenWire sensor or manager pod
 ```
 
-Docker Compose and Vagrant are no longer first-class workflows. Optional lab helpers live under `tools/lab/` for capture validation only.
+Docker Compose and Vagrant are no longer first-class workflows; `sensorctl` is the supported install and validation surface.
 
 ## Core Stack
 
@@ -43,19 +43,24 @@ go build -o ../bin/sensorctl .
 export PATH="$PWD/../bin:$PATH"
 
 sensorctl install
-sensorctl start sensor-pod
+sensorctl start
 sensorctl status
-sensorctl logs sensor-pod
+sensorctl logs
 ```
 
-Enroll a sensor:
+For a capture host with a known span interface:
 
 ```bash
-sensorctl enroll \
-  --manager https://manager:8443 \
-  --token <token> \
-  --pod-name sensor-01 \
-  --cert-dir /etc/sensor/certs
+sensorctl install --capture-iface ens16f1 --pod-name sensor-01
+sensorctl start
+```
+
+Stop or remove the deployment:
+
+```bash
+sensorctl stop
+sensorctl uninstall
+sensorctl uninstall --purge --images
 ```
 
 Run local project checks:
@@ -74,7 +79,6 @@ sensorctl test
 ├── config/sensor/           # Baseline sensor configs
 ├── deploy/quadlet/          # Podman Quadlet deployment units
 ├── docs/                    # Getting started, operations, enrollment, architecture
-├── tools/lab/               # Optional capture validation helpers
 └── .kiro/specs/             # Product specs and implementation notes
 ```
 
@@ -88,7 +92,7 @@ deploy/quadlet/
   sensor-pod/
 ```
 
-`sensorctl install` copies those units into the user systemd container directory and reloads systemd. `sensorctl start`, `stop`, `restart`, `status`, and `logs` operate on those units directly.
+`sensorctl install` builds the local RavenWire images with rootful Podman, prepares host directories and baseline sensor config, copies Quadlet units into the system Quadlet directory, configures the capture interface, and reloads systemd. `sensorctl start` starts the management pod first, creates a one-time enrollment token, then starts the sensor pod so the initial dual-pod setup auto-enrolls through the same deployment path used later.
 
 The goal is that local testing, production-ish testing, and deployment all exercise the same basic model: Podman containers supervised by systemd.
 
@@ -101,25 +105,13 @@ The goal is that local testing, production-ish testing, and deployment all exerc
 - Capture components receive only the capabilities needed for packet capture.
 - Sensors keep a last-known-good config for offline operation.
 
-## Optional Lab Capture Test
-
-The lab harness is useful for validating Zeek, Suricata, Vector, and `pcap_ring_writer` on a Linux host:
-
-```bash
-export CAPTURE_IFACE=eth0
-podman compose -p ravenwire-lab -f tools/lab/compose.capture-test.yml up -d
-tools/lab/verify-capture.sh
-podman compose -p ravenwire-lab -f tools/lab/compose.capture-test.yml down
-```
-
-This is not the deployment path.
-
 ## Docs
 
 - [Getting Started](docs/getting-started.md)
 - [Operations](docs/operations.md)
 - [Enrollment](docs/enrollment.md)
 - [Architecture](docs/architecture.md)
+- [Implementation Roadmap](docs/implementation-roadmap.md)
 
 ## Roadmap Boundaries
 
@@ -137,4 +129,4 @@ These remain roadmap or optional extensions, not required for the clean operatin
 
 ## License
 
-TBD.
+No project license has been selected yet.

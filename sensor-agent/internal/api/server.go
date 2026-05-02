@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/ravenwire/ravenwire/sensor-agent/internal/audit"
 )
@@ -55,22 +56,26 @@ func (s *Server) Register(action string, h Handler) {
 }
 
 // ListenAndServe starts the mTLS HTTP server.
+// Every response includes an X-Request-ID header and the request ID is
+// stored in the request context for use by handlers and audit logging.
 func (s *Server) ListenAndServe() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.dispatch)
 
+	// Wrap with X-Request-ID middleware (Requirement 6.5).
+	handler := requestIDMiddleware(mux)
+
 	srv := &http.Server{
 		Addr:      s.addr,
-		Handler:   mux,
+		Handler:   handler,
 		TLSConfig: s.tlsCfg,
 	}
 
-	log.Printf("api: control API listening on %s (mTLS)", s.addr)
-
-	// If TLS config is nil (dev mode), serve plain HTTP
 	if s.tlsCfg == nil {
+		log.Printf("api: control API listening on %s (plain HTTP — dev mode)", s.addr)
 		return srv.ListenAndServe()
 	}
+	log.Printf("api: control API listening on %s (mTLS)", s.addr)
 	return srv.ListenAndServeTLS("", "")
 }
 
@@ -85,11 +90,15 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) {
 		actor = r.TLS.PeerCertificates[0].Subject.CommonName
 	}
 
+	// Extract request ID from context (set by requestIDMiddleware).
+	requestID := RequestIDFromContext(r.Context())
+
 	if !allowed {
 		s.audit.Log("control_api_rejected", actor, "failure", map[string]any{
-			"method": r.Method,
-			"path":   r.URL.Path,
-			"reason": "not in allowlist",
+			"method":     r.Method,
+			"path":       r.URL.Path,
+			"reason":     "not in allowlist",
+			"request_id": requestID,
 		})
 		writeError(w, http.StatusForbidden, "FORBIDDEN",
 			fmt.Sprintf("action %s %s is not permitted", r.Method, r.URL.Path))
@@ -100,14 +109,17 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) {
 	if !registered {
 		// Action is in allowlist but no handler registered yet
 		s.audit.Log(action, actor, "failure", map[string]any{
-			"reason": "handler not implemented",
+			"reason":     "handler not implemented",
+			"request_id": requestID,
 		})
 		writeError(w, http.StatusNotImplemented, "NOT_IMPLEMENTED",
 			fmt.Sprintf("action %q is not yet implemented", action))
 		return
 	}
 
-	s.audit.Log(action, actor, "accepted", nil)
+	s.audit.Log(action, actor, "accepted", map[string]any{
+		"request_id": requestID,
+	})
 	h(w, r)
 }
 
@@ -146,12 +158,26 @@ func NewMTLSConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
 		return nil, fmt.Errorf("failed to parse CA cert from %s", caFile)
 	}
 
-	return &tls.Config{
+	tlsCfg := &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		ClientCAs:    caPool,
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		MinVersion:   tls.VersionTLS13,
-	}, nil
+	}
+
+	// Load CRL if available (Requirement 6.6).
+	// Check CRL_PATH env var first, then look for crl.pem in the cert directory.
+	crlPath := os.Getenv("CRL_PATH")
+	if crlPath == "" {
+		crlPath = filepath.Join(filepath.Dir(certFile), "crl.pem")
+	}
+	crlChecker, err := NewCRLChecker(crlPath)
+	if err != nil {
+		return nil, fmt.Errorf("load CRL: %w", err)
+	}
+	tlsCfg.VerifyPeerCertificate = crlChecker.VerifyPeerCertificate
+
+	return tlsCfg, nil
 }
 
 // AllowedRoutes returns a copy of the allowlist for testing.

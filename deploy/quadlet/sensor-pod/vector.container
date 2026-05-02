@@ -12,8 +12,8 @@ DropCapability=all
 # Config: vector.toml (read-only; Sensor_Agent Config Applier writes updates here)
 Volume=/etc/sensor/vector:/etc/vector:ro
 # Log handoff paths from Zeek and Suricata (read-only)
-Volume=/var/sensor/logs/zeek:/logs/zeek:ro
-Volume=/var/sensor/logs/suricata:/logs/suricata:ro
+Volume=/var/sensor/logs/zeek:/var/sensor/logs/zeek:ro
+Volume=/var/sensor/logs/suricata:/var/sensor/logs/suricata:ro
 Volume=/var/sensor/logs/vector:/logs/vector:rw
 # Disk-backed buffer for downstream sink unavailability (read-write)
 Volume=/var/sensor/vector-buffer:/var/lib/vector:rw
@@ -24,7 +24,7 @@ Environment=SPLUNK_HEC_TOKEN=${SPLUNK_HEC_TOKEN}
 Environment=CRIBL_URL=${CRIBL_URL}
 Environment=CRIBL_TOKEN=${CRIBL_TOKEN}
 # Sensor_Agent alert listener endpoint for qualifying alert forwarding
-Environment=SENSOR_AGENT_ALERT_URL=http://127.0.0.1:9091/internal/alerts
+Environment=SENSOR_AGENT_ALERT_URL=http://127.0.0.1:9092/alerts
 Exec=--config /etc/vector/vector.toml
 
 [Service]

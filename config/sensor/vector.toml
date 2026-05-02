@@ -64,6 +64,10 @@ source = '''
 '''
 
 # Route qualifying Suricata alerts to the PCAP Manager webhook
+# IMPORTANT: The severity threshold value (<=2) MUST match SensorConfig.severity_threshold.
+# Both PCAP_Manager and Vector use the same threshold sourced from the sensor config bundle.
+# When the sensor config bundle is applied, the Vector config is regenerated from the template
+# using SensorConfig.severity_threshold so this value stays in sync automatically.
 [transforms.route_alerts]
 type = "route"
 inputs = ["parse_suricata"]

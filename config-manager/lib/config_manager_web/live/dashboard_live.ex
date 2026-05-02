@@ -236,7 +236,8 @@ defmodule ConfigManagerWeb.DashboardLive do
                         <th class="pb-1 pr-4 font-medium">Consumer</th>
                         <th class="pb-1 pr-4 font-medium">Packets Received</th>
                         <th class="pb-1 pr-4 font-medium">Packets Dropped</th>
-                        <th class="pb-1 font-medium">Drop%</th>
+                        <th class="pb-1 pr-4 font-medium">Drop%</th>
+                        <th class="pb-1 font-medium">BPF Restart</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -245,8 +246,17 @@ defmodule ConfigManagerWeb.DashboardLive do
                           <td class="py-1.5 pr-4 font-mono text-gray-800"><%= name %></td>
                           <td class="py-1.5 pr-4 text-gray-600"><%= stats.packets_received %></td>
                           <td class="py-1.5 pr-4 text-gray-600"><%= stats.packets_dropped %></td>
-                          <td class={"py-1.5 font-medium #{if stats.drop_percent > 5.0, do: "text-red-600", else: "text-gray-600"}"}>
+                          <td class={"py-1.5 pr-4 font-medium #{if stats.drop_percent > 5.0, do: "text-red-600", else: "text-gray-600"}"}>
                             <%= :erlang.float_to_binary(stats.drop_percent || 0.0, decimals: 2) %>%
+                          </td>
+                          <td class="py-1.5">
+                            <%= if Map.get(stats, :bpf_restart_pending, false) do %>
+                              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
+                                restart required
+                              </span>
+                            <% else %>
+                              <span class="text-gray-400">—</span>
+                            <% end %>
                           </td>
                         </tr>
                       <% end %>

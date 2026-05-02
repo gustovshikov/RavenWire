@@ -6,8 +6,10 @@
 //   sensorctl <command> [flags]
 //
 // Commands:
-//   install  — install Quadlet units
-//   start    — start the sensor pod
+//   install   — install the dual-pod deployment
+//   start     — start management and sensor pods
+//   stop      — stop management and sensor pods
+//   uninstall — remove Quadlet units and optional data
 //   status   — show unit status
 //   logs     — show systemd journal logs
 //   enroll   — enroll a sensor with the manager

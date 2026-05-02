@@ -13,6 +13,32 @@ import (
 	"github.com/ravenwire/ravenwire/sensor-agent/internal/audit"
 )
 
+// SensorConfig is the sensor configuration bundle schema.
+// SeverityThreshold follows the Suricata convention: lower numeric value = higher priority.
+// Severity 1 is the highest (most critical), severity 3 is the lowest.
+// Alerts with severity <= SeverityThreshold qualify for PCAP carving.
+// The Vector routing rule that forwards qualifying alerts MUST use the same threshold value.
+type SensorConfig struct {
+	SeverityThreshold  int         `json:"severity_threshold"`   // 1=highest, 3=lowest; alerts with severity <= threshold are carved
+	AlertListenerAddr  string      `json:"alert_listener_addr"`
+	Sinks              []SinkConfig `json:"sinks"`
+	DeadLetterPath     string      `json:"dead_letter_path,omitempty"`
+	DeadLetterMaxMB    int         `json:"dead_letter_max_mb,omitempty"`
+	CaptureWorkers     int         `json:"capture_workers"`
+	TpacketBlockSizeMB int         `json:"tpacket_block_size_mb"`
+	TpacketFrameCount  int         `json:"tpacket_frame_count"`
+	DropAlertThreshPct float64     `json:"drop_alert_thresh_pct"` // default 1.0
+}
+
+// SinkConfig describes a single log/event sink in the sensor config bundle.
+type SinkConfig struct {
+	Name       string `json:"name"`
+	Type       string `json:"type"`        // "splunk_hec", "cribl_http", "elasticsearch", etc.
+	URI        string `json:"uri"`
+	SchemaMode string `json:"schema_mode"` // "raw", "ecs", "ocsf", "splunk_cim"
+	Token      string `json:"token,omitempty"`
+}
+
 // Bundle is a configuration bundle sent from Config_Manager.
 type Bundle struct {
 	Type      string            `json:"type"`                 // "pool_config", "suricata_rules", "zeek_policy", "vector_config", "bpf_filter"
@@ -27,6 +53,10 @@ type Applier struct {
 	lastKnownPath string
 	auditLog      *audit.Logger
 	lastBundle    *Bundle
+	// vectorGen generates and applies Vector configuration from the sensor config bundle.
+	// When set, applyPoolConfig will generate Vector config from the bundle's sensor_config
+	// field rather than relying on a static config file.
+	vectorGen *VectorConfigGenerator
 }
 
 // NewApplier creates a new Config Applier.
@@ -34,6 +64,16 @@ func NewApplier(lastKnownPath string, auditLog *audit.Logger) *Applier {
 	return &Applier{
 		lastKnownPath: lastKnownPath,
 		auditLog:      auditLog,
+		vectorGen:     NewVectorConfigGenerator(),
+	}
+}
+
+// NewApplierWithVectorGen creates a new Config Applier with a custom VectorConfigGenerator.
+func NewApplierWithVectorGen(lastKnownPath string, auditLog *audit.Logger, vectorGen *VectorConfigGenerator) *Applier {
+	return &Applier{
+		lastKnownPath: lastKnownPath,
+		auditLog:      auditLog,
+		vectorGen:     vectorGen,
 	}
 }
 
@@ -256,12 +296,54 @@ func (a *Applier) applyBPFFilter(bundle Bundle) error {
 }
 
 func (a *Applier) applyPoolConfig(bundle Bundle) error {
+	// Write all config files from the bundle (except Vector config and sensor_config metadata).
 	for path, content := range bundle.Config {
+		// Skip the Vector config path — it will be generated from the sensor config.
+		if path == VectorConfigPath {
+			log.Printf("config: skipping static vector config at %s — will generate from sensor_config", path)
+			continue
+		}
+		// Skip the sensor_config key — it's metadata, not a file path.
+		if path == "sensor_config" {
+			continue
+		}
 		if err := writeConfigFile(path, content); err != nil {
 			return err
 		}
 	}
+
+	// Generate Vector config from the sensor_config field in the bundle.
+	sensorConfigJSON, hasSensorConfig := bundle.Config["sensor_config"]
+	if hasSensorConfig && a.vectorGen != nil {
+		sensorCfg, err := ParseSensorConfig(sensorConfigJSON)
+		if err != nil {
+			return fmt.Errorf("parse sensor_config from pool bundle: %w", err)
+		}
+
+		if err := a.vectorGen.ApplyConfig(sensorCfg); err != nil {
+			return fmt.Errorf("apply vector config: %w", err)
+		}
+	}
+
 	return nil
+}
+
+// SensorConfig returns the SensorConfig from the last-known bundle, if available.
+// This allows other components (e.g. PCAP Manager) to read the severity threshold
+// and other settings from the single source of truth (Requirement 3.4, 8.3).
+func (a *Applier) SensorConfig() (SensorConfig, bool) {
+	if a.lastBundle == nil {
+		return SensorConfig{}, false
+	}
+	sensorConfigJSON, ok := a.lastBundle.Config["sensor_config"]
+	if !ok {
+		return SensorConfig{}, false
+	}
+	cfg, err := ParseSensorConfig(sensorConfigJSON)
+	if err != nil {
+		return SensorConfig{}, false
+	}
+	return cfg, true
 }
 
 func (a *Applier) persistLastKnown(bundle Bundle) error {
