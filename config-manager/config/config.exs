@@ -29,4 +29,10 @@ config :swoosh, :finch_name, ConfigManager.Finch
 
 config :config_manager, :clock_drift_threshold_ms, 100
 
+config :argon2_elixir,
+  argon2_type: 2,
+  t_cost: 2,
+  m_cost: 15,
+  parallelism: 1
+
 import_config "#{config_env()}.exs"

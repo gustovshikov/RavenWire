@@ -13,9 +13,16 @@ config :config_manager, ConfigManagerWeb.Endpoint,
 config :logger, level: :warning
 config :phoenix, :plug_init_mode, :runtime
 
+config :argon2_elixir,
+  t_cost: 1,
+  m_cost: 8,
+  parallelism: 1,
+  argon2_type: 2
+
 config :config_manager,
   ca_path: System.tmp_dir!() |> Path.join("config_manager_test_ca"),
   grpc_port: 9090,
-  allow_plain_cert_rotation: true
+  allow_plain_cert_rotation: true,
+  bootstrap_admin_password: "test-admin-password"
 
 config :swoosh, :api_client, Swoosh.ApiClient.Test

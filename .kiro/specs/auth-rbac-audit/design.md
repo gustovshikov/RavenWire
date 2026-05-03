@@ -4,7 +4,7 @@
 
 This design adds local authentication, role-based access control (RBAC), scoped API tokens, and a queryable audit log to the RavenWire Config Manager. The current Phoenix/LiveView application exposes all browser routes without any authentication pipeline. This feature introduces:
 
-- **User accounts** with bcrypt-hashed passwords and role assignments
+- **User accounts** with Argon2id-hashed passwords and role assignments
 - **Session-based authentication** with server-side session storage, inactivity timeout, and absolute lifetime
 - **Six predefined roles** with code-defined permission mappings
 - **RBAC enforcement** on browser routes, LiveView events, and API endpoints
@@ -21,7 +21,7 @@ The design integrates with the existing Phoenix router, Ecto/SQLite stack, and L
 
 2. **Code-defined role-permission mapping**: Roles and permissions are defined as string identifiers in a module attribute map in `ConfigManager.Auth.Policy`, not in the database. Strings are used because the same identifiers appear in API token scopes, JSON, fixtures, and route policy declarations. This prevents privilege escalation via database manipulation and makes permission checks compile-time verifiable.
 
-3. **bcrypt via `bcrypt_elixir`**: New dependency for password hashing. The `comeonin` ecosystem is the standard choice for Phoenix applications. Work factor of 12 as specified.
+3. **Argon2id via `argon2_elixir`**: New dependency for password hashing. Argon2id is the preferred modern password hashing algorithm for RavenWire because it is memory-hard and balances resistance to side-channel and GPU cracking attacks. The default configuration uses Argon2id (`argon2_type: 2`) with `t_cost: 2`, `m_cost: 15` (32 MiB), and `parallelism: 1`; test config uses cheaper parameters only for fast automated tests.
 
 4. **`propcheck` for property-based testing**: Already present in `mix.exs`. Property tests will use PropCheck (Erlang PropEr wrapper) for testing auth logic, permission enforcement, and audit log integrity.
 
@@ -784,7 +784,7 @@ erDiagram
 
 ### Property 1: Password hashing preserves no plaintext
 
-*For any* valid password string (≥12 characters, not matching username), when a user is created or a password is changed, the stored `password_hash` field SHALL be a valid bcrypt hash with work factor ≥ 12, and the plaintext password SHALL NOT appear anywhere in the persisted user record.
+*For any* valid password string (≥12 characters, not matching username), when a user is created or a password is changed, the stored `password_hash` field SHALL be a valid Argon2id hash, and the plaintext password SHALL NOT appear anywhere in the persisted user record.
 
 **Validates: Requirements 1.3**
 
@@ -990,7 +990,11 @@ Each correctness property maps to a PropCheck test with a minimum of 100 iterati
 
 ```elixir
 # In test.exs
-config :bcrypt_elixir, :log_rounds, 4  # Fast hashing in tests
+config :argon2_elixir,
+  t_cost: 1,
+  m_cost: 8,
+  parallelism: 1,
+  argon2_type: 2
 
 # PropCheck configuration
 # Each property test uses: numtests: 100
@@ -1072,7 +1076,7 @@ end
 
 ```elixir
 # In mix.exs deps
-{:bcrypt_elixir, "~> 3.0"},
+{:argon2_elixir, "~> 4.1"},
 ```
 
 This is the only new dependency. The project already has `propcheck` for property-based testing, `jason` for JSON, and all Phoenix/Ecto dependencies needed.

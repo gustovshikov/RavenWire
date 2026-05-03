@@ -55,6 +55,9 @@ defmodule ConfigManager.MixProject do
       # JSON
       {:jason, "~> 1.4"},
 
+      # Authentication
+      {:argon2_elixir, "~> 4.1"},
+
       # Property-based testing
       {:propcheck, "~> 1.4", only: [:test, :dev]},
 

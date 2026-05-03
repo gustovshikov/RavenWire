@@ -14,6 +14,9 @@ defmodule ConfigManager.Application do
       # Database
       ConfigManager.Repo,
 
+      # Bootstrap local admin account when the users table is empty
+      ConfigManager.Auth.AdminSeeder,
+
       # PubSub for LiveView
       {Phoenix.PubSub, name: ConfigManager.PubSub},
 
@@ -34,9 +37,7 @@ defmodule ConfigManager.Application do
 
       # gRPC health stream server — accepts Sensor_Agent streams on port 9090 (mTLS)
       {GRPC.Server.Supervisor,
-       endpoint: ConfigManager.Health.GrpcEndpoint,
-       port: grpc_port,
-       start_server: true},
+       endpoint: ConfigManager.Health.GrpcEndpoint, port: grpc_port, start_server: true},
 
       # Phoenix endpoint (port 8443)
       ConfigManagerWeb.Endpoint

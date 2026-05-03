@@ -6,7 +6,8 @@ defmodule ConfigManagerWeb.Endpoint do
     store: :cookie,
     key: "_config_manager_key",
     signing_salt: "sensor_stack_lv",
-    same_site: "Lax"
+    http_only: true,
+    same_site: "Strict"
   ]
 
   socket "/live", Phoenix.LiveView.Socket,

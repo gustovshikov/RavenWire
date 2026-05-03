@@ -7,6 +7,11 @@
       <a href="/pcap-config" class="text-blue-600 hover:underline">PCAP Config</a>
       <a href="/rules" class="text-blue-600 hover:underline">Rules</a>
       <a href="/support-bundle" class="text-blue-600 hover:underline">Support Bundles</a>
+      <a href="/audit" class="text-blue-600 hover:underline">Audit</a>
+      <form action="/logout" method="post">
+        <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+        <button type="submit" class="text-gray-600 hover:underline">Logout</button>
+      </form>
     </div>
   </nav>
 </header>

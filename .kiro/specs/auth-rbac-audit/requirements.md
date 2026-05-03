@@ -17,7 +17,7 @@ This feature adds local authentication, role-based access control (RBAC) with si
 - **RBAC_Gate**: A runtime check that compares the current User's Role permissions against the permission required by a route or action.
 - **API_Token**: A bearer token with a name, scoped permissions, optional expiry, and association to a creating User.
 - **Audit_Entry**: An append-only record in the `audit_log` table capturing who did what, when, to which target, and whether it succeeded.
-- **Password_Hash**: The bcrypt-hashed representation of a User's password, stored in the database. Plaintext passwords are never persisted.
+- **Password_Hash**: The Argon2id-hashed representation of a User's password, stored in the database. Plaintext passwords are never persisted.
 - **Initial_Admin**: The first `platform-admin` User, seeded automatically when the database contains zero User records.
 
 ## Requirements
@@ -30,7 +30,7 @@ This feature adds local authentication, role-based access control (RBAC) with si
 
 1. THE Config_Manager SHALL store User records with fields: username, Password_Hash, display name, Role, active status, and timestamps.
 2. THE Config_Manager SHALL enforce unique usernames across all User records.
-3. WHEN a platform admin creates a User, THE Config_Manager SHALL hash the password using bcrypt with a work factor of at least 12 before storing the Password_Hash.
+3. WHEN a platform admin creates a User, THE Config_Manager SHALL hash the password using Argon2id before storing the Password_Hash, using memory-hard parameters no weaker than the configured RavenWire defaults.
 4. WHEN a platform admin disables a User, THE Config_Manager SHALL immediately invalidate all active Sessions for that User.
 5. WHEN a platform admin deletes a User, THE Config_Manager SHALL revoke all API_Tokens associated with that User and invalidate all active Sessions.
 6. THE Config_Manager SHALL expose a user management page at `/admin/users` accessible only to Users with the `platform-admin` Role.

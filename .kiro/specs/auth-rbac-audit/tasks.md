@@ -7,9 +7,10 @@ This plan implements local authentication, role-based access control, scoped API
 ## Tasks
 
 - [ ] 1. Add dependency and set up project structure
-  - [ ] 1.1 Add `bcrypt_elixir` dependency and configure test environment
-    - Add `{:bcrypt_elixir, "~> 3.0"}` to `mix.exs` deps
-    - Add `config :bcrypt_elixir, :log_rounds, 4` to `config/test.exs` for fast test hashing
+  - [ ] 1.1 Add `argon2_elixir` dependency and configure test environment
+    - Add `{:argon2_elixir, "~> 4.1"}` to `mix.exs` deps
+    - Configure Argon2id defaults in `config/config.exs`
+    - Add low-cost Argon2id parameters to `config/test.exs` for fast test hashing
     - Run `mix deps.get` to fetch the new dependency
     - _Requirements: 1.3_
 
@@ -74,7 +75,7 @@ This plan implements local authentication, role-based access control, scoped API
     - **Validates: Requirements 4.1, 4.2, 13.1**
 
   - [ ] 3.3 Implement `ConfigManager.Auth.Password` module
-    - Implement `hash_password/1` using Bcrypt with work factor ≥ 12
+    - Implement `hash_password/1` using Argon2id
     - Implement `verify_password/2` for constant-time comparison
     - Implement `validate_password/2` enforcing: minimum 12 characters, not matching username
     - Implement `generate_random_password/0` producing 24-character random string
@@ -89,7 +90,7 @@ This plan implements local authentication, role-based access control, scoped API
 
   - [ ]* 3.5 Write property test for password hashing (Property 1)
     - **Property 1: Password hashing preserves no plaintext**
-    - For random valid passwords, verify stored hash is valid bcrypt with work factor ≥ 12
+    - For random valid passwords, verify stored hash is valid Argon2id
     - Verify plaintext does not appear in the hash string
     - **Validates: Requirements 1.3**
 
@@ -440,6 +441,6 @@ This plan implements local authentication, role-based access control, scoped API
 - Checkpoints ensure incremental validation
 - Property tests validate universal correctness properties from the design document
 - Unit tests validate specific examples and edge cases
-- The only new dependency is `bcrypt_elixir ~> 3.0`; PropCheck is already available
+- The only new dependency is `argon2_elixir ~> 4.1`; PropCheck is already available
 - Existing mTLS routes for sensor agents remain unchanged throughout
 - All audit writes for security-sensitive mutations use `Audit.append_multi/2` (fail-closed transactional pattern)
