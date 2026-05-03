@@ -382,7 +382,7 @@ ignore_older_secs = 86400
 
 [sources.suricata_eve]
 type = "file"
-include = ["/var/sensor/logs/suricata/eve.json"]
+include = ["/var/sensor/logs/suricata/eve*.json"]
 read_from = "beginning"
 ignore_older_secs = 86400
 

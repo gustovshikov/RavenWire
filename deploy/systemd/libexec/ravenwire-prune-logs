@@ -1,0 +1,133 @@
+#!/bin/sh
+set -eu
+
+LOG_ROOT="${RAVENWIRE_LOG_ROOT:-/var/sensor/logs}"
+BUNDLE_ROOT="${RAVENWIRE_SUPPORT_BUNDLE_ROOT:-/var/sensor/support-bundles}"
+PCAP_ROOT="${RAVENWIRE_PCAP_ROOT:-/sensor/pcap/alerts}"
+RETENTION_DAYS="${RAVENWIRE_LOG_RETENTION_DAYS:-2}"
+MAX_TOTAL_MB="${RAVENWIRE_LOG_MAX_TOTAL_MB:-2048}"
+MAX_FILE_MB="${RAVENWIRE_LOG_MAX_FILE_MB:-512}"
+ACTIVE_MMIN="${RAVENWIRE_LOG_ACTIVE_MMIN:-90}"
+BUNDLE_RETENTION_DAYS="${RAVENWIRE_SUPPORT_BUNDLE_RETENTION_DAYS:-2}"
+BUNDLE_MAX_TOTAL_MB="${RAVENWIRE_SUPPORT_BUNDLE_MAX_TOTAL_MB:-512}"
+PCAP_RETENTION_DAYS="${RAVENWIRE_PCAP_RETENTION_DAYS:-7}"
+PCAP_MAX_TOTAL_MB="${RAVENWIRE_PCAP_MAX_TOTAL_MB:-4096}"
+PCAP_MAX_FILE_MB="${RAVENWIRE_PCAP_MAX_FILE_MB:-1024}"
+
+log_files() {
+    find "$LOG_ROOT" -xdev -type f \( \
+        -name "*.log" -o \
+        -name "*.json" -o \
+        -name "*.gz" \
+    \)
+}
+
+bundle_files() {
+    find "$BUNDLE_ROOT" -xdev -type f -name "sensor-support-*.tar.gz"
+}
+
+pcap_files() {
+    find "$PCAP_ROOT" -xdev -type f \( \
+        -name "*.pcap" -o \
+        -name "*.pcapng" -o \
+        -name "*.custody.jsonl" \
+    \)
+}
+
+usage_bytes() {
+    du -sb "$1" 2>/dev/null | awk '{print $1}'
+}
+
+log() {
+    logger -t ravenwire-log-prune "$*"
+}
+
+remove_aged() {
+    days="$1"
+    label="$2"
+    while IFS= read -r file; do
+        if find "$file" -xdev -type f -mtime +"$days" -print -quit | grep -q .; then
+            rm -f -- "$file" && log "deleted aged $label $file"
+        fi
+    done
+}
+
+enforce_total() {
+    root="$1"
+    max_mb="$2"
+    label="$3"
+    file_command="$4"
+    max_bytes=$((max_mb * 1024 * 1024))
+    usage="$(usage_bytes "$root")"
+
+    while [ "${usage:-0}" -gt "$max_bytes" ]; do
+        oldest="$(
+            eval "$file_command" |
+            xargs -r stat -c '%Y %n' 2>/dev/null |
+            sort -n |
+            sed -n '1{s/^[0-9][0-9]* //;p;}'
+        )"
+        [ -n "$oldest" ] || break
+
+        rm -f -- "$oldest" && log "deleted oldest $label to reduce aggregate usage $oldest"
+        usage="$(usage_bytes "$root")"
+    done
+}
+
+if [ -d "$LOG_ROOT" ]; then
+    # Remove aged rotated/raw handoff files first.
+    log_files | remove_aged "$RETENTION_DAYS" "log"
+
+    # Enforce a per-file ceiling. Old oversized files can be removed; active files
+    # are truncated in place so writers keep their file descriptor and the host
+    # filesystem is protected.
+    log_files | while IFS= read -r file; do
+        if find "$file" -xdev -type f -size +"${MAX_FILE_MB}"M -print -quit | grep -q .; then
+            if find "$file" -xdev -type f -mmin "-${ACTIVE_MMIN}" -print -quit | grep -q .; then
+                : > "$file"
+                log "truncated active oversized log $file"
+            else
+                rm -f -- "$file" && log "deleted oversized inactive log $file"
+            fi
+        fi
+    done
+
+    max_bytes=$((MAX_TOTAL_MB * 1024 * 1024))
+    usage="$(usage_bytes "$LOG_ROOT")"
+
+    # Keep deleting oldest files until the aggregate handoff directory is below the
+    # configured cap. If only active files remain, truncate the oldest active file.
+    while [ "${usage:-0}" -gt "$max_bytes" ]; do
+        oldest="$(
+            log_files |
+            xargs -r stat -c '%Y %n' 2>/dev/null |
+            sort -n |
+            sed -n '1{s/^[0-9][0-9]* //;p;}'
+        )"
+        [ -n "$oldest" ] || break
+
+        if find "$oldest" -xdev -type f -mmin "-${ACTIVE_MMIN}" -print -quit | grep -q .; then
+            : > "$oldest"
+            log "truncated active log to reduce aggregate usage $oldest"
+        else
+            rm -f -- "$oldest" && log "deleted oldest log to reduce aggregate usage $oldest"
+        fi
+
+        usage="$(usage_bytes "$LOG_ROOT")"
+    done
+fi
+
+if [ -d "$BUNDLE_ROOT" ]; then
+    bundle_files | remove_aged "$BUNDLE_RETENTION_DAYS" "support bundle"
+    enforce_total "$BUNDLE_ROOT" "$BUNDLE_MAX_TOTAL_MB" "support bundle" "bundle_files"
+fi
+
+if [ -d "$PCAP_ROOT" ]; then
+    pcap_files | remove_aged "$PCAP_RETENTION_DAYS" "pcap artifact"
+    pcap_files | while IFS= read -r file; do
+        if find "$file" -xdev -type f -size +"${PCAP_MAX_FILE_MB}"M -print -quit | grep -q .; then
+            rm -f -- "$file" && log "deleted oversized pcap artifact $file"
+        fi
+    done
+    enforce_total "$PCAP_ROOT" "$PCAP_MAX_TOTAL_MB" "pcap artifact" "pcap_files"
+fi

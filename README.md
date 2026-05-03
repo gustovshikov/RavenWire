@@ -46,6 +46,7 @@ sensorctl install
 sensorctl start
 sensorctl status
 sensorctl logs
+sensorctl cleanup
 ```
 
 For a capture host with a known span interface:
@@ -93,6 +94,8 @@ deploy/quadlet/
 ```
 
 `sensorctl install` builds the local RavenWire images with rootful Podman, prepares host directories and baseline sensor config, copies Quadlet units into the system Quadlet directory, configures the capture interface, and reloads systemd. `sensorctl start` starts the management pod first, creates a one-time enrollment token, then starts the sensor pod so the initial dual-pod setup auto-enrolls through the same deployment path used later.
+
+During install, `sensorctl` also installs a RavenWire journald drop-in that caps host systemd journal growth. This keeps chatty capture services from consuming the host filesystem if a test deployment is left running.
 
 The goal is that local testing, production-ish testing, and deployment all exercise the same basic model: Podman containers supervised by systemd.
 

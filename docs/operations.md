@@ -16,6 +16,7 @@ sensorctl stop [app|sensor-pod|management-pod|unit]
 sensorctl restart [app|sensor-pod|management-pod|unit]
 sensorctl status [unit]
 sensorctl logs [unit]
+sensorctl cleanup [--podman] [--docker]
 sensorctl uninstall [--purge] [--images]
 sensorctl enroll --manager https://manager:8443 --token <token>
 sensorctl agent status --sensor https://sensor:9091
@@ -68,6 +69,22 @@ deploy/quadlet/
 ```
 
 `sensorctl uninstall` removes installed Quadlet and target files. `sensorctl uninstall --purge` also removes RavenWire host data and generated certificates/config. `sensorctl uninstall --images` removes locally built RavenWire images.
+
+## Journal Storage Protection
+
+`sensorctl install` installs `/etc/systemd/journald.conf.d/ravenwire.conf` and restarts `systemd-journald`.
+The drop-in caps persistent journal use at `512M`, runtime journal use at `128M`, keeps at least `2G` free on the persistent journal filesystem, and expires journal entries after `7day`.
+Install also rotates and vacuums existing journal files to `512M`/`7day` so an already-large journal is trimmed immediately.
+`sensorctl uninstall` removes this RavenWire-owned drop-in and restarts `systemd-journald`.
+
+`sensorctl install` also installs `/etc/logrotate.d/ravenwire` for RavenWire host log handoff paths under `/var/sensor/logs`.
+Suricata EVE output is configured to rotate hourly, and Vector follows the rotated `eve*.json` files.
+The host logrotate rule caps large Zeek, Suricata, Vector, and Sensor Agent audit log files with `maxsize 512M`, `rotate 2`, compression, and `copytruncate`.
+`sensorctl install` also enables `ravenwire-log-prune.timer`, which runs hourly and enforces RavenWire storage retention: `/var/sensor/logs` files older than `2` days are removed, individual logs over `512M` are deleted or truncated if active, aggregate handoff log usage is kept below `2048M`, support bundles are kept under `512M`, and `/sensor/pcap/alerts` is kept under `4096M` with a `7` day retention safety net.
+
+The Sensor Agent also assigns a default `7` day retention time to carved PCAP artifacts and starts its PCAP retention pruner hourly. Override with `PCAP_RETENTION` and `PCAP_RETENTION_PRUNE_INTERVAL` duration values such as `168h` and `1h`.
+
+Use `sensorctl cleanup` to run the journal vacuum, RavenWire storage pruner, logrotate rule, and stale support-bundle cleanup immediately. Add `--podman` to prune unused Podman artifacts, or `--docker` for old Docker lab artifacts.
 
 ## Logs
 

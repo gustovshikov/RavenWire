@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/ravenwire/ravenwire/sensor-agent/internal/api"
 	"github.com/ravenwire/ravenwire/sensor-agent/internal/audit"
@@ -55,6 +56,8 @@ func main() {
 	healthBufferPath := envOrDefault("HEALTH_BUFFER_PATH", "/var/sensor/health-buffer.bin")
 	lastKnownConfigPath := envOrDefault("LAST_KNOWN_CONFIG_PATH", "/etc/sensor/last-known-config.json")
 	captureIface := envOrDefault("CAPTURE_IFACE", "eth0")
+	pcapRetention := envDurationOrDefault("PCAP_RETENTION", 7*24*time.Hour)
+	pcapRetentionPruneInterval := envDurationOrDefault("PCAP_RETENTION_PRUNE_INTERVAL", 1*time.Hour)
 
 	// ── Module 8: Local Audit Logger ─────────────────────────────────────────
 	auditLog, err := audit.New(auditLogPath)
@@ -203,9 +206,11 @@ func main() {
 	// Load severity threshold from the last-known sensor config so the PCAP Manager
 	// uses the same threshold as the generated Vector config (Requirement 3.4, 8.3).
 	pcapManagerCfg := pcap.ManagerConfig{
-		SensorID:        podName,
-		PodmanClient:    podmanClient,
-		PCAPStoragePath: pcapAlertsDir,
+		SensorID:               podName,
+		PodmanClient:           podmanClient,
+		PCAPStoragePath:        pcapAlertsDir,
+		RetentionDuration:      pcapRetention,
+		RetentionPruneInterval: pcapRetentionPruneInterval,
 	}
 	if sensorCfg, ok := configApplier.SensorConfig(); ok {
 		pcapManagerCfg.SeverityThreshold = sensorCfg.SeverityThreshold
@@ -258,6 +263,12 @@ func main() {
 
 	// ── Start background goroutines ───────────────────────────────────────────
 	done := make(chan struct{})
+	pruneCtx, stopPruner := context.WithCancel(context.Background())
+	go func() {
+		<-done
+		stopPruner()
+	}()
+	pcapManager.StartRetentionPruner(pruneCtx, pcapRetentionPruneInterval)
 
 	go func() {
 		if err := captureManager.WatchBPFFilter(done); err != nil {
@@ -515,6 +526,19 @@ func envFloat(key string) (float64, bool) {
 		return 0, false
 	}
 	return parsed, true
+}
+
+func envDurationOrDefault(key string, fallback time.Duration) time.Duration {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(value)
+	if err != nil {
+		log.Printf("sensor-agent: invalid duration %s=%q, using %s", key, value, fallback)
+		return fallback
+	}
+	return d
 }
 
 func fileExists(path string) bool {

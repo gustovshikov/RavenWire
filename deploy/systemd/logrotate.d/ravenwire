@@ -1,0 +1,15 @@
+/var/sensor/logs/suricata/*.json
+/var/sensor/logs/suricata/*.log
+/var/sensor/logs/zeek/*.log
+/var/sensor/logs/vector/*.log
+/var/sensor/audit.log
+{
+    daily
+    rotate 2
+    maxsize 512M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

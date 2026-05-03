@@ -30,7 +30,8 @@ outputs:
   - eve-log:
       enabled: yes
       filetype: regular
-      filename: /logs/suricata/eve.json
+      filename: /logs/suricata/eve-%Y-%m-%d-%H.json
+      rotate-interval: hour
       # Community ID — required for cross-tool correlation
       community-id: yes
       community-id-seed: 0

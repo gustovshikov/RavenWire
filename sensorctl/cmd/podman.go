@@ -31,6 +31,11 @@ type installOptions struct {
 	skipBuild    bool
 }
 
+type cleanupOptions struct {
+	podman bool
+	docker bool
+}
+
 func installCmd() *cobra.Command {
 	opts := installOptions{}
 	cmd := &cobra.Command{
@@ -146,6 +151,20 @@ func uninstallCmd() *cobra.Command {
 	return cmd
 }
 
+func cleanupCmd() *cobra.Command {
+	opts := cleanupOptions{}
+	cmd := &cobra.Command{
+		Use:   "cleanup",
+		Short: "Prune RavenWire runtime storage and optional container cache",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return cleanupApp(opts)
+		},
+	}
+	cmd.Flags().BoolVar(&opts.podman, "podman", false, "Also prune unused Podman containers, networks, and images")
+	cmd.Flags().BoolVar(&opts.docker, "docker", false, "Also prune unused Docker containers, networks, and images from old lab workflows")
+	return cmd
+}
+
 func installApp(opts installOptions) error {
 	root, err := repoRoot()
 	if err != nil {
@@ -189,10 +208,30 @@ func buildImages(root string) error {
 }
 
 func prepareHost(root string) error {
-	commands := []string{
+	for _, command := range prepareHostCommands() {
+		if err := runShell(root, command); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func prepareHostCommands() []string {
+	return []string{
 		"sudo systemctl enable --now podman.socket",
-		"sudo mkdir -p /data/config_manager /data/ca /data/metrics /etc/sensor/certs /etc/sensor/zeek /etc/sensor/suricata/rules /etc/sensor/vector /var/sensor/logs/zeek /var/sensor/logs/suricata /var/sensor/logs/vector /var/sensor/vector-buffer /var/run/sensor /sensor/pcap/alerts",
+		"sudo mkdir -p /data/config_manager /data/ca /data/metrics /etc/sensor/certs /etc/sensor/zeek /etc/sensor/suricata/rules /etc/sensor/vector /var/sensor/logs/zeek /var/sensor/logs/suricata /var/sensor/logs/vector /var/sensor/vector-buffer /var/sensor/support-bundles /var/run/sensor /sensor/pcap/alerts",
 		"sudo chown -R 0:0 /data/config_manager /data/ca /data/metrics /etc/sensor /var/sensor /var/run/sensor /sensor/pcap",
+		"sudo install -D -m 0644 deploy/systemd/journald.conf.d/ravenwire.conf /etc/systemd/journald.conf.d/ravenwire.conf",
+		"sudo systemctl restart systemd-journald.service",
+		"sudo journalctl --rotate",
+		"sudo journalctl --vacuum-size=512M --vacuum-time=7d",
+		"sudo install -D -m 0644 deploy/systemd/logrotate.d/ravenwire /etc/logrotate.d/ravenwire",
+		"sudo install -D -m 0755 deploy/systemd/libexec/ravenwire-prune-logs /usr/local/libexec/ravenwire-prune-logs",
+		"sudo install -D -m 0644 deploy/systemd/system/ravenwire-log-prune.service /etc/systemd/system/ravenwire-log-prune.service",
+		"sudo install -D -m 0644 deploy/systemd/system/ravenwire-log-prune.timer /etc/systemd/system/ravenwire-log-prune.timer",
+		"sudo systemctl daemon-reload",
+		"sudo systemctl enable --now ravenwire-log-prune.timer",
+		"sudo systemctl start ravenwire-log-prune.service",
 		"sudo install -D -m 0644 config/sensor/bpf_filters.conf /etc/sensor/bpf_filters.conf",
 		"sudo install -D -m 0644 config/sensor/capture.conf /etc/sensor/capture.conf",
 		"sudo install -D -m 0644 config/sensor/vector.toml /etc/sensor/vector/vector.toml",
@@ -203,12 +242,6 @@ func prepareHost(root string) error {
 		"sudo install -D -m 0644 config/sensor/zeek/local.zeek /etc/sensor/zeek/local.zeek",
 		"sudo touch /etc/sensor/suricata/rules/suricata.rules",
 	}
-	for _, command := range commands {
-		if err := runShell(root, command); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func installQuadlet(root string) error {
@@ -383,6 +416,34 @@ func stopSensorUnits() error {
 	return nil
 }
 
+func cleanupApp(opts cleanupOptions) error {
+	for _, command := range cleanupCommands(opts) {
+		if err := runShell("", command); err != nil {
+			return err
+		}
+	}
+
+	fmt.Println("RavenWire cleanup complete.")
+	return nil
+}
+
+func cleanupCommands(opts cleanupOptions) []string {
+	commands := []string{
+		"sudo journalctl --rotate",
+		"sudo journalctl --vacuum-size=512M --vacuum-time=7d",
+		"if systemctl list-unit-files ravenwire-log-prune.service >/dev/null 2>&1; then sudo systemctl start ravenwire-log-prune.service; fi",
+		"if [ -f /etc/logrotate.d/ravenwire ]; then sudo logrotate -f /etc/logrotate.d/ravenwire; fi",
+		"sudo find /tmp /var/sensor/support-bundles -xdev -type f -name 'sensor-support-*.tar.gz' -mtime +2 -delete 2>/dev/null || true",
+	}
+	if opts.podman {
+		commands = append(commands, "if command -v podman >/dev/null 2>&1; then sudo podman system prune -f; fi")
+	}
+	if opts.docker {
+		commands = append(commands, "if command -v docker >/dev/null 2>&1; then sudo docker system prune -f; fi")
+	}
+	return commands
+}
+
 func uninstallApp(purge, images bool) error {
 	if err := stopApp(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: stop failed during uninstall: %v\n", err)
@@ -414,6 +475,13 @@ func uninstallApp(purge, images bool) error {
 		commands = append(commands, fmt.Sprintf("sudo rm -f %s", shellQuote(filepath.Join(systemdDst, file))))
 	}
 	commands = append(commands,
+		"sudo systemctl stop ravenwire-log-prune.timer ravenwire-log-prune.service",
+		"sudo systemctl disable ravenwire-log-prune.timer",
+		"sudo rm -f /etc/systemd/journald.conf.d/ravenwire.conf",
+		"sudo rm -f /etc/logrotate.d/ravenwire",
+		"sudo rm -f /usr/local/libexec/ravenwire-prune-logs",
+		"sudo rm -f /etc/systemd/system/ravenwire-log-prune.service /etc/systemd/system/ravenwire-log-prune.timer",
+		"sudo systemctl restart systemd-journald.service",
 		"sudo systemctl daemon-reload",
 		"sudo systemctl reset-failed",
 		"sudo systemctl unset-environment CAPTURE_IFACE SENSOR_POD_NAME SENSOR_ENROLLMENT_TOKEN CONFIG_MANAGER_URL GRPC_ADDR SENSOR_SVC_UID MIN_DISK_WRITE_MBPS MIN_STORAGE_GB SPLUNK_HEC_URL SPLUNK_HEC_TOKEN CRIBL_URL CRIBL_TOKEN",

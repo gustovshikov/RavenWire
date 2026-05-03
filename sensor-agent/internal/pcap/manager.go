@@ -16,7 +16,7 @@ import (
 
 // Container names managed by SwitchMode.
 const (
-	containerNetsniffNG    = "netsniff-ng"
+	containerNetsniffNG     = "netsniff-ng"
 	containerPcapRingWriter = "pcap_ring_writer"
 )
 
@@ -89,6 +89,10 @@ type Manager struct {
 
 	// healthReporter is an optional callback to report failures to Config_Manager.
 	healthReporter func(msg string)
+
+	// retentionDuration is the default time carved PCAP artifacts are retained.
+	// A zero or negative duration disables default retention.
+	retentionDuration time.Duration
 }
 
 // NewManager creates a new PCAP Manager.
@@ -126,6 +130,9 @@ type ManagerConfig struct {
 	// RetentionPruneInterval is the interval between retention pruning cycles.
 	// Defaults to 60s.
 	RetentionPruneInterval time.Duration
+	// RetentionDuration is the default retention period for carved PCAP files.
+	// Defaults to 7 days. Set a negative value to disable default retention.
+	RetentionDuration time.Duration
 }
 
 // NewManagerWithConfig creates a new PCAP Manager with explicit configuration.
@@ -158,6 +165,10 @@ func NewManagerWithConfig(ringSocket, alertsDir string, index *Index, auditLog *
 	if storageMinFreePct <= 0 {
 		storageMinFreePct = 10.0 // require at least 10% free
 	}
+	retentionDuration := cfg.RetentionDuration
+	if retentionDuration == 0 {
+		retentionDuration = 7 * 24 * time.Hour
+	}
 	return &Manager{
 		ringSocket:        ringSocket,
 		alertsDir:         alertsDir,
@@ -177,6 +188,7 @@ func NewManagerWithConfig(ringSocket, alertsDir string, index *Index, auditLog *
 		storageMinFreePct: storageMinFreePct,
 		containerStates:   make(map[string]string),
 		healthReporter:    cfg.HealthReporter,
+		retentionDuration: retentionDuration,
 	}
 }
 
@@ -447,6 +459,8 @@ func (m *Manager) HandleAlert(alert AlertEvent) error {
 		manifestPath = ""
 	}
 
+	createdAtMs := time.Now().UnixMilli()
+
 	// Index the carved file
 	_, err = m.index.Insert(PcapFile{
 		FilePath:                   outputPath,
@@ -469,7 +483,8 @@ func (m *Manager) HandleAlert(alert AlertEvent) error {
 		CaptureInterface:           os.Getenv("CAPTURE_IFACE"),
 		CarveReason:                "alert",
 		RequestedBy:                "system",
-		CreatedAtMs:                time.Now().UnixMilli(),
+		CreatedAtMs:                createdAtMs,
+		RetentionExpiresAtMs:       m.retentionExpiresAt(createdAtMs),
 		Sha256Hash:                 fileHash,
 		FileSizeBytes:              fileSizeBytes,
 		ChainOfCustodyManifestPath: manifestPath,
@@ -518,14 +533,53 @@ func (m *Manager) Carve(req CarveRequest) (CarveResult, error) {
 		fileHash = ""
 	}
 
+	fileSizeBytes, err := FileSizeBytes(outputPath)
+	if err != nil {
+		log.Printf("pcap: failed to stat carved file %s: %v", outputPath, err)
+		fileSizeBytes = 0
+	}
+
 	// Generate Chain_of_Custody_Manifest (Requirement 9.3).
 	manifestPath := ManifestPathForPcap(outputPath)
 	if err := WriteCreatedManifest(manifestPath, "api", "", "", fileHash); err != nil {
 		log.Printf("pcap: failed to write custody manifest for %s: %v", outputPath, err)
+		manifestPath = ""
 	}
+
+	createdAtMs := time.Now().UnixMilli()
+	if _, err := m.index.Insert(PcapFile{
+		FilePath:                   outputPath,
+		StartTime:                  result.StartTimeMs,
+		EndTime:                    result.EndTimeMs,
+		Interface:                  os.Getenv("CAPTURE_IFACE"),
+		PacketCount:                int64(result.PacketCount),
+		ByteCount:                  fileSizeBytes,
+		AlertDriven:                false,
+		CommunityID:                req.CommunityID,
+		SensorID:                   m.sensorID,
+		CaptureInterface:           os.Getenv("CAPTURE_IFACE"),
+		CarveReason:                "api",
+		RequestedBy:                "api",
+		CreatedAtMs:                createdAtMs,
+		RetentionExpiresAtMs:       m.retentionExpiresAt(createdAtMs),
+		Sha256Hash:                 fileHash,
+		FileSizeBytes:              fileSizeBytes,
+		ChainOfCustodyManifestPath: manifestPath,
+	}); err != nil {
+		log.Printf("pcap: failed to index carved file: %v", err)
+	}
+
+	go m.pruneIfNeeded()
 
 	result.CommunityID = req.CommunityID
 	return result, nil
+}
+
+func (m *Manager) retentionExpiresAt(createdAtMs int64) int64 {
+	if m.retentionDuration <= 0 {
+		return 0
+	}
+	return createdAtMs + int64(m.retentionDuration/time.Millisecond)
 }
 
 // AccessPcap records an access event in the Chain_of_Custody_Manifest for the

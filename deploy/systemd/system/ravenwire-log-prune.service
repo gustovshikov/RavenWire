@@ -1,0 +1,6 @@
+[Unit]
+Description=Prune RavenWire host log handoff files
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/ravenwire-prune-logs

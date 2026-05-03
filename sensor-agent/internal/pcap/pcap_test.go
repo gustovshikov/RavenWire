@@ -86,6 +86,45 @@ func TestIndex_DeleteByID(t *testing.T) {
 	}
 }
 
+func TestManager_DefaultRetentionDuration(t *testing.T) {
+	dir := t.TempDir()
+	idx, err := OpenIndex(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idx.Close()
+
+	m := NewManagerWithConfig("", dir, idx, nil, ManagerConfig{})
+	createdAtMs := time.Now().UnixMilli()
+	expiresAtMs := m.retentionExpiresAt(createdAtMs)
+
+	if expiresAtMs <= createdAtMs {
+		t.Fatalf("expected default retention expiration after creation time, got created=%d expires=%d", createdAtMs, expiresAtMs)
+	}
+
+	want := createdAtMs + int64((7*24*time.Hour)/time.Millisecond)
+	if expiresAtMs != want {
+		t.Fatalf("default retention mismatch: got %d, want %d", expiresAtMs, want)
+	}
+}
+
+func TestManager_RetentionCanBeDisabled(t *testing.T) {
+	dir := t.TempDir()
+	idx, err := OpenIndex(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idx.Close()
+
+	m := NewManagerWithConfig("", dir, idx, nil, ManagerConfig{
+		RetentionDuration: -1,
+	})
+
+	if got := m.retentionExpiresAt(time.Now().UnixMilli()); got != 0 {
+		t.Fatalf("expected disabled retention expiration 0, got %d", got)
+	}
+}
+
 // ── Property tests ────────────────────────────────────────────────────────────
 
 // Property 3: Severity filter correctness
