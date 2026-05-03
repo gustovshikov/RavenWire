@@ -224,7 +224,7 @@ This plan implements local authentication, role-based access control, scoped API
 - [ ] 10. Implement initial admin seeder
   - [ ] 10.1 Implement `ConfigManager.Auth.AdminSeeder`
     - If any User exists: do nothing
-    - Read username from `RAVENWIRE_ADMIN_USER` env var (default: `admin`)
+    - Read username from `RAVENWIRE_ADMIN_USER` env var (default: `RavenWire`)
     - Read password from `RAVENWIRE_ADMIN_PASSWORD` env var
     - If env password set: validate ≥ 12 chars (refuse to start if shorter), create admin with `must_change_password = false`
     - If env password not set: generate random 24-char password, create admin with `must_change_password = true`, print `RAVENWIRE_BOOTSTRAP_ADMIN_PASSWORD=<password>` to stdout exactly once

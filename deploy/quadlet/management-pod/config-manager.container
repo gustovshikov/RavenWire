@@ -19,6 +19,8 @@ Environment=AUTO_ENROLL_FIRST=true
 Environment=SENSOR_PORT=4000
 Environment=SENSOR_GRPC_PORT=9090
 Environment=SENSOR_CERT_VALIDITY_HOURS=720
+Environment=RAVENWIRE_ADMIN_USER=RavenWire
+Environment=RAVENWIRE_ADMIN_PASSWORD=RavenWire2026!
 
 [Service]
 Restart=on-failure

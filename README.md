@@ -49,6 +49,15 @@ sensorctl logs
 sensorctl cleanup
 ```
 
+The bundled Quadlet development/test deployment seeds the first manager login when the users table is empty:
+
+```text
+Username: RavenWire
+Password: RavenWire2026!
+```
+
+Override these before production-like use by setting `RAVENWIRE_ADMIN_USER` and `RAVENWIRE_ADMIN_PASSWORD` for the Config Manager service. If no password is configured outside the bundled Quadlet path, RavenWire generates and prints a one-time bootstrap password at first startup.
+
 For a capture host with a known span interface:
 
 ```bash

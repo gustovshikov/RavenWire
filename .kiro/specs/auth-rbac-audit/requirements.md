@@ -45,7 +45,7 @@ This feature adds local authentication, role-based access control (RBAC) with si
 #### Acceptance Criteria
 
 1. WHEN the Config_Manager starts and the User table contains zero records, THE Config_Manager SHALL create an Initial_Admin User with the `platform-admin` Role.
-2. THE Config_Manager SHALL read the Initial_Admin username from the `RAVENWIRE_ADMIN_USER` environment variable, defaulting to `admin` when the variable is not set.
+2. THE Config_Manager SHALL read the Initial_Admin username from the `RAVENWIRE_ADMIN_USER` environment variable, defaulting to `RavenWire` when the variable is not set.
 3. THE Config_Manager SHALL read the Initial_Admin password from the `RAVENWIRE_ADMIN_PASSWORD` environment variable, defaulting to a generated random 24-character password when the variable is not set.
 4. WHEN the Config_Manager generates a default Initial_Admin password because `RAVENWIRE_ADMIN_PASSWORD` is not set, THE Config_Manager SHALL log the generated password exactly once to stdout at startup, clearly mark it as first-startup bootstrap output, SHALL NOT write the plaintext password to the audit log or database, and SHALL mark the account as requiring a password change on first login.
 5. IF the `RAVENWIRE_ADMIN_PASSWORD` environment variable contains fewer than 12 characters, THEN THE Config_Manager SHALL refuse to start and log an error stating the minimum password length requirement.

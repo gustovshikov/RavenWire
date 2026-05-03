@@ -18,7 +18,7 @@ defmodule ConfigManager.Auth.AdminSeeder do
 
   def seed! do
     if Repo.aggregate(ConfigManager.Auth.User, :count, :id) == 0 do
-      username = System.get_env("RAVENWIRE_ADMIN_USER", "admin")
+      username = System.get_env("RAVENWIRE_ADMIN_USER", "RavenWire")
 
       password =
         Application.get_env(:config_manager, :bootstrap_admin_password) ||
