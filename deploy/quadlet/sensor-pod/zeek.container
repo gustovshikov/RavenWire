@@ -5,7 +5,7 @@ After=sensor-agent.service capture-pipeline.target
 Requires=sensor-agent.service capture-pipeline.target
 
 [Container]
-Image=docker.io/zeek/zeek:latest
+Image=docker.io/zeek/zeek:8.1.1
 Network=host
 # Drop all capabilities first, then add only what AF_PACKET requires
 DropCapability=all

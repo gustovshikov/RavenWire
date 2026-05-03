@@ -5,7 +5,7 @@ After=sensor-agent.service capture-pipeline.target
 Requires=sensor-agent.service capture-pipeline.target
 
 [Container]
-Image=docker.io/jasonish/suricata:latest
+Image=docker.io/jasonish/suricata:8.0.1
 Network=host
 PodmanArgs=--entrypoint suricata
 # Drop all capabilities first, then add only what AF_PACKET requires

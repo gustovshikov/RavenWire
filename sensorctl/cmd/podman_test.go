@@ -141,6 +141,46 @@ func TestLogrotateRuleBoundsRavenWireHostLogs(t *testing.T) {
 	}
 }
 
+func TestContainerImagesAreVersionPinned(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files := []string{
+		filepath.Join(root, "config-manager", "Dockerfile"),
+		filepath.Join(root, "sensor-agent", "Containerfile"),
+		filepath.Join(root, "sensor-agent", "pcap-ring-writer.Containerfile"),
+	}
+
+	quadlets, err := filepath.Glob(filepath.Join(root, "deploy", "quadlet", "*", "*.container"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files = append(files, quadlets...)
+
+	for _, file := range files {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for lineNo, line := range strings.Split(string(content), "\n") {
+			ref, ok := imageReference(line)
+			if !ok {
+				continue
+			}
+
+			if strings.Contains(ref, ":latest") || strings.Contains(ref, "latest-") {
+				t.Fatalf("%s:%d uses mutable latest image tag: %s", file, lineNo+1, ref)
+			}
+			if !imageHasPinnedTag(ref) {
+				t.Fatalf("%s:%d image must be pinned to an explicit version tag: %s", file, lineNo+1, ref)
+			}
+		}
+	}
+}
+
 func TestCleanupCommandsRunStoragePruning(t *testing.T) {
 	commands := strings.Join(cleanupCommands(cleanupOptions{}), "\n")
 
@@ -164,6 +204,48 @@ func TestCleanupCommandsRunStoragePruning(t *testing.T) {
 	if !strings.Contains(withDocker, "docker system prune -f") {
 		t.Fatal("cleanup --docker must prune unused Docker artifacts")
 	}
+}
+
+func imageReference(line string) (string, bool) {
+	line = strings.TrimSpace(line)
+
+	if strings.HasPrefix(line, "FROM ") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			return "", false
+		}
+		return fields[1], true
+	}
+
+	if strings.HasPrefix(line, "Image=") {
+		return strings.TrimSpace(strings.TrimPrefix(line, "Image=")), true
+	}
+
+	return "", false
+}
+
+func imageHasPinnedTag(ref string) bool {
+	if strings.Contains(ref, "@sha256:") {
+		return true
+	}
+
+	lastSlash := strings.LastIndex(ref, "/")
+	lastColon := strings.LastIndex(ref, ":")
+	if lastColon <= lastSlash || lastColon == len(ref)-1 {
+		return false
+	}
+
+	tag := ref[lastColon+1:]
+	if strings.HasPrefix(ref, "localhost/") {
+		return tag != ""
+	}
+
+	for _, r := range tag {
+		if r >= '0' && r <= '9' {
+			return true
+		}
+	}
+	return false
 }
 
 func TestSensorCertificateReadyRejectsExpiredCert(t *testing.T) {

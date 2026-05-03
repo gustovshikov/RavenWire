@@ -45,9 +45,14 @@ defmodule ConfigManagerWeb.PcapConfigLive do
       {:ok, updated_pod} ->
         result =
           case SensorAgentClient.switch_capture_mode(updated_pod, config) do
-            {:ok, _resp} -> {:ok, "Configuration applied successfully."}
-            {:error, :no_control_api_host} -> {:warn, "Saved to DB. Pod has no control API host configured — not dispatched."}
-            {:error, reason} -> {:error, "Saved to DB, but dispatch failed: #{format_error(reason)}"}
+            {:ok, _resp} ->
+              {:ok, "Configuration applied successfully."}
+
+            {:error, :no_control_api_host} ->
+              {:warn, "Saved to DB. Pod has no control API host configured — not dispatched."}
+
+            {:error, reason} ->
+              {:error, "Saved to DB, but dispatch failed: #{format_error(reason)}"}
           end
 
         pod_results = Map.put(socket.assigns.pod_results, pod_id, result)
@@ -55,7 +60,10 @@ defmodule ConfigManagerWeb.PcapConfigLive do
 
       {:error, changeset} ->
         errors = format_changeset_errors(changeset)
-        pod_results = Map.put(socket.assigns.pod_results, pod_id, {:error, "Validation failed: #{errors}"})
+
+        pod_results =
+          Map.put(socket.assigns.pod_results, pod_id, {:error, "Validation failed: #{errors}"})
+
         {:noreply, assign(socket, pod_results: pod_results)}
     end
   end
@@ -72,12 +80,13 @@ defmodule ConfigManagerWeb.PcapConfigLive do
   # ── Helpers ──────────────────────────────────────────────────────────────────
 
   defp list_enrolled_pods do
-    Repo.all(from p in SensorPod, where: p.status == "enrolled", order_by: p.name)
+    Repo.all(from(p in SensorPod, where: p.status == "enrolled", order_by: p.name))
   end
 
   defp parse_int(nil), do: nil
   defp parse_int(""), do: nil
   defp parse_int(val) when is_integer(val), do: val
+
   defp parse_int(val) when is_binary(val) do
     case Integer.parse(val) do
       {n, _} -> n
@@ -161,7 +170,7 @@ defmodule ConfigManagerWeb.PcapConfigLive do
                 <input type="hidden" name="pod_id" value={pod.id} />
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <%# Ring size %>
+                  <%!-- Ring size --%>
                   <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">
                       Ring Buffer Size (MB)
@@ -177,7 +186,7 @@ defmodule ConfigManagerWeb.PcapConfigLive do
                     <p class="mt-1 text-xs text-gray-400">Default: 4096 MB (4 GB)</p>
                   </div>
 
-                  <%# Alert severity threshold %>
+                  <%!-- Alert severity threshold --%>
                   <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">
                       Alert Severity Threshold
@@ -197,7 +206,7 @@ defmodule ConfigManagerWeb.PcapConfigLive do
                     </p>
                   </div>
 
-                  <%# Pre-alert window %>
+                  <%!-- Pre-alert window --%>
                   <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">
                       Pre-Alert Window (seconds)
@@ -213,7 +222,7 @@ defmodule ConfigManagerWeb.PcapConfigLive do
                     <p class="mt-1 text-xs text-gray-400">Packets preserved before alert fires. Default: 60s</p>
                   </div>
 
-                  <%# Post-alert window %>
+                  <%!-- Post-alert window --%>
                   <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">
                       Post-Alert Window (seconds)

@@ -111,7 +111,7 @@ defmodule ConfigManagerWeb.RuleDeploymentLive do
   defp format_reason(reason), do: inspect(reason)
 
   defp list_enrolled_pods do
-    Repo.all(from p in SensorPod, where: p.status == "enrolled", order_by: p.name)
+    Repo.all(from(p in SensorPod, where: p.status == "enrolled", order_by: p.name))
   end
 
   defp default_target([]), do: ""
@@ -136,7 +136,7 @@ defmodule ConfigManagerWeb.RuleDeploymentLive do
       </div>
 
       <form phx-submit="deploy" class="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-5">
-        <%# Rules textarea %>
+        <%!-- Rules textarea --%>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Suricata Rules</label>
           <textarea
@@ -147,7 +147,7 @@ defmodule ConfigManagerWeb.RuleDeploymentLive do
           ><%= @form[:rules].value %></textarea>
         </div>
 
-        <%# Filename %>
+        <%!-- Filename --%>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Filename</label>
           <input
@@ -160,7 +160,7 @@ defmodule ConfigManagerWeb.RuleDeploymentLive do
           <p class="mt-1 text-xs text-gray-400">Rules will be written to /etc/suricata/rules/&lt;filename&gt;</p>
         </div>
 
-        <%# Target selector %>
+        <%!-- Target selector --%>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Deploy Target</label>
           <select
@@ -183,7 +183,7 @@ defmodule ConfigManagerWeb.RuleDeploymentLive do
           <% end %>
         </div>
 
-        <%# Submit %>
+        <%!-- Submit --%>
         <div class="flex justify-end">
           <button
             type="submit"
@@ -195,7 +195,7 @@ defmodule ConfigManagerWeb.RuleDeploymentLive do
         </div>
       </form>
 
-      <%# Results %>
+      <%!-- Results --%>
       <%= if @results != [] do %>
         <div class="mt-6 space-y-2">
           <h2 class="text-sm font-semibold text-gray-700">Deployment Results</h2>

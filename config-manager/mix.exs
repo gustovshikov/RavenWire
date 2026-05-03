@@ -5,11 +5,12 @@ defmodule ConfigManager.MixProject do
     [
       app: :config_manager,
       version: "0.1.0",
-      elixir: "~> 1.15",
+      elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
-      deps: deps()
+      deps: deps(),
+      listeners: [Phoenix.CodeReloader]
     ]
   end
 
@@ -26,8 +27,8 @@ defmodule ConfigManager.MixProject do
   defp deps do
     [
       # Phoenix
-      {:phoenix, "~> 1.7"},
-      {:phoenix_live_view, "~> 0.20"},
+      {:phoenix, "~> 1.8"},
+      {:phoenix_live_view, "~> 1.1"},
       {:phoenix_html, "~> 4.0"},
       {:phoenix_live_reload, "~> 1.4", only: :dev},
       {:phoenix_ecto, "~> 4.4"},
@@ -48,9 +49,9 @@ defmodule ConfigManager.MixProject do
       {:x509, "~> 0.8"},
 
       # Metrics
-      {:telemetry_metrics, "~> 0.6"},
+      {:telemetry_metrics, "~> 1.1"},
       {:telemetry_poller, "~> 1.0"},
-      {:prometheus_ex, "~> 3.0"},
+      {:prometheus_ex, "~> 5.1"},
 
       # JSON
       {:jason, "~> 1.4"},
@@ -66,7 +67,7 @@ defmodule ConfigManager.MixProject do
       {:bandit, "~> 1.2"},
 
       # Utilities
-      {:gettext, "~> 0.24"},
+      {:gettext, "~> 1.0"},
       {:swoosh, "~> 1.14"},
       {:floki, ">= 0.30.0", only: :test}
     ]

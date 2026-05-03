@@ -116,7 +116,7 @@ defmodule ConfigManagerWeb.EnrollmentLive do
         </div>
       <% end %>
 
-      <%# Pending enrollments section %>
+      <%!-- Pending enrollments section --%>
       <section class="mb-10">
         <div class="flex items-center gap-3 mb-3">
           <h2 class="text-lg font-semibold text-gray-800">Pending Requests</h2>
@@ -179,7 +179,7 @@ defmodule ConfigManagerWeb.EnrollmentLive do
         <% end %>
       </section>
 
-      <%# Enrolled pods section %>
+      <%!-- Enrolled pods section --%>
       <section>
         <div class="flex items-center gap-3 mb-3">
           <h2 class="text-lg font-semibold text-gray-800">Enrolled Pods</h2>

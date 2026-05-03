@@ -1,4 +1,4 @@
-FROM docker.io/library/elixir:1.16-alpine
+FROM docker.io/library/elixir:1.19.5-otp-28-alpine
 
 RUN apk add --no-cache build-base git nodejs npm inotify-tools
 
