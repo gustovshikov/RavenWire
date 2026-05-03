@@ -51,18 +51,11 @@ func (m *Manager) Enroll() error {
 		return fmt.Errorf("create cert dir: %w", err)
 	}
 
-	// Generate ECDSA P-256 keypair
-	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	privKey, pubKeyPEM, err := generateKeypair()
 	if err != nil {
-		return fmt.Errorf("generate keypair: %w", err)
+		return err
 	}
 	m.privKey = privKey
-
-	pubKeyDER, err := x509.MarshalPKIXPublicKey(&privKey.PublicKey)
-	if err != nil {
-		return fmt.Errorf("marshal public key: %w", err)
-	}
-	pubKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubKeyDER})
 
 	// POST /enroll
 	enrollReq := map[string]string{
@@ -166,6 +159,11 @@ func (m *Manager) handleCertResponse(resp *http.Response, privKey *ecdsa.Private
 func (m *Manager) LoadExisting() error {
 	certFile := m.certDir + "/sensor.crt"
 	keyFile := m.certDir + "/sensor.key"
+	caFile := m.certDir + "/ca-chain.pem"
+
+	if ok, reason := BundleReady(certFile, keyFile, caFile, time.Now()); !ok {
+		return fmt.Errorf("existing cert bundle is not ready: %s", reason)
+	}
 
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
@@ -182,10 +180,20 @@ func (m *Manager) Rotate() error {
 		return fmt.Errorf("Config_Manager URL not configured")
 	}
 
-	resp, err := http.Post(m.configManagerURL+"/api/v1/certs/rotate",
-		"application/json", bytes.NewReader([]byte(`{"pod_name":"`+m.podName+`"}`)))
+	privKey, pubKeyPEM, err := generateKeypair()
 	if err != nil {
-		return fmt.Errorf("POST /api/v1/certs/rotate: %w", err)
+		return err
+	}
+
+	rotateReq := map[string]string{
+		"pod_name":   m.podName,
+		"public_key": string(pubKeyPEM),
+	}
+	body, _ := json.Marshal(rotateReq)
+
+	resp, err := http.Post(m.configManagerURL+"/certs/rotate", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("POST /certs/rotate: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -193,12 +201,21 @@ func (m *Manager) Rotate() error {
 		return fmt.Errorf("cert rotation failed with status %d", resp.StatusCode)
 	}
 
+	return m.handleCertResponse(resp, privKey)
+}
+
+func generateKeypair() (*ecdsa.PrivateKey, []byte, error) {
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return fmt.Errorf("generate new keypair: %w", err)
+		return nil, nil, fmt.Errorf("generate keypair: %w", err)
 	}
 
-	return m.handleCertResponse(resp, privKey)
+	pubKeyDER, err := x509.MarshalPKIXPublicKey(&privKey.PublicKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal public key: %w", err)
+	}
+	pubKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubKeyDER})
+	return privKey, pubKeyPEM, nil
 }
 
 // MonitorExpiry monitors cert expiry and triggers rotation when ≤6h remain.
@@ -237,4 +254,33 @@ func (m *Manager) MonitorExpiry(done <-chan struct{}) {
 // TLSCertificate returns the current TLS certificate for use in connections.
 func (m *Manager) TLSCertificate() *tls.Certificate {
 	return m.cert
+}
+
+// BundleReady reports whether a certificate bundle is present and currently valid.
+func BundleReady(certFile, keyFile, caFile string, now time.Time) (bool, string) {
+	for _, path := range []string{certFile, keyFile, caFile} {
+		if _, err := os.Stat(path); err != nil {
+			return false, fmt.Sprintf("missing %s: %v", path, err)
+		}
+	}
+
+	certPEM, err := os.ReadFile(certFile)
+	if err != nil {
+		return false, fmt.Sprintf("read %s: %v", certFile, err)
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return false, "sensor certificate is not valid PEM"
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false, fmt.Sprintf("parse sensor certificate: %v", err)
+	}
+	if now.Before(cert.NotBefore) {
+		return false, fmt.Sprintf("sensor certificate is not valid before %s", cert.NotBefore.UTC().Format(time.RFC3339))
+	}
+	if !now.Before(cert.NotAfter) {
+		return false, fmt.Sprintf("sensor certificate expired at %s", cert.NotAfter.UTC().Format(time.RFC3339))
+	}
+	return true, ""
 }

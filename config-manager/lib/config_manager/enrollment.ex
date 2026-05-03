@@ -8,7 +8,7 @@ defmodule ConfigManager.Enrollment do
      - A pending SensorPod record is created
      - Returns {:ok, :pending}
   3. Operator approves via `approve/1`
-     - IntermediateCA issues a 24h ECDSA P-256 leaf cert
+     - IntermediateCA issues an ECDSA P-256 leaf cert
      - SensorPod status transitions to "enrolled"
      - Returns {:ok, cert_bundle}
   4. Operator denies via `deny/1`
@@ -111,7 +111,7 @@ defmodule ConfigManager.Enrollment do
   # ── Approval ─────────────────────────────────────────────────────────────────
 
   @doc """
-  Approves a pending enrollment. Issues a 24h leaf cert and transitions the
+  Approves a pending enrollment. Issues a leaf cert and transitions the
   pod to "enrolled" status.
 
   Returns `{:ok, %{cert_pem, ca_chain_pem, sensor_pod_id}}` or `{:error, reason}`.
@@ -129,6 +129,30 @@ defmodule ConfigManager.Enrollment do
          cert_pem: cert_bundle.cert_pem,
          ca_chain_pem: cert_bundle.ca_chain_pem,
          sensor_pod_id: enrolled_pod.id,
+         config_json: default_sensor_config_json()
+       }}
+    end
+  end
+
+  @doc """
+  Rotates the certificate for an enrolled pod using a fresh public key.
+
+  This is used by Sensor_Agent before its current leaf certificate expires.
+  """
+  def rotate_cert(pod_name, public_key_pem) do
+    with {:ok, fingerprint} <- compute_key_fingerprint(public_key_pem),
+         {:ok, pod} <- fetch_enrolled_pod_by_name(pod_name),
+         {:ok, cert_bundle} <- IntermediateCA.issue_leaf_cert(pod.name, public_key_pem),
+         {:ok, rotated_pod} <- update_pod_rotated(pod, public_key_pem, fingerprint, cert_bundle) do
+      Logger.info("Certificate rotated: pod=#{pod.name}, serial=#{cert_bundle.serial}")
+      Phoenix.PubSub.broadcast(ConfigManager.PubSub, "enrollments", {:enrollment_updated, pod.id})
+      Phoenix.PubSub.broadcast(ConfigManager.PubSub, "sensor_pods", {:pod_updated, pod.id})
+
+      {:ok,
+       %{
+         cert_pem: cert_bundle.cert_pem,
+         ca_chain_pem: cert_bundle.ca_chain_pem,
+         sensor_pod_id: rotated_pod.id,
          config_json: default_sensor_config_json()
        }}
     end
@@ -251,14 +275,26 @@ defmodule ConfigManager.Enrollment do
   end
 
   defp create_pending_pod(pod_name, public_key_pem, fingerprint) do
-    %SensorPod{}
-    |> SensorPod.enrollment_changeset(%{
+    attrs = %{
       name: pod_name,
       public_key_pem: public_key_pem,
       key_fingerprint: fingerprint,
       enrolled_at: DateTime.utc_now() |> DateTime.truncate(:second)
-    })
-    |> Repo.insert()
+    }
+
+    case Repo.get_by(SensorPod, name: pod_name) do
+      nil ->
+        %SensorPod{}
+        |> SensorPod.enrollment_changeset(attrs)
+        |> Repo.insert()
+
+      %SensorPod{} = pod ->
+        Logger.info("Replacing existing enrollment record for pod=#{pod_name}")
+
+        pod
+        |> SensorPod.reenrollment_changeset(attrs)
+        |> Repo.update()
+    end
   end
 
   defp fetch_pending_pod(pod_id) do
@@ -269,10 +305,32 @@ defmodule ConfigManager.Enrollment do
     end
   end
 
+  defp fetch_enrolled_pod_by_name(pod_name) do
+    case Repo.get_by(SensorPod, name: pod_name) do
+      nil -> {:error, :not_found}
+      %SensorPod{status: "enrolled"} = pod -> {:ok, pod}
+      _ -> {:error, :not_enrolled}
+    end
+  end
+
   defp update_pod_enrolled(pod, cert_bundle) do
     pod
     |> SensorPod.approval_changeset(%{
       status: "enrolled",
+      cert_serial: cert_bundle.serial,
+      cert_expires_at: cert_bundle.expires_at |> DateTime.truncate(:second),
+      cert_pem: cert_bundle.cert_pem,
+      ca_chain_pem: cert_bundle.ca_chain_pem
+    })
+    |> Repo.update()
+  end
+
+  defp update_pod_rotated(pod, public_key_pem, fingerprint, cert_bundle) do
+    pod
+    |> SensorPod.cert_rotation_changeset(%{
+      status: "enrolled",
+      public_key_pem: public_key_pem,
+      key_fingerprint: fingerprint,
       cert_serial: cert_bundle.serial,
       cert_expires_at: cert_bundle.expires_at |> DateTime.truncate(:second),
       cert_pem: cert_bundle.cert_pem,

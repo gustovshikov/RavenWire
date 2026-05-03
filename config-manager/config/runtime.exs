@@ -7,8 +7,10 @@ db_path = System.get_env("SENSOR_DB_PATH", "/data/config_manager.db")
 ca_path = System.get_env("SENSOR_CA_PATH", "/data/ca")
 port = String.to_integer(System.get_env("SENSOR_PORT", "8443"))
 grpc_port = String.to_integer(System.get_env("SENSOR_GRPC_PORT", "9090"))
+sensor_cert_validity_hours = String.to_integer(System.get_env("SENSOR_CERT_VALIDITY_HOURS", "24"))
 tls_cert = System.get_env("SENSOR_TLS_CERT")
 tls_key = System.get_env("SENSOR_TLS_KEY")
+
 secret_key_base =
   if config_env() == :prod do
     System.get_env("SECRET_KEY_BASE") ||
@@ -16,6 +18,7 @@ secret_key_base =
   else
     System.get_env("SECRET_KEY_BASE", String.duplicate("dev_only_not_secret_", 3))
   end
+
 phx_host = System.get_env("PHX_HOST", "localhost")
 
 if config_env() == :prod do
@@ -24,6 +27,9 @@ if config_env() == :prod do
     journal_mode: :wal,
     busy_timeout: 5000
 end
+
+config :config_manager,
+  sensor_cert_validity_hours: sensor_cert_validity_hours
 
 if config_env() == :prod do
   config :config_manager,

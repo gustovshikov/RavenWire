@@ -15,6 +15,7 @@ config :phoenix, :plug_init_mode, :runtime
 
 config :config_manager,
   ca_path: System.tmp_dir!() |> Path.join("config_manager_test_ca"),
-  grpc_port: 9090
+  grpc_port: 9090,
+  allow_plain_cert_rotation: true
 
 config :swoosh, :api_client, Swoosh.ApiClient.Test

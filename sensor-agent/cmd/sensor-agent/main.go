@@ -89,8 +89,9 @@ func main() {
 	keyFile := certDir + "/sensor.key"
 	caFile := certDir + "/ca-chain.pem"
 
-	if enrollmentToken != "" && configManagerURL != "" && !fileExists(certFile) {
-		log.Println("sensor-agent: fresh install detected — running bootstrap state machine")
+	certBundleReady, certBundleReason := certs.BundleReady(certFile, keyFile, caFile, time.Now())
+	if enrollmentToken != "" && configManagerURL != "" && !certBundleReady {
+		log.Printf("sensor-agent: enrollment required (%s) — running bootstrap state machine", certBundleReason)
 
 		ruleValidator := rules.NewValidator()
 		bootstrapMachine := bootstrap.NewMachine(bootstrap.Config{
@@ -159,7 +160,7 @@ func main() {
 
 	// ── Module 7: Certificate Manager ────────────────────────────────────────
 	certManager := certs.NewManager(certDir, configManagerURL, podName, enrollmentToken, auditLog)
-	certsPresent := fileExists(certFile) && fileExists(keyFile) && fileExists(caFile)
+	certsPresent, certsPresentReason := certs.BundleReady(certFile, keyFile, caFile, time.Now())
 	if enrollmentToken != "" && !certsPresent {
 		log.Println("sensor-agent: enrollment token present, initiating enrollment")
 		if err := certManager.Enroll(); err != nil {
@@ -167,7 +168,7 @@ func main() {
 		}
 	} else {
 		if err := certManager.LoadExisting(); err != nil {
-			log.Printf("sensor-agent: no existing cert found (enrollment required): %v", err)
+			log.Printf("sensor-agent: no usable existing cert found (enrollment required: %s): %v", certsPresentReason, err)
 		}
 	}
 

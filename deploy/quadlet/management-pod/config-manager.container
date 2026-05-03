@@ -18,6 +18,7 @@ Environment=SECRET_KEY_BASE=demo_secret_key_base_64chars_long_for_dev_only_not_f
 Environment=AUTO_ENROLL_FIRST=true
 Environment=SENSOR_PORT=4000
 Environment=SENSOR_GRPC_PORT=9090
+Environment=SENSOR_CERT_VALIDITY_HOURS=720
 
 [Service]
 Restart=on-failure

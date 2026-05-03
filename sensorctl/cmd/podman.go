@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bufio"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net"
 	"net/http"
@@ -353,8 +355,15 @@ func startApp() error {
 		return err
 	}
 
-	needsEnrollment := !fileExists("/etc/sensor/certs/sensor.crt")
+	certReady, certReason := sensorCertificateReady("/etc/sensor/certs", time.Now())
+	needsEnrollment := !certReady
 	if needsEnrollment {
+		if certReason != "" {
+			fmt.Printf("Sensor enrollment required: %s\n", certReason)
+		}
+		if err := runShell("", "sudo rm -f /etc/sensor/certs/sensor.crt /etc/sensor/certs/sensor.key /etc/sensor/certs/ca-chain.pem"); err != nil {
+			return err
+		}
 		token, err := generateEnrollmentToken()
 		if err != nil {
 			return err
@@ -369,7 +378,7 @@ func startApp() error {
 	}
 
 	if needsEnrollment {
-		if err := waitForFile("/etc/sensor/certs/sensor.crt", 2*time.Minute); err != nil {
+		if err := waitForSensorCertificate("/etc/sensor/certs", 2*time.Minute); err != nil {
 			return err
 		}
 		if err := runShell("", "sudo systemctl unset-environment SENSOR_ENROLLMENT_TOKEN"); err != nil {
@@ -383,6 +392,55 @@ func startApp() error {
 
 	fmt.Println("RavenWire started. Use `sensorctl status` and `sensorctl logs` to inspect it.")
 	return nil
+}
+
+func sensorCertificateReady(certDir string, now time.Time) (bool, string) {
+	certPath := filepath.Join(certDir, "sensor.crt")
+	keyPath := filepath.Join(certDir, "sensor.key")
+	caPath := filepath.Join(certDir, "ca-chain.pem")
+
+	for _, path := range []string{certPath, keyPath, caPath} {
+		if !fileExists(path) {
+			return false, fmt.Sprintf("certificate bundle is incomplete; missing %s", path)
+		}
+	}
+
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		return false, fmt.Sprintf("cannot read sensor certificate: %v", err)
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return false, "sensor certificate is not valid PEM"
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false, fmt.Sprintf("cannot parse sensor certificate: %v", err)
+	}
+	if now.Before(cert.NotBefore) {
+		return false, fmt.Sprintf("sensor certificate is not valid before %s", cert.NotBefore.UTC().Format(time.RFC3339))
+	}
+	if !now.Before(cert.NotAfter) {
+		return false, fmt.Sprintf("sensor certificate expired at %s", cert.NotAfter.UTC().Format(time.RFC3339))
+	}
+	return true, ""
+}
+
+func waitForSensorCertificate(certDir string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var lastReason string
+	for time.Now().Before(deadline) {
+		if ok, reason := sensorCertificateReady(certDir, time.Now()); ok {
+			return nil
+		} else {
+			lastReason = reason
+		}
+		time.Sleep(2 * time.Second)
+	}
+	if lastReason == "" {
+		lastReason = "certificate was not written"
+	}
+	return fmt.Errorf("wait for valid sensor certificate: %s", lastReason)
 }
 
 func stopApp() error {

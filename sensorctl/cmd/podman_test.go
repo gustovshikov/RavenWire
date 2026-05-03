@@ -1,10 +1,17 @@
 package cmd
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPrepareHostInstallsJournaldLimits(t *testing.T) {
@@ -156,5 +163,78 @@ func TestCleanupCommandsRunStoragePruning(t *testing.T) {
 	withDocker := strings.Join(cleanupCommands(cleanupOptions{docker: true}), "\n")
 	if !strings.Contains(withDocker, "docker system prune -f") {
 		t.Fatal("cleanup --docker must prune unused Docker artifacts")
+	}
+}
+
+func TestSensorCertificateReadyRejectsExpiredCert(t *testing.T) {
+	certDir := t.TempDir()
+	writeTestCertBundle(t, certDir, time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour))
+
+	ok, reason := sensorCertificateReady(certDir, time.Now())
+	if ok {
+		t.Fatal("expired certificate must require enrollment")
+	}
+	if !strings.Contains(reason, "expired") {
+		t.Fatalf("expected expired reason, got %q", reason)
+	}
+}
+
+func TestSensorCertificateReadyAcceptsCurrentBundle(t *testing.T) {
+	certDir := t.TempDir()
+	writeTestCertBundle(t, certDir, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+
+	ok, reason := sensorCertificateReady(certDir, time.Now())
+	if !ok {
+		t.Fatalf("valid certificate bundle rejected: %s", reason)
+	}
+}
+
+func TestSensorCertificateReadyRejectsPartialBundle(t *testing.T) {
+	certDir := t.TempDir()
+	writeTestCertBundle(t, certDir, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+	if err := os.Remove(filepath.Join(certDir, "ca-chain.pem")); err != nil {
+		t.Fatal(err)
+	}
+
+	ok, reason := sensorCertificateReady(certDir, time.Now())
+	if ok {
+		t.Fatal("partial certificate bundle must require enrollment")
+	}
+	if !strings.Contains(reason, "missing") {
+		t.Fatalf("expected missing-file reason, got %q", reason)
+	}
+}
+
+func writeTestCertBundle(t *testing.T, certDir string, notBefore, notAfter time.Time) {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		NotBefore:    notBefore,
+		NotAfter:     notAfter,
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files := map[string][]byte{
+		"sensor.crt":   pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}),
+		"sensor.key":   pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}),
+		"ca-chain.pem": pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}),
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(certDir, name), content, 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

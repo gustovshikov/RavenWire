@@ -1,6 +1,6 @@
 defmodule ConfigManager.CA.IntermediateCA do
   @moduledoc """
-  Manages the Intermediate CA keypair used to issue 24h ECDSA P-256 leaf
+  Manages the Intermediate CA keypair used to issue ECDSA P-256 leaf
   certificates to Sensor_Pods during enrollment.
 
   On first boot the CA keypair is generated and persisted to the configured
@@ -17,8 +17,8 @@ defmodule ConfigManager.CA.IntermediateCA do
   alias X509.Certificate
   alias X509.PrivateKey
 
-  @cert_validity_hours 24
-  @ca_cert_validity_days 3650  # 10 years for the intermediate CA itself
+  # 10 years for the intermediate CA itself
+  @ca_cert_validity_days 3650
 
   # ── Public API ──────────────────────────────────────────────────────────────
 
@@ -27,7 +27,7 @@ defmodule ConfigManager.CA.IntermediateCA do
   end
 
   @doc """
-  Issues a 24h ECDSA P-256 leaf certificate for a Sensor_Pod.
+  Issues an ECDSA P-256 leaf certificate for a Sensor_Pod.
 
   `public_key_pem` is the PEM-encoded ECDSA P-256 public key submitted by
   the Sensor_Agent during enrollment.
@@ -123,7 +123,7 @@ defmodule ConfigManager.CA.IntermediateCA do
       serial = :crypto.strong_rand_bytes(16) |> :binary.decode_unsigned()
 
       not_before = DateTime.utc_now()
-      not_after = DateTime.add(not_before, @cert_validity_hours * 3_600, :second)
+      not_after = DateTime.add(not_before, cert_validity_hours() * 3_600, :second)
 
       cert =
         X509.Certificate.new(
@@ -135,7 +135,8 @@ defmodule ConfigManager.CA.IntermediateCA do
           validity: X509.Certificate.Validity.new(not_before, not_after),
           extensions: [
             subject_alt_name: X509.Certificate.Extension.subject_alt_name([pod_name]),
-            key_usage: X509.Certificate.Extension.key_usage([:digitalSignature, :keyEncipherment]),
+            key_usage:
+              X509.Certificate.Extension.key_usage([:digitalSignature, :keyEncipherment]),
             ext_key_usage: X509.Certificate.Extension.ext_key_usage([:clientAuth])
           ]
         )
@@ -159,5 +160,9 @@ defmodule ConfigManager.CA.IntermediateCA do
     rescue
       e -> {:error, "invalid public key PEM: #{inspect(e)}"}
     end
+  end
+
+  defp cert_validity_hours do
+    Application.get_env(:config_manager, :sensor_cert_validity_hours, 24)
   end
 end
