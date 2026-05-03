@@ -19,6 +19,7 @@ message HealthReport {
   CaptureStats capture = 4;
   StorageStats storage = 5;
   ClockStats clock = 6;
+  SystemStats system = 7;
 }
 
 message ContainerHealth {
@@ -39,6 +40,13 @@ message ConsumerStats {
   double drop_percent = 3;
   double throughput_bps = 4;
   bool bpf_restart_pending = 5;  // Req 4.7: true when BPF filter change written but restart not yet completed
+  bool drop_alert = 6;
+  uint64 packets_written = 7;
+  uint64 bytes_written = 8;
+  uint64 wrap_count = 9;
+  uint64 socket_drops = 10;
+  uint64 socket_freeze_queue_drops = 11;
+  bool overwrite_risk = 12;
 }
 
 message StorageStats {
@@ -53,6 +61,25 @@ message ClockStats {
   int64 offset_ms = 1;       // clock offset in milliseconds
   bool synchronized = 2;     // true if NTP/PTP synchronized
   string source = 3;         // NTP server or PTP clock source
+}
+
+message SystemStats {
+  int64 uptime_seconds = 1;
+  double cpu_percent = 2;
+  int32 cpu_count = 3;
+  uint64 memory_total_bytes = 4;
+  uint64 memory_used_bytes = 5;
+  uint64 memory_available_bytes = 6;
+  double memory_used_percent = 7;
+  string disk_path = 8;
+  uint64 disk_total_bytes = 9;
+  uint64 disk_used_bytes = 10;
+  uint64 disk_available_bytes = 11;
+  double disk_used_percent = 12;
+  double load1 = 13;
+  double load5 = 14;
+  double load15 = 15;
+  string health = 16;
 }
 
 message HealthAck {

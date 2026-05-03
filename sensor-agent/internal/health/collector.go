@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +36,7 @@ type HealthReport struct {
 	Capture         CaptureStats      `json:"capture"`
 	Storage         StorageStats      `json:"storage"`
 	Clock           ClockStats        `json:"clock"`
+	System          SystemStats       `json:"system"`
 }
 
 // ContainerHealth holds per-container health metrics.
@@ -73,9 +75,9 @@ type ConsumerStats struct {
 	KernelIfdrops uint64 `json:"kernel_ifdrops,omitempty"`
 
 	// Zeek specific (Req 7.4)
-	UptimeSeconds    int64 `json:"uptime_seconds,omitempty"`
-	LogWriteLagMs    int64 `json:"log_write_lag_ms,omitempty"`
-	Degraded         bool  `json:"degraded,omitempty"`
+	UptimeSeconds int64 `json:"uptime_seconds,omitempty"`
+	LogWriteLagMs int64 `json:"log_write_lag_ms,omitempty"`
+	Degraded      bool  `json:"degraded,omitempty"`
 
 	// Vector specific (Req 7.5)
 	RecordsIngestedPerSec float64           `json:"records_ingested_per_sec,omitempty"`
@@ -100,6 +102,26 @@ type ClockStats struct {
 	OffsetMs     int64  `json:"offset_ms"`
 	Synchronized bool   `json:"synchronized"`
 	Source       string `json:"source"`
+}
+
+// SystemStats holds host-level health metrics for the sensor host.
+type SystemStats struct {
+	UptimeSeconds        int64   `json:"uptime_seconds"`
+	CPUPercent           float64 `json:"cpu_percent"`
+	CPUCount             int32   `json:"cpu_count"`
+	MemoryTotalBytes     uint64  `json:"memory_total_bytes"`
+	MemoryUsedBytes      uint64  `json:"memory_used_bytes"`
+	MemoryAvailableBytes uint64  `json:"memory_available_bytes"`
+	MemoryUsedPercent    float64 `json:"memory_used_percent"`
+	DiskPath             string  `json:"disk_path"`
+	DiskTotalBytes       uint64  `json:"disk_total_bytes"`
+	DiskUsedBytes        uint64  `json:"disk_used_bytes"`
+	DiskAvailableBytes   uint64  `json:"disk_available_bytes"`
+	DiskUsedPercent      float64 `json:"disk_used_percent"`
+	Load1                float64 `json:"load1"`
+	Load5                float64 `json:"load5"`
+	Load15               float64 `json:"load15"`
+	Health               string  `json:"health"`
 }
 
 // ToProto converts the internal HealthReport to the protobuf representation
@@ -153,6 +175,25 @@ func (r *HealthReport) ToProto() *healthpb.HealthReport {
 		Source:       r.Clock.Source,
 	}
 
+	pb.System = &healthpb.SystemStats{
+		UptimeSeconds:        r.System.UptimeSeconds,
+		CpuPercent:           r.System.CPUPercent,
+		CpuCount:             r.System.CPUCount,
+		MemoryTotalBytes:     r.System.MemoryTotalBytes,
+		MemoryUsedBytes:      r.System.MemoryUsedBytes,
+		MemoryAvailableBytes: r.System.MemoryAvailableBytes,
+		MemoryUsedPercent:    r.System.MemoryUsedPercent,
+		DiskPath:             r.System.DiskPath,
+		DiskTotalBytes:       r.System.DiskTotalBytes,
+		DiskUsedBytes:        r.System.DiskUsedBytes,
+		DiskAvailableBytes:   r.System.DiskAvailableBytes,
+		DiskUsedPercent:      r.System.DiskUsedPercent,
+		Load1:                r.System.Load1,
+		Load5:                r.System.Load5,
+		Load15:               r.System.Load15,
+		Health:               r.System.Health,
+	}
+
 	return pb
 }
 
@@ -162,6 +203,11 @@ type prevConsumerState struct {
 	BytesWritten uint64
 	WrapCount    uint64
 	Timestamp    time.Time
+}
+
+type cpuSample struct {
+	Idle  uint64
+	Total uint64
 }
 
 // CollectorConfig holds configuration for the health Collector.
@@ -184,13 +230,14 @@ func defaultRingStatusFunc(socketPath string) (ringctl.RingResponse, error) {
 
 // Collector scrapes health metrics from all sources and assembles HealthReports.
 type Collector struct {
-	podID      string
-	captureMgr *capture.Manager
-	captureCfg *capture.CaptureConfig
-	podmanSock string
-	pcapPath   string
-	auditLog   *audit.Logger
-	interval   time.Duration
+	podID        string
+	captureMgr   *capture.Manager
+	captureCfg   *capture.CaptureConfig
+	podmanSock   string
+	pcapPath     string
+	hostDiskPath string
+	auditLog     *audit.Logger
+	interval     time.Duration
 
 	// Per-consumer data source configuration (Req 7.x)
 	pcapRingSocket     string
@@ -202,14 +249,16 @@ type Collector struct {
 	// Previous state for delta calculations
 	prevStateMu sync.Mutex
 	prevState   map[string]prevConsumerState
+	prevCPUMu   sync.Mutex
+	prevCPU     cpuSample
 
 	// Injectable functions for testing
-	ringStatusFn   RingStatusFunc
-	timeNow        func() time.Time
-	httpGet        func(url string) (*http.Response, error)
-	readDir        func(name string) ([]os.DirEntry, error)
-	readFile       func(name string) ([]byte, error)
-	stat           func(name string) (os.FileInfo, error)
+	ringStatusFn RingStatusFunc
+	timeNow      func() time.Time
+	httpGet      func(url string) (*http.Response, error)
+	readDir      func(name string) ([]os.DirEntry, error)
+	readFile     func(name string) ([]byte, error)
+	stat         func(name string) (os.FileInfo, error)
 }
 
 // NewCollector creates a new health Collector with default settings.
@@ -219,6 +268,7 @@ func NewCollector(capMgr *capture.Manager, auditLog *audit.Logger) *Collector {
 		captureMgr:         capMgr,
 		podmanSock:         envOrDefault("PODMAN_SOCKET_PATH", "/run/podman/podman.sock"),
 		pcapPath:           envOrDefault("PCAP_ALERTS_DIR", "/sensor/pcap"),
+		hostDiskPath:       envOrDefault("HOST_DISK_PATH", envOrDefault("PCAP_ALERTS_DIR", "/sensor/pcap")),
 		auditLog:           auditLog,
 		interval:           10 * time.Second,
 		dropAlertThreshPct: 1.0,
@@ -270,6 +320,7 @@ func (c *Collector) Collect() HealthReport {
 	report.Capture = c.scrapeCaptureStats()
 	report.Storage = c.scrapeStorage()
 	report.Clock = c.scrapeClock()
+	report.System = c.scrapeSystem()
 
 	return report
 }
@@ -314,10 +365,11 @@ func (c *Collector) scrapeContainers() []ContainerHealth {
 		Timeout: 5 * time.Second,
 	}
 
-	// Try Docker API first, fall back to Podman libpod API
-	containers := c.fetchContainersDocker(client)
+	// Prefer Podman's native libpod API. The Docker-compatible endpoint does
+	// not expose wall-clock uptime and its CPU deltas can be misleading on Podman.
+	containers := c.fetchContainersPodman(client)
 	if containers == nil {
-		containers = c.fetchContainersPodman(client)
+		containers = c.fetchContainersDocker(client)
 	}
 	return containers
 }
@@ -379,17 +431,19 @@ func (c *Collector) fetchDockerStats(client *http.Client, id string) *dockerCont
 
 // podmanContainerInspect is the subset of Podman's container inspect response we need.
 type podmanContainerInspect struct {
-	Names  []string `json:"Names"`
-	State  string   `json:"State"`
-	Status string   `json:"Status"`
+	Names     []string `json:"Names"`
+	State     string   `json:"State"`
+	Status    string   `json:"Status"`
+	StartedAt int64    `json:"StartedAt"`
+	Created   string   `json:"Created"`
 }
 
 // podmanContainerStats is the subset of Podman's /stats response we need.
 type podmanContainerStats struct {
-	Name       string  `json:"Name"`
-	CPUPercent float64 `json:"CPUPercent"`
-	MemUsage   uint64  `json:"MemUsage"`
-	UpTime     uint64  `json:"UpTime"` // nanoseconds
+	Name     string  `json:"Name"`
+	CPU      float64 `json:"CPU"`
+	AvgCPU   float64 `json:"AvgCPU"`
+	MemUsage uint64  `json:"MemUsage"`
 }
 
 // fetchContainersPodman uses the Podman libpod API.
@@ -412,15 +466,43 @@ func (c *Collector) fetchContainersPodman(client *http.Client) []ContainerHealth
 		if len(ct.Names) > 0 {
 			name = ct.Names[0]
 		}
-		ch := ContainerHealth{Name: name, State: ct.State}
+		ch := ContainerHealth{
+			Name:          name,
+			State:         ct.State,
+			UptimeSeconds: containerUptimeSeconds(ct, c.timeNow()),
+		}
 		if s, ok := statsMap[name]; ok {
-			ch.CPUPercent = s.CPUPercent
+			ch.CPUPercent = s.CPU
+			if ch.CPUPercent == 0 {
+				ch.CPUPercent = s.AvgCPU
+			}
 			ch.MemoryBytes = s.MemUsage
-			ch.UptimeSeconds = int64(s.UpTime / uint64(time.Second))
 		}
 		result = append(result, ch)
 	}
 	return result
+}
+
+func containerUptimeSeconds(ct podmanContainerInspect, now time.Time) int64 {
+	if ct.State != "running" {
+		return 0
+	}
+	if ct.StartedAt > 0 {
+		uptime := now.Unix() - ct.StartedAt
+		if uptime > 0 {
+			return uptime
+		}
+		return 0
+	}
+	if ct.Created != "" {
+		if created, err := time.Parse(time.RFC3339Nano, ct.Created); err == nil {
+			uptime := now.Sub(created).Seconds()
+			if uptime > 0 {
+				return int64(uptime)
+			}
+		}
+	}
+	return 0
 }
 
 // scrapePodmanStats fetches per-container CPU/memory stats from Podman.
@@ -923,6 +1005,196 @@ func (c *Collector) scrapeStorage() StorageStats {
 		AvailableBytes: avail,
 		UsedPercent:    usedPct,
 	}
+}
+
+// scrapeSystem reads host-level CPU, memory, load, uptime, and disk usage.
+func (c *Collector) scrapeSystem() SystemStats {
+	stats := SystemStats{
+		CPUCount: int32(runtime.NumCPU()),
+		DiskPath: c.hostDiskPath,
+		Health:   "ok",
+	}
+
+	if uptime, err := c.readSystemUptime(); err == nil {
+		stats.UptimeSeconds = uptime
+	}
+	if cpu, err := c.readHostCPUPercent(); err == nil {
+		stats.CPUPercent = cpu
+	}
+	if total, available, err := c.readMemoryStats(); err == nil {
+		stats.MemoryTotalBytes = total
+		stats.MemoryAvailableBytes = available
+		if total >= available {
+			stats.MemoryUsedBytes = total - available
+		}
+		if total > 0 {
+			stats.MemoryUsedPercent = float64(stats.MemoryUsedBytes) / float64(total) * 100
+		}
+	}
+	if load1, load5, load15, err := c.readLoadAverage(); err == nil {
+		stats.Load1 = load1
+		stats.Load5 = load5
+		stats.Load15 = load15
+	}
+
+	var disk syscall.Statfs_t
+	if err := syscall.Statfs(c.hostDiskPath, &disk); err == nil {
+		total := disk.Blocks * uint64(disk.Bsize)
+		avail := disk.Bavail * uint64(disk.Bsize)
+		used := total - avail
+		stats.DiskTotalBytes = total
+		stats.DiskAvailableBytes = avail
+		stats.DiskUsedBytes = used
+		if total > 0 {
+			stats.DiskUsedPercent = float64(used) / float64(total) * 100
+		}
+	}
+
+	stats.Health = deriveSystemHealth(stats)
+	return stats
+}
+
+func (c *Collector) readSystemUptime() (int64, error) {
+	data, err := c.readFile("/proc/uptime")
+	if err != nil {
+		return 0, err
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) == 0 {
+		return 0, fmt.Errorf("empty /proc/uptime")
+	}
+	uptime, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		return 0, err
+	}
+	return int64(uptime), nil
+}
+
+func (c *Collector) readHostCPUPercent() (float64, error) {
+	sample, err := c.readCPUSample()
+	if err != nil {
+		return 0, err
+	}
+
+	c.prevCPUMu.Lock()
+	defer c.prevCPUMu.Unlock()
+
+	prev := c.prevCPU
+	c.prevCPU = sample
+	if prev.Total == 0 || sample.Total <= prev.Total || sample.Idle < prev.Idle {
+		return 0, nil
+	}
+
+	totalDelta := sample.Total - prev.Total
+	idleDelta := sample.Idle - prev.Idle
+	if totalDelta == 0 || idleDelta > totalDelta {
+		return 0, nil
+	}
+	return float64(totalDelta-idleDelta) / float64(totalDelta) * 100, nil
+}
+
+func (c *Collector) readCPUSample() (cpuSample, error) {
+	data, err := c.readFile("/proc/stat")
+	if err != nil {
+		return cpuSample{}, err
+	}
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	if !scanner.Scan() {
+		return cpuSample{}, fmt.Errorf("empty /proc/stat")
+	}
+	fields := strings.Fields(scanner.Text())
+	if len(fields) < 5 || fields[0] != "cpu" {
+		return cpuSample{}, fmt.Errorf("malformed cpu line in /proc/stat")
+	}
+
+	var values []uint64
+	for _, raw := range fields[1:] {
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			return cpuSample{}, err
+		}
+		values = append(values, v)
+	}
+
+	var total uint64
+	for _, v := range values {
+		total += v
+	}
+	idle := values[3]
+	if len(values) > 4 {
+		idle += values[4]
+	}
+	return cpuSample{Idle: idle, Total: total}, nil
+}
+
+func (c *Collector) readMemoryStats() (uint64, uint64, error) {
+	data, err := c.readFile("/proc/meminfo")
+	if err != nil {
+		return 0, 0, err
+	}
+
+	var totalKB, availableKB uint64
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 2 {
+			continue
+		}
+		value, err := strconv.ParseUint(fields[1], 10, 64)
+		if err != nil {
+			continue
+		}
+		switch strings.TrimSuffix(fields[0], ":") {
+		case "MemTotal":
+			totalKB = value
+		case "MemAvailable":
+			availableKB = value
+		}
+	}
+	if totalKB == 0 {
+		return 0, 0, fmt.Errorf("MemTotal not found in /proc/meminfo")
+	}
+	return totalKB * 1024, availableKB * 1024, nil
+}
+
+func (c *Collector) readLoadAverage() (float64, float64, float64, error) {
+	data, err := c.readFile("/proc/loadavg")
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) < 3 {
+		return 0, 0, 0, fmt.Errorf("malformed /proc/loadavg")
+	}
+	load1, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	load5, err := strconv.ParseFloat(fields[1], 64)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	load15, err := strconv.ParseFloat(fields[2], 64)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	return load1, load5, load15, nil
+}
+
+func deriveSystemHealth(stats SystemStats) string {
+	cpuCount := float64(stats.CPUCount)
+	if cpuCount < 1 {
+		cpuCount = 1
+	}
+	loadPerCPU := stats.Load1 / cpuCount
+
+	if stats.DiskUsedPercent >= 95 || stats.MemoryUsedPercent >= 95 || loadPerCPU >= 2 {
+		return "critical"
+	}
+	if stats.DiskUsedPercent >= 85 || stats.MemoryUsedPercent >= 90 || loadPerCPU >= 1 {
+		return "warning"
+	}
+	return "ok"
 }
 
 // scrapeClock reads the system clock offset via adjtimex.

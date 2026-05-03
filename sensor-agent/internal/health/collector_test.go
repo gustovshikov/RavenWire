@@ -671,3 +671,88 @@ func TestProperty12_HealthReportDropAlertFlagAccuracy(t *testing.T) {
 		})
 	})
 }
+
+func TestContainerUptimeSecondsUsesStartedAtWallClock(t *testing.T) {
+	now := time.Unix(1_700_000_300, 0)
+	ct := podmanContainerInspect{
+		State:     "running",
+		StartedAt: 1_700_000_000,
+	}
+
+	if got := containerUptimeSeconds(ct, now); got != 300 {
+		t.Fatalf("container uptime = %d, want 300", got)
+	}
+}
+
+func TestContainerUptimeSecondsFallsBackToCreatedTimestamp(t *testing.T) {
+	now := time.Date(2026, 5, 3, 16, 10, 0, 0, time.UTC)
+	ct := podmanContainerInspect{
+		State:   "running",
+		Created: "2026-05-03T16:06:30.000000000Z",
+	}
+
+	if got := containerUptimeSeconds(ct, now); got != 210 {
+		t.Fatalf("container uptime = %d, want 210", got)
+	}
+}
+
+func TestReadHostCPUPercentUsesProcStatDelta(t *testing.T) {
+	reads := 0
+	c := &Collector{
+		readFile: func(name string) ([]byte, error) {
+			if name != "/proc/stat" {
+				return nil, fmt.Errorf("unexpected path %s", name)
+			}
+			reads++
+			if reads == 1 {
+				return []byte("cpu  100 0 100 800 0 0 0 0 0 0\n"), nil
+			}
+			return []byte("cpu  150 0 150 900 0 0 0 0 0 0\n"), nil
+		},
+	}
+
+	if got, err := c.readHostCPUPercent(); err != nil || got != 0 {
+		t.Fatalf("first CPU sample = %.2f, %v; want 0, nil", got, err)
+	}
+
+	got, err := c.readHostCPUPercent()
+	if err != nil {
+		t.Fatalf("second CPU sample returned error: %v", err)
+	}
+	if got != 50 {
+		t.Fatalf("second CPU sample = %.2f, want 50.00", got)
+	}
+}
+
+func TestReadMemoryStatsUsesMemAvailable(t *testing.T) {
+	c := &Collector{
+		readFile: mockReadFile(map[string]string{
+			"/proc/meminfo": strings.Join([]string{
+				"MemTotal:        2048 kB",
+				"MemFree:          512 kB",
+				"MemAvailable:    1024 kB",
+				"",
+			}, "\n"),
+		}),
+	}
+
+	total, available, err := c.readMemoryStats()
+	if err != nil {
+		t.Fatalf("readMemoryStats returned error: %v", err)
+	}
+	if total != 2_097_152 || available != 1_048_576 {
+		t.Fatalf("memory stats = total %d available %d, want 2097152 and 1048576", total, available)
+	}
+}
+
+func TestDeriveSystemHealthThresholds(t *testing.T) {
+	if got := deriveSystemHealth(SystemStats{CPUCount: 4, DiskUsedPercent: 63, MemoryUsedPercent: 40, Load1: 1}); got != "ok" {
+		t.Fatalf("healthy system = %q, want ok", got)
+	}
+	if got := deriveSystemHealth(SystemStats{CPUCount: 4, DiskUsedPercent: 86, MemoryUsedPercent: 40, Load1: 1}); got != "warning" {
+		t.Fatalf("warning system = %q, want warning", got)
+	}
+	if got := deriveSystemHealth(SystemStats{CPUCount: 4, DiskUsedPercent: 96, MemoryUsedPercent: 40, Load1: 1}); got != "critical" {
+		t.Fatalf("critical system = %q, want critical", got)
+	}
+}

@@ -19,7 +19,10 @@ defmodule ConfigManagerWeb.DashboardLive do
     end
 
     pods = Registry.get_all() |> index_by_id()
-    degraded_pods = Registry.get_degraded_pods() |> Map.new(fn {k, v} -> {k, MapSet.to_list(v)} end)
+
+    degraded_pods =
+      Registry.get_degraded_pods() |> Map.new(fn {k, v} -> {k, MapSet.to_list(v)} end)
+
     {:ok, assign(socket, pods: pods, degraded_pods: degraded_pods)}
   end
 
@@ -101,11 +104,15 @@ defmodule ConfigManagerWeb.DashboardLive do
   def status_color("error"), do: "bg-red-100 text-red-800"
   def status_color("restarting"), do: "bg-yellow-100 text-yellow-800"
   def status_color("degraded"), do: "bg-orange-100 text-orange-800"
+  def status_color("ok"), do: "bg-green-100 text-green-800"
+  def status_color("warning"), do: "bg-yellow-100 text-yellow-800"
+  def status_color("critical"), do: "bg-red-100 text-red-800"
   def status_color(_), do: "bg-gray-100 text-gray-500"
 
   @doc "Formats uptime seconds into a human-readable string like '2d 3h 15m'."
   def format_uptime(nil), do: "—"
   def format_uptime(seconds) when seconds < 0, do: "—"
+  def format_uptime(seconds) when seconds < 60, do: "#{seconds}s"
 
   def format_uptime(seconds) do
     days = div(seconds, 86_400)
@@ -139,6 +146,15 @@ defmodule ConfigManagerWeb.DashboardLive do
   end
 
   def format_bytes(bytes), do: "#{bytes} B"
+
+  def format_percent(value, decimals \\ 1)
+
+  def format_percent(nil, decimals),
+    do: :erlang.float_to_binary(0.0, decimals: decimals) <> "%"
+
+  def format_percent(value, decimals) do
+    :erlang.float_to_binary(value || 0.0, decimals: decimals) <> "%"
+  end
 
   defp format_timestamp(nil), do: "—"
 
@@ -177,7 +193,7 @@ defmodule ConfigManagerWeb.DashboardLive do
             <% degradation_reasons = Map.get(@degraded_pods, pod.sensor_pod_id, []) %>
             <% overall = pod_status_with_degraded(pod.containers, degradation_reasons) %>
             <div class="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
-              <%# Pod header %>
+              <%!-- Pod header --%>
               <div class="flex items-center justify-between px-5 py-4 bg-gray-50 border-b border-gray-200">
                 <div class="flex items-center gap-3">
                   <span class="font-mono font-semibold text-gray-800"><%= pod.sensor_pod_id %></span>
@@ -193,7 +209,77 @@ defmodule ConfigManagerWeb.DashboardLive do
                 <span class="text-xs text-gray-500">Last seen: <%= format_timestamp(pod.timestamp_unix_ms) %></span>
               </div>
 
-              <%# Containers table %>
+              <%!-- Host system section --%>
+              <%= if pod.system do %>
+                <div class="px-5 py-4 border-b border-gray-100">
+                  <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Host System</h3>
+                    <span class={"inline-flex items-center px-2 py-0.5 rounded text-xs font-medium #{status_color(pod.system.health)}"}>
+                      <%= pod.system.health || "unknown" %>
+                    </span>
+                  </div>
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <div class="text-xs text-gray-500">Uptime</div>
+                      <div class="font-medium text-gray-800"><%= format_uptime(pod.system.uptime_seconds) %></div>
+                    </div>
+                    <div>
+                      <div class="text-xs text-gray-500">CPU</div>
+                      <div class="font-medium text-gray-800">
+                        <%= format_percent(pod.system.cpu_percent) %>
+                        <span class="text-xs text-gray-500">/ <%= pod.system.cpu_count %> cores</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div class="text-xs text-gray-500">RAM</div>
+                      <div class="font-medium text-gray-800">
+                        <%= format_percent(pod.system.memory_used_percent) %>
+                        <span class="text-xs text-gray-500">
+                          <%= format_bytes(pod.system.memory_used_bytes) %> / <%= format_bytes(pod.system.memory_total_bytes) %>
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <div class="text-xs text-gray-500">Disk <span class="font-mono"><%= pod.system.disk_path %></span></div>
+                      <div class="font-medium text-gray-800">
+                        <%= format_percent(pod.system.disk_used_percent) %>
+                        <span class="text-xs text-gray-500">
+                          <%= format_bytes(pod.system.disk_used_bytes) %> / <%= format_bytes(pod.system.disk_total_bytes) %>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mt-3 text-xs text-gray-500">
+                    Load average:
+                    <span class="font-mono text-gray-700"><%= :erlang.float_to_binary(pod.system.load1 || 0.0, decimals: 2) %></span>,
+                    <span class="font-mono text-gray-700"><%= :erlang.float_to_binary(pod.system.load5 || 0.0, decimals: 2) %></span>,
+                    <span class="font-mono text-gray-700"><%= :erlang.float_to_binary(pod.system.load15 || 0.0, decimals: 2) %></span>
+                  </div>
+                </div>
+              <% end %>
+
+              <%!-- Storage section retained for PCAP alert storage path --%>
+              <%= if pod.storage do %>
+                <div class="px-5 py-3 border-b border-gray-100">
+                  <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">PCAP Storage</h3>
+                  <div class="flex flex-wrap gap-6 text-sm">
+                    <div>
+                      <span class="text-gray-500">Path: </span>
+                      <span class="font-mono text-gray-800"><%= pod.storage.path %></span>
+                    </div>
+                    <div>
+                      <span class="text-gray-500">Used: </span>
+                      <span class="font-medium text-gray-800"><%= format_percent(pod.storage.used_percent) %></span>
+                    </div>
+                    <div>
+                      <span class="text-gray-500">Available: </span>
+                      <span class="font-medium text-gray-800"><%= format_bytes(pod.storage.available_bytes) %></span>
+                    </div>
+                  </div>
+                </div>
+              <% end %>
+
+              <%!-- Containers table --%>
               <%= if pod.containers != [] do %>
                 <div class="px-5 py-3">
                   <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Containers</h3>
@@ -217,7 +303,7 @@ defmodule ConfigManagerWeb.DashboardLive do
                             </span>
                           </td>
                           <td class="py-1.5 pr-4 text-gray-600"><%= format_uptime(container.uptime_seconds) %></td>
-                          <td class="py-1.5 pr-4 text-gray-600"><%= :erlang.float_to_binary(container.cpu_percent || 0.0, decimals: 1) %>%</td>
+                          <td class="py-1.5 pr-4 text-gray-600"><%= format_percent(container.cpu_percent) %></td>
                           <td class="py-1.5 text-gray-600"><%= format_bytes(container.memory_bytes) %></td>
                         </tr>
                       <% end %>
@@ -226,7 +312,7 @@ defmodule ConfigManagerWeb.DashboardLive do
                 </div>
               <% end %>
 
-              <%# Consumers table %>
+              <%!-- Consumers table --%>
               <%= if pod.capture && map_size(pod.capture.consumers) > 0 do %>
                 <div class="px-5 py-3 border-t border-gray-100">
                   <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Capture Consumers</h3>
@@ -265,7 +351,7 @@ defmodule ConfigManagerWeb.DashboardLive do
                 </div>
               <% end %>
 
-              <%# Clock section %>
+              <%!-- Clock section --%>
               <%= if pod.clock do %>
                 <% clock_drift_degraded = :clock_drift in degradation_reasons %>
                 <div class="px-5 py-3 border-t border-gray-100">
