@@ -11,6 +11,10 @@ defmodule ConfigManager.Health.Registry do
 
   use GenServer
 
+  require Logger
+
+  alias ConfigManager.{Repo, SensorPod}
+
   @table :health_registry
 
   # ── Public API ──────────────────────────────────────────────────────────────
@@ -68,6 +72,7 @@ defmodule ConfigManager.Health.Registry do
   @impl true
   def handle_cast({:update, pod_id, report}, state) do
     :ets.insert(@table, {pod_id, report})
+    persist_last_seen(pod_id, report)
     Phoenix.PubSub.broadcast(ConfigManager.PubSub, "sensor_pods", {:pod_updated, pod_id})
 
     state = check_clock_drift(pod_id, report, state)
@@ -77,6 +82,55 @@ defmodule ConfigManager.Health.Registry do
   end
 
   # ── Private helpers ──────────────────────────────────────────────────────────
+
+  defp persist_last_seen(pod_id, report) do
+    with %SensorPod{} = pod <- fetch_sensor_pod(pod_id),
+         {:ok, seen_at} <- report_seen_at(report),
+         true <- newer_last_seen?(pod.last_seen_at, seen_at),
+         {:ok, _pod} <-
+           pod |> SensorPod.heartbeat_changeset(%{last_seen_at: seen_at}) |> Repo.update() do
+      :ok
+    else
+      nil ->
+        Logger.debug(
+          "Health report received for unknown pod=#{pod_id}; last_seen_at not persisted"
+        )
+
+      false ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("Failed to persist last_seen_at for pod=#{pod_id}: #{inspect(reason)}")
+    end
+  end
+
+  defp fetch_sensor_pod(pod_id) do
+    case Repo.get_by(SensorPod, name: pod_id) do
+      %SensorPod{} = pod ->
+        pod
+
+      nil ->
+        case Ecto.UUID.cast(pod_id) do
+          {:ok, uuid} -> Repo.get(SensorPod, uuid)
+          :error -> nil
+        end
+    end
+  end
+
+  defp report_seen_at(%{timestamp_unix_ms: unix_ms}) when is_integer(unix_ms) and unix_ms > 0 do
+    case DateTime.from_unix(unix_ms, :millisecond) do
+      {:ok, seen_at} -> {:ok, DateTime.truncate(seen_at, :second)}
+      {:error, _reason} -> {:ok, DateTime.utc_now() |> DateTime.truncate(:second)}
+    end
+  end
+
+  defp report_seen_at(_report), do: {:ok, DateTime.utc_now() |> DateTime.truncate(:second)}
+
+  defp newer_last_seen?(nil, _seen_at), do: true
+
+  defp newer_last_seen?(last_seen_at, seen_at) do
+    DateTime.compare(seen_at, last_seen_at) == :gt
+  end
 
   defp clock_drift_threshold do
     Application.get_env(:config_manager, :clock_drift_threshold_ms, 100)

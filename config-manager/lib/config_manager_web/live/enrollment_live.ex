@@ -16,6 +16,7 @@ defmodule ConfigManagerWeb.EnrollmentLive do
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(ConfigManager.PubSub, "enrollments")
+      Phoenix.PubSub.subscribe(ConfigManager.PubSub, "sensor_pods")
     end
 
     {:ok,
@@ -64,6 +65,13 @@ defmodule ConfigManagerWeb.EnrollmentLive do
      |> assign(:pending, Enrollment.list_pending_enrollments())
      |> assign(:enrolled, Enrollment.list_enrolled_pods())}
   end
+
+  def handle_info({:pod_updated, _id}, socket) do
+    {:noreply, assign(socket, :enrolled, Enrollment.list_enrolled_pods())}
+  end
+
+  def handle_info({:pod_recovered, _pod_id, _reason}, socket), do: {:noreply, socket}
+  def handle_info({:pod_degraded, _pod_id, _reason, _detail}, socket), do: {:noreply, socket}
 
   # ── Helpers ──────────────────────────────────────────────────────────────────
 
