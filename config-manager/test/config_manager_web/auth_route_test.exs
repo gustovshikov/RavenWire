@@ -33,7 +33,7 @@ defmodule ConfigManagerWeb.AuthRouteTest do
     assert get_session(conn, :session_token)
 
     conn = get(recycle(conn), "/")
-    assert html_response(conn, 200) =~ "RavenWire Sensor Health"
+    assert html_response(conn, 200) =~ "Sensors"
   end
 
   test "insufficient role receives forbidden response", %{conn: conn} do

@@ -93,6 +93,10 @@ defmodule Health.SystemStats do
   field(:load5, 14, type: :double)
   field(:load15, 15, type: :double)
   field(:health, 16, type: :string)
+  field(:kernel_release, 17, type: :string, json_name: "kernelRelease")
+  field(:capture_interface, 18, type: :string, json_name: "captureInterface")
+  field(:nic_driver, 19, type: :string, json_name: "nicDriver")
+  field(:af_packet_available, 20, type: :bool, json_name: "afPacketAvailable")
 end
 
 defmodule Health.HealthReport do

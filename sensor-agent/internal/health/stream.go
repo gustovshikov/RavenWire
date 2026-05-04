@@ -112,9 +112,12 @@ func (s *StreamClient) stream(done <-chan struct{}) error {
 		log.Printf("health: buffer replay failed: %v", err)
 	}
 
-	// Stream live reports.
+	// Stream live reports. The collector is scoped to this stream attempt so a
+	// reconnect cannot leave behind a producer with no reader.
 	reportCh := make(chan HealthReport, 16)
-	go s.collector.Run(done, reportCh)
+	collectorDone := make(chan struct{})
+	defer close(collectorDone)
+	go s.collector.Run(collectorDone, reportCh)
 
 	for {
 		select {

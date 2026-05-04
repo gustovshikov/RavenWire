@@ -73,6 +73,10 @@ message SystemStats {
   double load5 = 14;
   double load15 = 15;
   string health = 16;
+  string kernel_release = 17;
+  string capture_interface = 18;
+  string nic_driver = 19;
+  bool af_packet_available = 20;
 }
 
 // HealthService is the bidirectional gRPC service for health streaming.

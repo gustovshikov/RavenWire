@@ -122,6 +122,10 @@ type SystemStats struct {
 	Load5                float64 `json:"load5"`
 	Load15               float64 `json:"load15"`
 	Health               string  `json:"health"`
+	KernelRelease        string  `json:"kernel_release"`
+	CaptureInterface     string  `json:"capture_interface"`
+	NICDriver            string  `json:"nic_driver"`
+	AFPacketAvailable    bool    `json:"af_packet_available"`
 }
 
 // ToProto converts the internal HealthReport to the protobuf representation
@@ -192,6 +196,10 @@ func (r *HealthReport) ToProto() *healthpb.HealthReport {
 		Load5:                r.System.Load5,
 		Load15:               r.System.Load15,
 		Health:               r.System.Health,
+		KernelRelease:        r.System.KernelRelease,
+		CaptureInterface:     r.System.CaptureInterface,
+		NicDriver:            r.System.NICDriver,
+		AfPacketAvailable:    r.System.AFPacketAvailable,
 	}
 
 	return pb
@@ -1010,9 +1018,10 @@ func (c *Collector) scrapeStorage() StorageStats {
 // scrapeSystem reads host-level CPU, memory, load, uptime, and disk usage.
 func (c *Collector) scrapeSystem() SystemStats {
 	stats := SystemStats{
-		CPUCount: int32(runtime.NumCPU()),
-		DiskPath: c.hostDiskPath,
-		Health:   "ok",
+		CPUCount:         int32(runtime.NumCPU()),
+		DiskPath:         c.hostDiskPath,
+		Health:           "ok",
+		CaptureInterface: envOrDefault("CAPTURE_IFACE", "eth0"),
 	}
 
 	if uptime, err := c.readSystemUptime(); err == nil {
@@ -1036,6 +1045,13 @@ func (c *Collector) scrapeSystem() SystemStats {
 		stats.Load5 = load5
 		stats.Load15 = load15
 	}
+	if kernel, err := c.readKernelRelease(); err == nil {
+		stats.KernelRelease = kernel
+	}
+	if stats.CaptureInterface != "" {
+		stats.NICDriver = c.readNICDriver(stats.CaptureInterface)
+	}
+	stats.AFPacketAvailable = c.afPacketAvailable()
 
 	var disk syscall.Statfs_t
 	if err := syscall.Statfs(c.hostDiskPath, &disk); err == nil {
@@ -1052,6 +1068,32 @@ func (c *Collector) scrapeSystem() SystemStats {
 
 	stats.Health = deriveSystemHealth(stats)
 	return stats
+}
+
+func (c *Collector) readKernelRelease() (string, error) {
+	data, err := c.readFile("/proc/sys/kernel/osrelease")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+func (c *Collector) readNICDriver(iface string) string {
+	driverPath := fmt.Sprintf("/sys/class/net/%s/device/driver", iface)
+	target, err := os.Readlink(driverPath)
+	if err != nil {
+		return ""
+	}
+	return filepath.Base(target)
+}
+
+func (c *Collector) afPacketAvailable() bool {
+	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, 0)
+	if err != nil {
+		return false
+	}
+	_ = unix.Close(fd)
+	return true
 }
 
 func (c *Collector) readSystemUptime() (int64, error) {
