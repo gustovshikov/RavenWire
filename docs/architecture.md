@@ -4,6 +4,8 @@ RavenWire is organized around one deployable model: Podman containers supervised
 
 The current codebase is an MVP foundation. It can install a local dual-pod stack, enroll the first sensor, collect health, expose early manager screens, and run alert-driven packet capture. The specs under `.kiro/specs/` define the next product layer: auth/RBAC, fleet views, deployment tracking, rule and forwarding management, PCAP search, alerting, historical metrics, and production operations.
 
+The Config Manager web UI follows the Orbital Plasma design system documented in [Design](design.md).
+
 ## Sensor Node
 
 ```text

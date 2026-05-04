@@ -1,0 +1,178 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --rw-void: theme("colors.orbital.void");
+    --rw-slate: theme("colors.orbital.slate");
+    --rw-highlight: theme("colors.orbital.highlight");
+    --rw-border: theme("colors.orbital.border");
+    --rw-text: theme("colors.orbital.text");
+    --rw-muted: theme("colors.orbital.muted");
+    --rw-cyan: theme("colors.orbital.cyan");
+    --rw-crimson: theme("colors.orbital.crimson");
+    --rw-green: theme("colors.orbital.green");
+    --rw-amber: theme("colors.orbital.amber");
+  }
+
+  html {
+    background: var(--rw-void);
+  }
+
+  body {
+    @apply min-h-screen font-sans antialiased;
+    background:
+      radial-gradient(circle at top left, rgba(23, 147, 209, 0.12), transparent 30rem),
+      var(--rw-void);
+    color: var(--rw-text);
+  }
+
+  main {
+    min-height: calc(100vh - 57px);
+  }
+
+  a {
+    color: var(--rw-cyan);
+  }
+
+  a:hover {
+    color: #38bdf8;
+  }
+
+  input,
+  textarea,
+  select {
+    background-color: #10141c;
+    border-color: var(--rw-border);
+    color: var(--rw-text);
+  }
+
+  input:focus,
+  textarea:focus,
+  select:focus {
+    border-color: var(--rw-cyan);
+    box-shadow: 0 0 0 3px rgba(23, 147, 209, 0.18);
+    outline: none;
+  }
+
+  th {
+    color: var(--rw-muted);
+  }
+
+  tr:hover {
+    background-color: rgba(36, 41, 51, 0.55);
+  }
+}
+
+@layer components {
+  .bg-white {
+    background-color: rgba(23, 26, 33, 0.96) !important;
+  }
+
+  .bg-gray-50,
+  .bg-gray-100,
+  .hover\:bg-gray-50:hover,
+  .hover\:bg-gray-100:hover,
+  .hover\:bg-gray-200:hover {
+    background-color: var(--rw-highlight) !important;
+  }
+
+  .bg-blue-600 {
+    background-color: var(--rw-cyan) !important;
+  }
+
+  .hover\:bg-blue-700:hover {
+    background-color: #0e7490 !important;
+  }
+
+  .bg-green-50,
+  .bg-green-100,
+  .bg-green-600 {
+    background-color: rgba(16, 185, 129, 0.14) !important;
+  }
+
+  .bg-yellow-50,
+  .bg-yellow-100,
+  .bg-orange-100 {
+    background-color: rgba(245, 158, 11, 0.15) !important;
+  }
+
+  .bg-red-50,
+  .bg-red-100,
+  .bg-red-700 {
+    background-color: rgba(244, 63, 94, 0.15) !important;
+  }
+
+  .text-white,
+  .text-gray-900,
+  .text-gray-800,
+  .text-gray-700 {
+    color: var(--rw-text) !important;
+  }
+
+  .text-gray-600,
+  .text-gray-500,
+  .text-gray-400 {
+    color: var(--rw-muted) !important;
+  }
+
+  .text-blue-600,
+  .text-blue-700 {
+    color: var(--rw-cyan) !important;
+  }
+
+  .text-green-700,
+  .text-green-800 {
+    color: var(--rw-green) !important;
+  }
+
+  .text-yellow-600,
+  .text-yellow-800,
+  .text-yellow-900,
+  .text-orange-800,
+  .text-orange-900 {
+    color: var(--rw-amber) !important;
+  }
+
+  .text-red-600,
+  .text-red-700,
+  .text-red-800,
+  .text-red-900 {
+    color: var(--rw-crimson) !important;
+  }
+
+  .border,
+  .border-b,
+  .border-t,
+  .border-gray-100,
+  .border-gray-200,
+  .border-gray-300,
+  .border-green-200,
+  .border-red-200,
+  .border-red-300 {
+    border-color: var(--rw-border) !important;
+  }
+
+  .shadow,
+  .shadow-sm {
+    box-shadow: theme("boxShadow.plasma") !important;
+  }
+
+  .flash {
+    @apply mx-auto my-4 max-w-7xl rounded border px-4 py-3 text-sm;
+    background-color: var(--rw-slate);
+    border-color: var(--rw-border);
+    color: var(--rw-text);
+  }
+
+  .flash-error {
+    border-color: rgba(244, 63, 94, 0.55);
+    color: var(--rw-crimson);
+  }
+
+  .flash-info {
+    border-color: rgba(23, 147, 209, 0.55);
+    color: var(--rw-cyan);
+  }
+}

@@ -81,6 +81,7 @@ defmodule ConfigManagerWeb.SessionController do
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>RavenWire Login</title>
+        <link rel="stylesheet" href="/assets/app.css">
       </head>
       <body class="bg-gray-50">
         <main class="mx-auto max-w-md px-6 py-16">

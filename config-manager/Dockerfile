@@ -14,6 +14,9 @@ RUN MIX_ENV=dev mix deps.get
 # Copy full source
 COPY . .
 
+# Build Tailwind assets
+RUN cd assets && npm ci && npm run build
+
 # Compile
 RUN MIX_ENV=dev mix compile
 

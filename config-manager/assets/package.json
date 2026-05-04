@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "build": "tailwindcss -i ./css/app.css -o ../priv/static/assets/app.css --minify",
+    "watch": "tailwindcss -i ./css/app.css -o ../priv/static/assets/app.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.17"
+  }
+}
