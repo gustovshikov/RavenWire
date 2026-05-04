@@ -30,6 +30,10 @@ defmodule ConfigManagerWeb.Router do
     plug(ConfigManagerWeb.Plugs.RequirePermission, "enrollment:manage")
   end
 
+  pipeline :pools_manage do
+    plug(ConfigManagerWeb.Plugs.RequirePermission, "pools:manage")
+  end
+
   pipeline :audit_view do
     plug(ConfigManagerWeb.Plugs.RequirePermission, "audit:view")
   end
@@ -73,13 +77,29 @@ defmodule ConfigManagerWeb.Router do
   end
 
   scope "/", ConfigManagerWeb do
+    pipe_through([:browser, :require_auth, :pools_manage])
+
+    live_session :pool_management,
+      on_mount: [{ConfigManagerWeb.AuthHelpers, :require_auth}] do
+      live("/pools/new", PoolLive.FormLive, :new)
+      live("/pools/:id/edit", PoolLive.FormLive, :edit)
+    end
+  end
+
+  scope "/", ConfigManagerWeb do
     pipe_through([:browser, :require_auth, :sensors_view])
 
     live_session :sensor_pages,
       on_mount: [{ConfigManagerWeb.AuthHelpers, :require_auth}] do
+      live("/pools", PoolLive.IndexLive, :index)
+      live("/pools/:id", PoolLive.ShowLive, :show)
+      live("/pools/:id/sensors", PoolLive.SensorsLive, :index)
+      live("/pools/:id/config", PoolLive.ConfigLive, :edit)
+      live("/pools/:id/deployments", PoolLive.DeploymentsLive, :index)
       live("/pcap-config", PcapConfigLive, :index)
       live("/rules", RuleDeploymentLive, :index)
       live("/support-bundle", SupportBundleLive, :index)
+      live("/sensors/:id", SensorDetailLive, :show)
     end
 
     get("/support-bundle/download/:pod_id", SupportBundleController, :download)

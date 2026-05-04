@@ -55,6 +55,16 @@ defmodule ConfigManager.Health.Registry do
     GenServer.call(__MODULE__, :get_degraded_pods)
   end
 
+  @doc "Returns current degradation reasons for a single pod."
+  def get_degradation_reasons(pod_id) do
+    get_degraded_pods()
+    |> Map.get(pod_id, MapSet.new())
+    |> MapSet.to_list()
+  end
+
+  @doc "Returns the PubSub topic used for a single pod's health updates."
+  def pod_topic(pod_id), do: "sensor_pod:#{pod_id}"
+
   # ── GenServer callbacks ──────────────────────────────────────────────────────
 
   @impl true
@@ -73,7 +83,7 @@ defmodule ConfigManager.Health.Registry do
   def handle_cast({:update, pod_id, report}, state) do
     :ets.insert(@table, {pod_id, report})
     persist_last_seen(pod_id, report)
-    Phoenix.PubSub.broadcast(ConfigManager.PubSub, "sensor_pods", {:pod_updated, pod_id})
+    broadcast(pod_id, {:pod_updated, pod_id})
 
     state = check_clock_drift(pod_id, report, state)
     state = check_bpf_restart_pending(pod_id, report, state)
@@ -82,6 +92,11 @@ defmodule ConfigManager.Health.Registry do
   end
 
   # ── Private helpers ──────────────────────────────────────────────────────────
+
+  defp broadcast(pod_id, message) do
+    Phoenix.PubSub.broadcast(ConfigManager.PubSub, "sensor_pods", message)
+    Phoenix.PubSub.broadcast(ConfigManager.PubSub, pod_topic(pod_id), message)
+  end
 
   defp persist_last_seen(pod_id, report) do
     with %SensorPod{} = pod <- fetch_sensor_pod(pod_id),
@@ -147,21 +162,13 @@ defmodule ConfigManager.Health.Registry do
 
     cond do
       abs(offset_ms) > threshold and not currently_degraded ->
-        Phoenix.PubSub.broadcast(
-          ConfigManager.PubSub,
-          "sensor_pods",
-          {:pod_degraded, pod_id, :clock_drift, offset_ms}
-        )
+        broadcast(pod_id, {:pod_degraded, pod_id, :clock_drift, offset_ms})
 
         reasons = state.degraded |> Map.get(pod_id, MapSet.new()) |> MapSet.put(:clock_drift)
         %{state | degraded: Map.put(state.degraded, pod_id, reasons)}
 
       abs(offset_ms) <= threshold and currently_degraded ->
-        Phoenix.PubSub.broadcast(
-          ConfigManager.PubSub,
-          "sensor_pods",
-          {:pod_recovered, pod_id, :clock_drift}
-        )
+        broadcast(pod_id, {:pod_recovered, pod_id, :clock_drift})
 
         reasons = state.degraded |> Map.get(pod_id, MapSet.new()) |> MapSet.delete(:clock_drift)
 
@@ -193,11 +200,7 @@ defmodule ConfigManager.Health.Registry do
 
     cond do
       any_pending and not currently_degraded ->
-        Phoenix.PubSub.broadcast(
-          ConfigManager.PubSub,
-          "sensor_pods",
-          {:pod_degraded, pod_id, :bpf_restart_pending, nil}
-        )
+        broadcast(pod_id, {:pod_degraded, pod_id, :bpf_restart_pending, nil})
 
         reasons =
           state.degraded |> Map.get(pod_id, MapSet.new()) |> MapSet.put(:bpf_restart_pending)
@@ -205,11 +208,7 @@ defmodule ConfigManager.Health.Registry do
         %{state | degraded: Map.put(state.degraded, pod_id, reasons)}
 
       not any_pending and currently_degraded ->
-        Phoenix.PubSub.broadcast(
-          ConfigManager.PubSub,
-          "sensor_pods",
-          {:pod_recovered, pod_id, :bpf_restart_pending}
-        )
+        broadcast(pod_id, {:pod_recovered, pod_id, :bpf_restart_pending})
 
         reasons =
           state.degraded

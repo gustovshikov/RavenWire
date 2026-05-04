@@ -8,7 +8,7 @@ defmodule ConfigManagerWeb.RuleDeploymentLive do
 
   use ConfigManagerWeb, :live_view
 
-  alias ConfigManager.{Repo, SensorPod, RuleDeployer}
+  alias ConfigManager.{Pools, Repo, RuleDeployer, SensorPod}
   import Ecto.Query, only: [from: 2]
 
   # ── Mount ────────────────────────────────────────────────────────────────────
@@ -26,6 +26,7 @@ defmodule ConfigManagerWeb.RuleDeploymentLive do
     {:ok,
      assign(socket,
        pods: pods,
+       pool_names: Pools.pool_name_map(),
        results: [],
        deploying: false,
        form: to_form(form_params)
@@ -174,7 +175,7 @@ defmodule ConfigManagerWeb.RuleDeploymentLive do
             <% end %>
             <%= for pool_id <- pool_ids(@pods) do %>
               <option value={"pool:#{pool_id}"} selected={@form[:target].value == "pool:#{pool_id}"}>
-                All pods in pool <%= pool_id %>
+                All pods in pool <%= Map.get(@pool_names, pool_id, pool_id) %>
               </option>
             <% end %>
           </select>

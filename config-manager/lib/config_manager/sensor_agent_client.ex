@@ -13,6 +13,22 @@ defmodule ConfigManager.SensorAgentClient do
   @control_port 9091
   @timeout_ms 10_000
 
+  @doc "Validates the active Sensor Agent configuration."
+  @spec validate_config(map()) :: {:ok, map()} | {:error, term()}
+  def validate_config(pod), do: post_control(pod, "/control/config/validate", "validate_config")
+
+  @doc "Reloads Zeek through the Sensor Agent control API."
+  @spec reload_zeek(map()) :: {:ok, map()} | {:error, term()}
+  def reload_zeek(pod), do: post_control(pod, "/control/reload/zeek", "reload_zeek")
+
+  @doc "Reloads Suricata through the Sensor Agent control API."
+  @spec reload_suricata(map()) :: {:ok, map()} | {:error, term()}
+  def reload_suricata(pod), do: post_control(pod, "/control/reload/suricata", "reload_suricata")
+
+  @doc "Restarts Vector through the Sensor Agent control API."
+  @spec restart_vector(map()) :: {:ok, map()} | {:error, term()}
+  def restart_vector(pod), do: post_control(pod, "/control/restart/vector", "restart_vector")
+
   @doc """
   POSTs a `switch-capture-mode` command to the Sensor_Agent on the given pod.
 
@@ -43,17 +59,26 @@ defmodule ConfigManager.SensorAgentClient do
 
     request = Finch.build(:post, url, headers, body)
 
-    case Finch.request(request, ConfigManager.Finch, receive_timeout: @timeout_ms, connect_options: mtls_opts()) do
+    case Finch.request(request, ConfigManager.Finch,
+           receive_timeout: @timeout_ms,
+           connect_options: mtls_opts()
+         ) do
       {:ok, %Finch.Response{status: status, body: resp_body}} when status in 200..299 ->
         Logger.info("switch_capture_mode succeeded for pod #{pod.name} (HTTP #{status})")
         {:ok, decode_body(resp_body)}
 
       {:ok, %Finch.Response{status: status, body: resp_body}} ->
-        Logger.warning("switch_capture_mode failed for pod #{pod.name}: HTTP #{status} — #{resp_body}")
+        Logger.warning(
+          "switch_capture_mode failed for pod #{pod.name}: HTTP #{status} — #{resp_body}"
+        )
+
         {:error, {:http_error, status, resp_body}}
 
       {:error, reason} ->
-        Logger.warning("switch_capture_mode request error for pod #{pod.name}: #{inspect(reason)}")
+        Logger.warning(
+          "switch_capture_mode request error for pod #{pod.name}: #{inspect(reason)}"
+        )
+
         {:error, reason}
     end
   end
@@ -99,7 +124,10 @@ defmodule ConfigManager.SensorAgentClient do
     headers = [{"content-type", "application/json"}]
     request = Finch.build(:post, url, headers, body)
 
-    case Finch.request(request, ConfigManager.Finch, receive_timeout: @timeout_ms, connect_options: mtls_opts()) do
+    case Finch.request(request, ConfigManager.Finch,
+           receive_timeout: @timeout_ms,
+           connect_options: mtls_opts()
+         ) do
       {:ok, %Finch.Response{status: status, body: resp_body}} when status in 200..299 ->
         Logger.info("push_rule_bundle succeeded for pod #{pod.name} (HTTP #{status})")
         {:ok, decode_body(resp_body)}
@@ -109,7 +137,10 @@ defmodule ConfigManager.SensorAgentClient do
         {:error, {:validation_error, decode_body(resp_body)}}
 
       {:ok, %Finch.Response{status: status, body: resp_body}} ->
-        Logger.warning("push_rule_bundle failed for pod #{pod.name}: HTTP #{status} — #{resp_body}")
+        Logger.warning(
+          "push_rule_bundle failed for pod #{pod.name}: HTTP #{status} — #{resp_body}"
+        )
+
         {:error, {:http_error, status, resp_body}}
 
       {:error, reason} ->
@@ -134,17 +165,26 @@ defmodule ConfigManager.SensorAgentClient do
     headers = [{"content-type", "application/json"}]
     request = Finch.build(:post, url, headers, "{}")
 
-    case Finch.request(request, ConfigManager.Finch, receive_timeout: @timeout_ms, connect_options: mtls_opts()) do
+    case Finch.request(request, ConfigManager.Finch,
+           receive_timeout: @timeout_ms,
+           connect_options: mtls_opts()
+         ) do
       {:ok, %Finch.Response{status: status, body: resp_body}} when status in 200..299 ->
         Logger.info("request_support_bundle succeeded for pod #{pod.name} (HTTP #{status})")
         {:ok, decode_body(resp_body)}
 
       {:ok, %Finch.Response{status: status, body: resp_body}} ->
-        Logger.warning("request_support_bundle failed for pod #{pod.name}: HTTP #{status} — #{resp_body}")
+        Logger.warning(
+          "request_support_bundle failed for pod #{pod.name}: HTTP #{status} — #{resp_body}"
+        )
+
         {:error, {:http_error, status, resp_body}}
 
       {:error, reason} ->
-        Logger.warning("request_support_bundle request error for pod #{pod.name}: #{inspect(reason)}")
+        Logger.warning(
+          "request_support_bundle request error for pod #{pod.name}: #{inspect(reason)}"
+        )
+
         {:error, reason}
     end
   end
@@ -166,25 +206,66 @@ defmodule ConfigManager.SensorAgentClient do
 
   def download_support_bundle(pod, path) do
     encoded_path = URI.encode_www_form(path)
-    url = "https://#{pod.control_api_host}:#{@control_port}/control/support-bundle/download?path=#{encoded_path}"
+
+    url =
+      "https://#{pod.control_api_host}:#{@control_port}/control/support-bundle/download?path=#{encoded_path}"
+
     request = Finch.build(:get, url, [], nil)
 
-    case Finch.request(request, ConfigManager.Finch, receive_timeout: @bundle_timeout_ms, connect_options: mtls_opts()) do
+    case Finch.request(request, ConfigManager.Finch,
+           receive_timeout: @bundle_timeout_ms,
+           connect_options: mtls_opts()
+         ) do
       {:ok, %Finch.Response{status: status, body: body}} when status in 200..299 ->
-        Logger.info("download_support_bundle succeeded for pod #{pod.name} (#{byte_size(body)} bytes)")
+        Logger.info(
+          "download_support_bundle succeeded for pod #{pod.name} (#{byte_size(body)} bytes)"
+        )
+
         {:ok, body}
 
       {:ok, %Finch.Response{status: status, body: resp_body}} ->
-        Logger.warning("download_support_bundle failed for pod #{pod.name}: HTTP #{status} — #{resp_body}")
+        Logger.warning(
+          "download_support_bundle failed for pod #{pod.name}: HTTP #{status} — #{resp_body}"
+        )
+
         {:error, {:http_error, status, resp_body}}
 
       {:error, reason} ->
-        Logger.warning("download_support_bundle request error for pod #{pod.name}: #{inspect(reason)}")
+        Logger.warning(
+          "download_support_bundle request error for pod #{pod.name}: #{inspect(reason)}"
+        )
+
         {:error, reason}
     end
   end
 
   # ── Private ──────────────────────────────────────────────────────────────────
+
+  defp post_control(%{control_api_host: nil}, _path, _action), do: {:error, :no_control_api_host}
+  defp post_control(%{control_api_host: ""}, _path, _action), do: {:error, :no_control_api_host}
+
+  defp post_control(pod, path, action) do
+    url = "https://#{pod.control_api_host}:#{@control_port}#{path}"
+    headers = [{"content-type", "application/json"}]
+    request = Finch.build(:post, url, headers, "{}")
+
+    case Finch.request(request, ConfigManager.Finch,
+           receive_timeout: @timeout_ms,
+           connect_options: mtls_opts()
+         ) do
+      {:ok, %Finch.Response{status: status, body: resp_body}} when status in 200..299 ->
+        Logger.info("#{action} succeeded for pod #{pod.name} (HTTP #{status})")
+        {:ok, decode_body(resp_body)}
+
+      {:ok, %Finch.Response{status: status, body: resp_body}} ->
+        Logger.warning("#{action} failed for pod #{pod.name}: HTTP #{status} — #{resp_body}")
+        {:error, {:http_error, status, resp_body}}
+
+      {:error, reason} ->
+        Logger.warning("#{action} request error for pod #{pod.name}: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
 
   defp mtls_opts do
     cert_path = Application.get_env(:config_manager, :mtls_cert_path)
@@ -212,6 +293,7 @@ defmodule ConfigManager.SensorAgentClient do
   defp maybe_add_key(opts, path), do: Keyword.put(opts, :keyfile, path)
 
   defp decode_body(""), do: %{}
+
   defp decode_body(body) do
     case Jason.decode(body) do
       {:ok, decoded} -> decoded

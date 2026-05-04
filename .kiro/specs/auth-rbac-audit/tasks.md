@@ -7,7 +7,7 @@ This plan implements local authentication, role-based access control, scoped API
 ## Tasks
 
 - [ ] 1. Add dependency and set up project structure
-  - [ ] 1.1 Add `argon2_elixir` dependency and configure test environment
+  - [x] 1.1 Add `argon2_elixir` dependency and configure test environment
     - Add `{:argon2_elixir, "~> 4.1"}` to `mix.exs` deps
     - Configure Argon2id defaults in `config/config.exs`
     - Add low-cost Argon2id parameters to `config/test.exs` for fast test hashing
@@ -22,24 +22,25 @@ This plan implements local authentication, role-based access control, scoped API
     - Create `lib/config_manager_web/live/audit_live/` directory
     - Create `lib/config_manager_web/controllers/api/` directory
     - _Requirements: 13.1, 13.2_
+    - Status: partially complete for the MVP auth modules and plugs; planned LiveView admin/auth/API directories still need to be added when those pages/controllers are implemented.
 
 - [ ] 2. Create database migrations and Ecto schemas
-  - [ ] 2.1 Create migration for `users` table
+  - [x] 2.1 Create migration for `users` table
     - Create migration with fields: id (binary_id), username (unique), password_hash, display_name, role (default "viewer"), active (default true), must_change_password (default false), timestamps
     - Add unique index on username and index on role
     - _Requirements: 1.1, 1.2, 13.1_
 
-  - [ ] 2.2 Create migration for `sessions` table
+  - [x] 2.2 Create migration for `sessions` table
     - Create migration with fields: id (binary_id), user_id (references users, on_delete cascade), token_hash, last_active_at, expires_at, inserted_at
     - Add indexes on user_id, token_hash, and expires_at
     - _Requirements: 3.2, 11.3_
 
-  - [ ] 2.3 Create migration for `api_tokens` table
+  - [x] 2.3 Create migration for `api_tokens` table
     - Create migration with fields: id (binary_id), name, token_hash (unique), user_id (references users, on_delete cascade), permissions (text/JSON array), expires_at (nullable), revoked_at (nullable), timestamps
     - Add unique index on token_hash and index on user_id
     - _Requirements: 6.2, 6.3_
 
-  - [ ] 2.4 Create compatibility migration for existing `audit_log` table
+  - [x] 2.4 Create compatibility migration for existing `audit_log` table
     - Verify existing audit_log table schema and add any missing columns (actor_type, target_type, target_id) or indexes
     - Ensure `detail` column stores JSON text and `timestamp` supports microsecond precision
     - _Requirements: 7.2, 7.3_
@@ -50,6 +51,7 @@ This plan implements local authentication, role-based access control, scoped API
     - Create `ConfigManager.Auth.ApiToken` schema with belongs_to user, permissions as `{:array, :string}`
     - Create `ConfigManager.Auth.AuditEntry` schema mapping to `audit_log` table with JSON detail field
     - _Requirements: 1.1, 7.2, 6.3, 11.3_
+    - Status: MVP schemas exist for User, Session, ApiToken, and AuditEntry; this remains open because ApiToken permissions are currently stored as JSON text/string and AuditEntry is `ConfigManager.AuditEntry`, not `ConfigManager.Auth.AuditEntry`.
 
   - [ ]* 2.6 Write migration and schema verification tests
     - Assert all tables, columns, indexes, and constraints exist after migration
@@ -57,7 +59,7 @@ This plan implements local authentication, role-based access control, scoped API
     - _Requirements: 12.1_
 
 - [ ] 3. Implement Policy module and password utilities
-  - [ ] 3.1 Implement `ConfigManager.Auth.Policy` module
+  - [x] 3.1 Implement `ConfigManager.Auth.Policy` module
     - Define `@roles_permissions` map with all six roles and their exact permission sets as specified in design
     - Define `@canonical_permissions` containing every permission identifier introduced by downstream specs
     - Implement `has_permission?/2`, `permissions_for/1`, `canonical_permissions/0`, `roles/0`, `role_display_name/1`, `permission_display_name/1`
@@ -74,7 +76,7 @@ This plan implements local authentication, role-based access control, scoped API
     - Verify every API token scope option is present in `canonical_permissions/0`
     - **Validates: Requirements 4.1, 4.2, 13.1**
 
-  - [ ] 3.3 Implement `ConfigManager.Auth.Password` module
+  - [x] 3.3 Implement `ConfigManager.Auth.Password` module
     - Implement `hash_password/1` using Argon2id
     - Implement `verify_password/2` for constant-time comparison
     - Implement `validate_password/2` enforcing: minimum 12 characters, not matching username
@@ -94,7 +96,7 @@ This plan implements local authentication, role-based access control, scoped API
     - Verify plaintext does not appear in the hash string
     - **Validates: Requirements 1.3**
 
-- [ ] 4. Checkpoint - Ensure all tests pass
+- [x] 4. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 5. Implement Auth context and session management
@@ -106,6 +108,7 @@ This plan implements local authentication, role-based access control, scoped API
     - Implement `change_password/4` (requires current password verification) and `admin_reset_password/3`
     - All mutating operations record audit entries via `Audit.append_multi/2`
     - _Requirements: 1.1–1.9, 7.1_
+    - Status: basic create/update/list/get/authenticate helpers are implemented; disable/enable/delete/password-change/token invalidation and transactional audit writes remain.
 
   - [ ]* 5.2 Write property test for user deactivation (Property 2)
     - **Property 2: User deactivation invalidates all credentials**
@@ -121,6 +124,7 @@ This plan implements local authentication, role-based access control, scoped API
     - Implement `prune_expired_sessions/0` for periodic and opportunistic cleanup
     - Session token is regenerated on successful authentication (prevent fixation)
     - _Requirements: 3.1–3.9, 11.1–11.4_
+    - Status: server-side session create/validate/destroy/invalidate/prune is implemented; rate-limit-aware `authenticate/3`, IP handling, and full periodic cleanup wiring remain.
 
   - [ ]* 5.4 Write property test for authentication error indistinguishability (Property 3)
     - **Property 3: Authentication error messages are indistinguishable**
@@ -154,6 +158,7 @@ This plan implements local authentication, role-based access control, scoped API
     - Implement `export_entries/2` supporting CSV and JSON formats with 100K record limit
     - Ensure entries are always returned in reverse chronological order
     - _Requirements: 7.1–7.5, 8.1–8.5, 9.1–9.5_
+    - Status: append-only `log/1` and reverse-chronological paged `list_entries/1` exist; `append_multi/2`, filters, count metadata, CSV/JSON export, and export limits remain.
 
   - [ ]* 7.2 Write property test for audit entry structure (Property 11)
     - **Property 11: Audit entries are structurally complete**
@@ -177,7 +182,7 @@ This plan implements local authentication, role-based access control, scoped API
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 9. Implement authentication plugs and LiveView hooks
-  - [ ] 9.1 Implement `ConfigManagerWeb.Plugs.RequireAuth` plug
+  - [x] 9.1 Implement `ConfigManagerWeb.Plugs.RequireAuth` plug
     - Read session_id from conn session, validate via `Auth.validate_session/1`
     - If valid: assign `:current_user` to conn
     - If invalid/expired: redirect to `/login` with appropriate flash message
@@ -190,7 +195,7 @@ This plan implements local authentication, role-based access control, scoped API
     - Verify no protected page content leaks in response
     - **Validates: Requirements 3.7**
 
-  - [ ] 9.3 Implement `ConfigManagerWeb.Plugs.RequirePermission` plug
+  - [x] 9.3 Implement `ConfigManagerWeb.Plugs.RequirePermission` plug
     - Read required permission from plug init arg or `conn.private.required_permission`
     - Get current_user or current_token from conn.assigns
     - Check `Policy.has_permission?/2`
@@ -215,14 +220,14 @@ This plan implements local authentication, role-based access control, scoped API
     - After password change, `must_change_password` is false and routes are accessible
     - **Validates: Requirements 10.3**
 
-  - [ ] 9.7 Implement `ConfigManagerWeb.AuthHelpers` for LiveView
+  - [x] 9.7 Implement `ConfigManagerWeb.AuthHelpers` for LiveView
     - Implement `on_mount(:require_auth, ...)` — load user from session, assign to socket or redirect
     - Implement `on_mount({:require_permission, permission}, ...)` — check permission or redirect to 403
     - Implement `authorize/2` helper for `handle_event` callbacks — returns `:ok` or `{:error, :forbidden}`
     - _Requirements: 5.4, 5.1_
 
 - [ ] 10. Implement initial admin seeder
-  - [ ] 10.1 Implement `ConfigManager.Auth.AdminSeeder`
+  - [x] 10.1 Implement `ConfigManager.Auth.AdminSeeder`
     - If any User exists: do nothing
     - Read username from `RAVENWIRE_ADMIN_USER` env var (default: `RavenWire`)
     - Read password from `RAVENWIRE_ADMIN_PASSWORD` env var
@@ -249,8 +254,9 @@ This plan implements local authentication, role-based access control, scoped API
     - Add Public API scope under `/api/v1` with `api_token_auth` and `require_permission` plugs for all API routes with correct permission metadata
     - Preserve existing mTLS routes unchanged
     - _Requirements: 5.2, 5.5, 5.6, 6.10, 6.11, 3.7_
+    - Status: current browser routes are split into unauthenticated/authenticated scopes with permission plugs, and mTLS routes are preserved. Admin scopes, audit export, password-change route, and token-authenticated public API scopes remain.
 
-  - [ ] 11.2 Implement `ConfigManagerWeb.SessionController`
+  - [x] 11.2 Implement `ConfigManagerWeb.SessionController`
     - `create` action: authenticate credentials, create session, set secure cookie (Secure, HttpOnly, SameSite=Strict), redirect to dashboard
     - `delete` action: destroy session, clear cookie, redirect to `/login`
     - Record audit entries for login success, login failure, and logout
@@ -307,6 +313,7 @@ This plan implements local authentication, role-based access control, scoped API
     - Display session expired message when redirected from expired session
     - Do not reveal whether username or password was incorrect
     - _Requirements: 3.1, 3.2, 3.3, 3.5, 3.8_
+    - Status: implemented as `SessionController` HTML, not LiveView.
 
   - [ ] 14.2 Implement `PasswordChangeLive` at `/password/change`
     - For self-service: require current password before accepting new password
@@ -347,6 +354,7 @@ This plan implements local authentication, role-based access control, scoped API
     - Expandable detail panel showing full JSON on row click
     - Accessible to all authenticated users
     - _Requirements: 8.1–8.5, 5.5_
+    - Status: basic `/audit` LiveView exists with reverse-chronological entries and human-readable user labels; filters, visible pagination controls, and expandable detail remain.
 
   - [ ] 16.2 Implement `AuditLive.AuditExportLive` at `/audit/export`
     - Same filter controls as audit log view
@@ -416,6 +424,7 @@ This plan implements local authentication, role-based access control, scoped API
     - Test every protected browser route returns 403 for users without required permission
     - Test all API routes return 401 without token and 403 without required scope
     - _Requirements: 12.2, 12.3_
+    - Status: basic browser auth redirect, allowed login, forbidden role, and audit display tests exist; full route/API matrix coverage remains.
 
   - [ ]* 21.2 Write audit coverage integration tests
     - Test each audited action category produces correct audit entry for both success and failure paths
