@@ -3,8 +3,11 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
 
   use ConfigManagerWeb, :live_view
 
+  import ConfigManagerWeb.DeploymentLive.Helpers,
+    only: [drift_summary_label: 1, drift_summary_status: 1, status_class: 1, status_label: 1]
+
   import ConfigManagerWeb.PoolLive.Helpers
-  alias ConfigManager.Pools
+  alias ConfigManager.{Deployments, Pools}
   alias ConfigManagerWeb.Formatters
 
   @impl true
@@ -15,7 +18,7 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
 
       pool ->
         if connected?(socket),
-          do: Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pool:#{pool.id}")
+          do: subscribe(pool.id)
 
         {:ok,
          assign(socket,
@@ -23,6 +26,9 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
            page_title: pool.name,
            pool: pool,
            member_count: Pools.member_count(pool.id),
+           drift_summary: Deployments.drift_summary(pool),
+           last_deployment: Deployments.last_deployment(pool.id),
+           active_deployment?: Deployments.has_active_deployment?(pool.id),
            confirm_delete: false
          )}
     end
@@ -56,9 +62,46 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
     end
   end
 
+  def handle_event("deploy_now", _params, socket) do
+    cond do
+      not can_manage_deployments?(socket.assigns.current_user) ->
+        {:noreply, put_flash(socket, :error, "Insufficient permissions.")}
+
+      socket.assigns.active_deployment? ->
+        {:noreply,
+         put_flash(socket, :error, "An active deployment already exists for this pool.")}
+
+      true ->
+        case Deployments.create_deployment(socket.assigns.pool, socket.assigns.current_user) do
+          {:ok, deployment} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Deployment started.")
+             |> push_navigate(to: "/deployments/#{deployment.id}")}
+
+          {:error, reason} ->
+            {:noreply,
+             put_flash(socket, :error, "Deployment failed: #{format_deploy_error(reason)}")}
+        end
+    end
+  end
+
   defp refresh(socket) do
     pool = Pools.get_pool!(socket.assigns.pool.id)
-    assign(socket, pool: pool, member_count: Pools.member_count(pool.id))
+
+    assign(socket,
+      pool: pool,
+      member_count: Pools.member_count(pool.id),
+      drift_summary: Deployments.drift_summary(pool),
+      last_deployment: Deployments.last_deployment(pool.id),
+      active_deployment?: Deployments.has_active_deployment?(pool.id)
+    )
+  end
+
+  defp subscribe(pool_id) do
+    Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pool:#{pool_id}")
+    Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pool:#{pool_id}:deployments")
+    Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pool:#{pool_id}:drift")
   end
 
   @impl true
@@ -86,6 +129,9 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
             <button type="button" phx-click="delete" class="rounded border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Delete Pool</button>
           </div>
         <% end %>
+        <%= if can_manage_deployments?(@current_user) do %>
+          <button type="button" phx-click="deploy_now" disabled={@active_deployment?} class="w-fit rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-300 hover:bg-blue-700">Deploy Now</button>
+        <% end %>
       </div>
 
       <.pool_nav pool={@pool} />
@@ -96,6 +142,26 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
           <.field label="Capture Mode" value={format_capture_mode(@pool.capture_mode)} />
           <.field label="Members" value={@member_count} />
           <.field label="Config Version" value={@pool.config_version} />
+          <div>
+            <dt class="text-xs font-medium uppercase text-gray-500">Drift</dt>
+            <dd class="mt-1">
+              <a href={"/pools/#{@pool.id}/drift"} class={"inline-flex rounded px-2 py-0.5 text-xs font-medium #{status_class(drift_summary_status(@drift_summary))}"}>
+                <%= drift_summary_label(@drift_summary) %>
+              </a>
+            </dd>
+          </div>
+          <div>
+            <dt class="text-xs font-medium uppercase text-gray-500">Last Deployment</dt>
+            <dd class="mt-1 break-words text-gray-900">
+              <%= if @last_deployment do %>
+                <a href={"/deployments/#{@last_deployment.id}"} class="text-blue-700 hover:underline">
+                  <%= status_label(@last_deployment.status) %>
+                </a>
+              <% else %>
+                <%= Formatters.display(nil) %>
+              <% end %>
+            </dd>
+          </div>
           <.field label="Config Updated At" value={Formatters.format_utc(@pool.config_updated_at)} />
           <.field label="Config Updated By" value={@pool.config_updated_by} />
           <.field label="Created At" value={Formatters.format_utc(@pool.inserted_at)} />
@@ -116,4 +182,8 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
     </main>
     """
   end
+
+  defp format_deploy_error(:active_deployment_exists), do: "active deployment exists"
+  defp format_deploy_error(:no_deployable_sensors), do: "no deployable sensors"
+  defp format_deploy_error(reason), do: inspect(reason)
 end

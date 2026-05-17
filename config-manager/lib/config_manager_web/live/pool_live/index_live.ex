@@ -3,20 +3,23 @@ defmodule ConfigManagerWeb.PoolLive.IndexLive do
 
   use ConfigManagerWeb, :live_view
 
+  import ConfigManagerWeb.DeploymentLive.Helpers,
+    only: [drift_summary_label: 1, drift_summary_status: 1, status_class: 1]
+
   import ConfigManagerWeb.PoolLive.Helpers
-  alias ConfigManager.Pools
+  alias ConfigManager.{Deployments, Pools}
   alias ConfigManagerWeb.Formatters
 
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket), do: Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pools")
 
-    {:ok, assign(socket, page_title: "Sensor Pools", pools: Pools.list_pools())}
+    {:ok, assign(socket, page_title: "Sensor Pools", pools: list_pools())}
   end
 
   @impl true
   def handle_info(_message, socket) do
-    {:noreply, assign(socket, pools: Pools.list_pools())}
+    {:noreply, assign(socket, pools: list_pools())}
   end
 
   @impl true
@@ -47,12 +50,13 @@ defmodule ConfigManagerWeb.PoolLive.IndexLive do
                 <th class="px-4 py-3 font-medium">Capture Mode</th>
                 <th class="px-4 py-3 font-medium">Members</th>
                 <th class="px-4 py-3 font-medium">Config Version</th>
+                <th class="px-4 py-3 font-medium">Drift</th>
                 <th class="px-4 py-3 font-medium">Last Updated</th>
                 <th class="px-4 py-3 font-medium">Updated By</th>
               </tr>
             </thead>
             <tbody>
-              <%= for %{pool: pool, member_count: member_count} <- @pools do %>
+              <%= for %{pool: pool, member_count: member_count, drift_summary: drift_summary} <- @pools do %>
                 <tr class="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                   <th class="px-4 py-3 font-medium">
                     <a href={"/pools/#{pool.id}"} class="text-blue-700 hover:underline"><%= pool.name %></a>
@@ -60,6 +64,11 @@ defmodule ConfigManagerWeb.PoolLive.IndexLive do
                   <td class="px-4 py-3"><%= format_capture_mode(pool.capture_mode) %></td>
                   <td class="px-4 py-3"><%= member_count %></td>
                   <td class="px-4 py-3"><%= pool.config_version %></td>
+                  <td class="px-4 py-3">
+                    <a href={"/pools/#{pool.id}/drift"} class={"inline-flex rounded px-2 py-0.5 text-xs font-medium #{status_class(drift_summary_status(drift_summary))}"}>
+                      <%= drift_summary_label(drift_summary) %>
+                    </a>
+                  </td>
                   <td class="px-4 py-3"><%= Formatters.format_utc(pool.config_updated_at) %></td>
                   <td class="px-4 py-3"><%= Formatters.display(pool.config_updated_by) %></td>
                 </tr>
@@ -70,5 +79,12 @@ defmodule ConfigManagerWeb.PoolLive.IndexLive do
       <% end %>
     </main>
     """
+  end
+
+  defp list_pools do
+    Pools.list_pools()
+    |> Enum.map(fn entry ->
+      Map.put(entry, :drift_summary, Deployments.drift_summary(entry.pool))
+    end)
   end
 end

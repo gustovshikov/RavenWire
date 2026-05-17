@@ -5,7 +5,7 @@ defmodule ConfigManagerWeb.SensorDetailLive do
 
   import ConfigManagerWeb.Formatters
 
-  alias ConfigManager.{Audit, Pools, Repo, SensorAgentClient, SensorPod}
+  alias ConfigManager.{Audit, Deployments, Pools, Repo, SensorAgentClient, SensorPod}
   alias ConfigManager.Auth.Policy
   alias ConfigManager.Health.Registry
 
@@ -60,6 +60,9 @@ defmodule ConfigManagerWeb.SensorDetailLive do
 
         if connected?(socket) do
           Phoenix.PubSub.subscribe(ConfigManager.PubSub, Registry.pod_topic(health_key))
+
+          if pod.pool_id,
+            do: Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pool:#{pod.pool_id}:drift")
         end
 
         {:ok,
@@ -68,10 +71,12 @@ defmodule ConfigManagerWeb.SensorDetailLive do
          |> assign(:not_found, false)
          |> assign(:pod, pod)
          |> assign(:pool_name, Pools.pool_name(pod.pool_id))
+         |> assign(:sensor_drift, Deployments.sensor_drift(pod))
          |> assign(:health_key, health_key)
          |> assign(:health, Registry.get(health_key))
          |> assign(:degradation_reasons, Registry.get_degradation_reasons(health_key))
          |> assign(:in_flight_actions, MapSet.new())
+         |> assign(:action_tasks, %{})
          |> assign(:confirm_revoke, false)
          |> assign(:stale_threshold_sec, stale_threshold_sec())
          |> assign(:action_timeout_ms, action_timeout_ms())}
@@ -108,7 +113,66 @@ defmodule ConfigManagerWeb.SensorDetailLive do
         %{assigns: %{pod: %{id: sensor_id}}} = socket
       ) do
     pod = Repo.get!(SensorPod, sensor_id)
-    {:noreply, assign(socket, pod: pod, pool_name: Pools.pool_name(pod.pool_id))}
+
+    if pod.pool_id,
+      do: Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pool:#{pod.pool_id}:drift")
+
+    {:noreply,
+     assign(socket,
+       pod: pod,
+       pool_name: Pools.pool_name(pod.pool_id),
+       sensor_drift: Deployments.sensor_drift(pod)
+     )}
+  end
+
+  def handle_info({:drift_updated, pool_id}, %{assigns: %{pod: %{pool_id: pool_id}}} = socket) do
+    pod = Repo.get!(SensorPod, socket.assigns.pod.id)
+    {:noreply, assign(socket, pod: pod, sensor_drift: Deployments.sensor_drift(pod))}
+  end
+
+  def handle_info({:sensor_action_timeout, action, ref}, socket) do
+    case Map.get(socket.assigns.action_tasks, action) do
+      %{ref: ^ref, pid: pid} ->
+        Process.demonitor(ref, [:flush])
+        Process.exit(pid, :kill)
+        log_action(socket, action, "failure", %{reason: "timeout"})
+
+        {:noreply,
+         socket
+         |> clear_action_task(action)
+         |> put_flash(:error, "#{@action_labels[action]} failed: Action timed out")}
+
+      _other ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_info({ref, result}, socket) when is_reference(ref) do
+    case find_action_by_ref(socket.assigns.action_tasks, ref) do
+      {action, %{timer_ref: timer_ref}} ->
+        Process.cancel_timer(timer_ref)
+        Process.demonitor(ref, [:flush])
+        {:noreply, finish_action(socket, action, result)}
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, reason}, socket) do
+    case find_action_by_ref(socket.assigns.action_tasks, ref) do
+      {action, %{timer_ref: timer_ref}} ->
+        Process.cancel_timer(timer_ref)
+        log_action(socket, action, "failure", %{reason: sanitize_reason(reason)})
+
+        {:noreply,
+         socket
+         |> clear_action_task(action)
+         |> put_flash(:error, "#{@action_labels[action]} failed: #{sanitize_reason(reason)}")}
+
+      nil ->
+        {:noreply, socket}
+    end
   end
 
   def handle_info(_message, socket), do: {:noreply, socket}
@@ -162,33 +226,11 @@ defmodule ConfigManagerWeb.SensorDetailLive do
       control_action?(action) and no_control_api?(socket.assigns.pod) ->
         {:noreply, put_flash(socket, :error, "Sensor agent is not reachable.")}
 
+      MapSet.member?(socket.assigns.in_flight_actions, action) ->
+        {:noreply, put_flash(socket, :error, "#{@action_labels[action]} is already running.")}
+
       true ->
-        result =
-          case action do
-            "validate_config" -> SensorAgentClient.validate_config(socket.assigns.pod)
-            "reload_zeek" -> SensorAgentClient.reload_zeek(socket.assigns.pod)
-            "reload_suricata" -> SensorAgentClient.reload_suricata(socket.assigns.pod)
-            "restart_vector" -> SensorAgentClient.restart_vector(socket.assigns.pod)
-            "support_bundle" -> SensorAgentClient.request_support_bundle(socket.assigns.pod)
-          end
-
-        socket =
-          case result do
-            {:ok, detail} ->
-              log_action(socket, action, "success", sanitize_detail(detail))
-              put_flash(socket, :info, "#{@action_labels[action]} completed.")
-
-            {:error, reason} ->
-              log_action(socket, action, "failure", %{reason: format_reason(reason)})
-
-              put_flash(
-                socket,
-                :error,
-                "#{@action_labels[action]} failed: #{format_reason(reason)}"
-              )
-          end
-
-        {:noreply, socket}
+        {:noreply, start_sensor_action(socket, action)}
     end
   end
 
@@ -219,7 +261,8 @@ defmodule ConfigManagerWeb.SensorDetailLive do
 
       <.status_banners pod={@pod} health={@health} stale_threshold_sec={@stale_threshold_sec} />
       <.degradation_summary reasons={@degradation_reasons} />
-      <.identity_section pod={@pod} health={@health} />
+      <.identity_section pod={@pod} pool_name={@pool_name} health={@health} />
+      <.deployment_section pod={@pod} drift={@sensor_drift} />
       <.host_readiness_section health={@health} />
       <.container_section health={@health} />
       <.capture_section health={@health} />
@@ -237,6 +280,33 @@ defmodule ConfigManagerWeb.SensorDetailLive do
   end
 
   attr(:pod, :map, required: true)
+  attr(:drift, :map, required: true)
+
+  def deployment_section(assigns) do
+    ~H"""
+    <section aria-label="Deployment State" class="mb-4 rounded border border-gray-200 bg-white p-4">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <h2 class="text-lg font-semibold text-gray-900">Deployment State</h2>
+        <span class={"inline-flex rounded px-2 py-0.5 text-xs font-medium #{drift_status_class(@drift.status)}"}>
+          <%= drift_status_label(@drift.status) %>
+        </span>
+      </div>
+      <dl class="grid gap-3 text-sm md:grid-cols-2 lg:grid-cols-5">
+        <.field label="Last Deployment" value={short_id(@pod.last_deployment_id)} mono />
+        <.field label="Config Version" value={@pod.last_deployed_config_version} />
+        <.field label="Forwarding Version" value={@pod.last_deployed_forwarding_version} />
+        <.field label="BPF Version" value={@pod.last_deployed_bpf_version} />
+        <.field label="Last Deployed At" value={format_utc(@pod.last_deployed_at)} />
+      </dl>
+      <%= if @drift.domains != [] do %>
+        <p class="mt-3 text-sm text-yellow-900">Drifted domains: <%= drift_domains(@drift.domains) %></p>
+      <% end %>
+    </section>
+    """
+  end
+
+  attr(:pod, :map, required: true)
+  attr(:pool_name, :any, default: nil)
   attr(:health, :any, required: true)
   attr(:stale_threshold_sec, :integer, required: true)
 
@@ -282,6 +352,7 @@ defmodule ConfigManagerWeb.SensorDetailLive do
   end
 
   attr(:pod, :map, required: true)
+  attr(:pool_name, :any, default: nil)
   attr(:health, :any, required: true)
 
   def identity_section(assigns) do
@@ -749,6 +820,83 @@ defmodule ConfigManagerWeb.SensorDetailLive do
 
   defp no_control_api?(%{control_api_host: host}), do: is_nil(host) or host == ""
 
+  defp start_sensor_action(socket, action) do
+    pod = socket.assigns.pod
+
+    task =
+      Task.Supervisor.async_nolink(ConfigManager.SensorActionTaskSupervisor, fn ->
+        dispatch_sensor_action(pod, action)
+      end)
+
+    timer_ref =
+      Process.send_after(
+        self(),
+        {:sensor_action_timeout, action, task.ref},
+        socket.assigns.action_timeout_ms
+      )
+
+    socket
+    |> assign(:in_flight_actions, MapSet.put(socket.assigns.in_flight_actions, action))
+    |> assign(
+      :action_tasks,
+      Map.put(socket.assigns.action_tasks, action, %{
+        ref: task.ref,
+        pid: task.pid,
+        timer_ref: timer_ref
+      })
+    )
+  end
+
+  defp dispatch_sensor_action(pod, action) do
+    client = sensor_agent_client()
+
+    case action do
+      "validate_config" -> client.validate_config(pod)
+      "reload_zeek" -> client.reload_zeek(pod)
+      "reload_suricata" -> client.reload_suricata(pod)
+      "restart_vector" -> client.restart_vector(pod)
+      "support_bundle" -> client.request_support_bundle(pod)
+    end
+  end
+
+  defp finish_action(socket, action, {:ok, detail}) do
+    log_action(socket, action, "success", sanitize_detail(detail))
+
+    socket
+    |> clear_action_task(action)
+    |> put_flash(:info, "#{@action_labels[action]} completed.")
+  end
+
+  defp finish_action(socket, action, {:error, reason}) do
+    log_action(socket, action, "failure", %{reason: format_reason(reason)})
+
+    socket
+    |> clear_action_task(action)
+    |> put_flash(:error, "#{@action_labels[action]} failed: #{format_reason(reason)}")
+  end
+
+  defp finish_action(socket, action, other) do
+    log_action(socket, action, "failure", %{reason: sanitize_reason(other)})
+
+    socket
+    |> clear_action_task(action)
+    |> put_flash(:error, "#{@action_labels[action]} failed: #{sanitize_reason(other)}")
+  end
+
+  defp clear_action_task(socket, action) do
+    socket
+    |> assign(:in_flight_actions, MapSet.delete(socket.assigns.in_flight_actions, action))
+    |> assign(:action_tasks, Map.delete(socket.assigns.action_tasks, action))
+  end
+
+  defp find_action_by_ref(action_tasks, ref) do
+    Enum.find(action_tasks, fn {_action, %{ref: task_ref}} -> task_ref == ref end)
+  end
+
+  defp sensor_agent_client do
+    Application.get_env(:config_manager, :sensor_agent_client, SensorAgentClient)
+  end
+
   defp deny_action(socket, action) do
     Audit.log(%{
       actor: socket.assigns.current_user.username,
@@ -792,6 +940,13 @@ defmodule ConfigManagerWeb.SensorDetailLive do
 
   defp sanitize_detail(_detail), do: %{}
 
+  defp sanitize_reason(reason) do
+    reason
+    |> inspect()
+    |> String.replace(~r/(-----BEGIN [^-]+-----).*?(-----END [^-]+-----)/s, "[redacted-pem]")
+    |> String.replace(~r/(?i)(token|password|secret)=([^,\s}]+)/, "\\1=[redacted]")
+  end
+
   defp status_class("running"), do: "bg-green-100 text-green-800"
   defp status_class("enrolled"), do: "bg-green-100 text-green-800"
   defp status_class("pending"), do: "bg-yellow-100 text-yellow-900"
@@ -801,6 +956,30 @@ defmodule ConfigManagerWeb.SensorDetailLive do
   defp status_class("missing"), do: "bg-red-100 text-red-800"
   defp status_class("stopped"), do: "bg-gray-100 text-gray-700"
   defp status_class(_), do: "bg-gray-100 text-gray-700"
+
+  defp drift_status_class(:in_sync), do: "bg-green-100 text-green-800"
+  defp drift_status_class(:drift_detected), do: "bg-yellow-100 text-yellow-900"
+  defp drift_status_class(:never_deployed), do: "bg-gray-100 text-gray-700"
+  defp drift_status_class(_status), do: "bg-gray-100 text-gray-700"
+
+  defp drift_status_label(:in_sync), do: "In Sync"
+  defp drift_status_label(:drift_detected), do: "Drift Detected"
+  defp drift_status_label(:never_deployed), do: "Never Deployed"
+  defp drift_status_label(_status), do: "Unknown"
+
+  defp drift_domains(domains) do
+    domains
+    |> Enum.map(&drift_domain_label/1)
+    |> Enum.join(", ")
+  end
+
+  defp drift_domain_label(:capture), do: "Capture"
+  defp drift_domain_label(:forwarding), do: "Forwarding"
+  defp drift_domain_label(:bpf), do: "BPF"
+  defp drift_domain_label(domain), do: to_string(domain)
+
+  defp short_id(nil), do: nil
+  defp short_id(id), do: String.slice(id, 0, 8)
 
   defp cert_class(expires_at) do
     case cert_status(expires_at) do

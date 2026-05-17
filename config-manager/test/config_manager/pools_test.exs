@@ -81,6 +81,59 @@ defmodule ConfigManager.PoolsTest do
     assert Repo.get_by!(AuditEntry, action: "sensor_removed_from_pool", target_id: sensor.id)
   end
 
+  test "rejects accidental reassignment, audits failure, and allows explicit moves" do
+    {:ok, source_pool} = Pools.create_pool(%{"name" => "source-pool"}, "tester")
+    {:ok, target_pool} = Pools.create_pool(%{"name" => "target-pool"}, "tester")
+    sensor = insert_sensor!("move-sensor", source_pool.id)
+
+    assert {:error, :sensor_already_assigned} =
+             Pools.assign_sensors(target_pool, [sensor.id], "tester")
+
+    failure =
+      Repo.get_by!(AuditEntry,
+        action: "sensor_assigned_to_pool",
+        target_type: "pool",
+        target_id: target_pool.id,
+        result: "failure"
+      )
+
+    assert failure.detail =~ "sensor_already_assigned"
+
+    assert {:ok, 1} =
+             Pools.assign_sensors(target_pool, [sensor.id], "tester", allow_reassign?: true)
+
+    assert Repo.get!(SensorPod, sensor.id).pool_id == target_pool.id
+
+    audit = Repo.get_by!(AuditEntry, action: "sensor_assigned_to_pool", target_id: sensor.id)
+    assert audit.detail =~ source_pool.id
+    assert audit.detail =~ target_pool.id
+  end
+
+  test "bulk removal rejects non-members with failure audit and removes valid selections" do
+    {:ok, pool} = Pools.create_pool(%{"name" => "bulk-remove-pool"}, "tester")
+    member_a = insert_sensor!("bulk-member-a", pool.id)
+    member_b = insert_sensor!("bulk-member-b", pool.id)
+    outsider = insert_sensor!("bulk-outsider")
+
+    assert {:error, :sensor_not_in_pool} =
+             Pools.remove_sensors(pool, [member_a.id, outsider.id], "tester")
+
+    failure =
+      Repo.get_by!(AuditEntry,
+        action: "sensor_removed_from_pool",
+        target_type: "pool",
+        target_id: pool.id,
+        result: "failure"
+      )
+
+    assert failure.detail =~ "sensor_not_in_pool"
+    assert Repo.get!(SensorPod, member_a.id).pool_id == pool.id
+
+    assert {:ok, 2} = Pools.remove_sensors(pool, [member_a.id, member_b.id], "tester")
+    assert Repo.get!(SensorPod, member_a.id).pool_id == nil
+    assert Repo.get!(SensorPod, member_b.id).pool_id == nil
+  end
+
   test "deletes pools and nilifies member sensors" do
     {:ok, pool} = Pools.create_pool(%{"name" => "delete-pool"}, "tester")
     sensor = insert_sensor!("delete-sensor", pool.id)

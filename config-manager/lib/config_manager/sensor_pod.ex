@@ -41,6 +41,14 @@ defmodule ConfigManager.SensorPod do
     # 1=low, 2=medium, 3=high
     field(:alert_severity_threshold, :integer, default: 2)
 
+    # Deployment drift tracking.
+    field(:last_deployed_config_version, :integer)
+    field(:last_deployed_forwarding_version, :integer)
+    field(:last_deployed_bpf_version, :integer)
+    field(:last_deployed_rule_version, :integer)
+    field(:last_deployed_at, :utc_datetime_usec)
+    field(:last_deployment_id, :binary_id)
+
     timestamps()
   end
 
@@ -152,5 +160,30 @@ defmodule ConfigManager.SensorPod do
     |> validate_number(:pre_alert_window_sec, greater_than_or_equal_to: 0)
     |> validate_number(:post_alert_window_sec, greater_than_or_equal_to: 0)
     |> validate_inclusion(:alert_severity_threshold, [1, 2, 3])
+  end
+
+  @doc "Changeset for recording successful deployment versions on a pod."
+  def deployment_success_changeset(pod, %{id: deployment_id} = deployment) do
+    deployment_success_changeset(pod, %{
+      last_deployment_id: deployment_id,
+      last_deployed_config_version: Map.get(deployment, :config_version),
+      last_deployed_forwarding_version: Map.get(deployment, :forwarding_config_version),
+      last_deployed_bpf_version: Map.get(deployment, :bpf_version),
+      last_deployed_at: DateTime.utc_now()
+    })
+  end
+
+  def deployment_success_changeset(pod, attrs) do
+    pod
+    |> cast(attrs, [
+      :last_deployed_config_version,
+      :last_deployed_forwarding_version,
+      :last_deployed_bpf_version,
+      :last_deployed_at,
+      :last_deployment_id
+    ])
+    |> validate_number(:last_deployed_config_version, greater_than: 0)
+    |> validate_number(:last_deployed_forwarding_version, greater_than_or_equal_to: 0)
+    |> validate_number(:last_deployed_bpf_version, greater_than: 0)
   end
 end

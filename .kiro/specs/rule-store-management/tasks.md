@@ -6,8 +6,8 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
 
 ## Tasks
 
-- [ ] 1. Implement Suricata rule parser module
-  - [ ] 1.1 Create `lib/config_manager/rules/parser.ex` with rule parsing functions
+- [x] 1. Implement Suricata rule parser module
+  - [x] 1.1 Create `lib/config_manager/rules/parser.ex` with rule parsing functions
     - Implement `parse_rule/1` — takes a single rule line string, extracts SID, message, revision, classtype via regex, returns `{:ok, map}` or `{:error, reason}`
     - Implement `extract_sid/1` — regex for `sid:\s*(\d+)\s*;` pattern
     - Implement `extract_message/1` — regex for `msg:\s*"([^"]+)"\s*;` pattern
@@ -19,7 +19,7 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Handle edge cases: commented-out rules (lines starting with `#`), disabled rules (lines starting with `# alert` or `#alert`), multi-line rules (backslash continuation)
     - _Requirements: 5.1, 5.2, 5.4_
 
-  - [ ]* 1.2 Write property tests for Suricata rule parser (PropCheck)
+  - [x]* 1.2 Write property tests for Suricata rule parser (PropCheck)
     - **Property 1: Suricata rule parsing round-trip**
     - Create `test/config_manager/rules/parser_prop_test.exs`
     - Generate random valid Suricata rule lines with random SIDs (1..999999), messages, revisions, classtypes
@@ -29,7 +29,7 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Verify parse_files/1 skips comment lines and blank lines
     - **Validates: Requirements 5.1, 5.2**
 
-  - [ ]* 1.3 Write unit tests for parser with known Suricata rules
+  - [x]* 1.3 Write unit tests for parser with known Suricata rules
     - Create `test/config_manager/rules/parser_test.exs`
     - Test with real ET Open rule examples (emerging-malware, emerging-exploit categories)
     - Test SID extraction edge cases: SID at end of options, SID with spaces
@@ -41,8 +41,8 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Test format_rule produces valid Suricata syntax
     - _Requirements: 5.1, 5.2, 5.4_
 
-- [ ] 2. Implement database schemas and migration
-  - [ ] 2.1 Create migration for all rule store tables
+- [x] 2. Implement database schemas and migration
+  - [x] 2.1 Create migration for all rule store tables
     - Create migration file `priv/repo/migrations/YYYYMMDDHHMMSS_create_rule_store_tables.exs`
     - Create `suricata_rules` table with: id (binary_id PK), sid (integer, unique), message (text), raw_text (text, not null), category (string, not null), classtype (string), severity (integer, default 2), revision (integer, default 1), enabled (boolean, default true), repository_id (binary_id), repository_name (string), timestamps
     - Create `rule_repositories` table with: id (binary_id PK), name (string, not null, case-insensitive unique), url (text, not null), repo_type (string, default "custom"), last_updated_at (utc_datetime), last_update_status (string, default "never_updated"), last_update_error (text), rule_count (integer, default 0), timestamps
@@ -52,12 +52,12 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Add all indexes from design document
     - _Requirements: 6.1, 6.4, 7.1, 7.2_
 
-  - [ ] 2.2 Create migration to add `last_deployed_rule_version` to `sensor_pods`
+  - [x] 2.2 Create migration to add `last_deployed_rule_version` to `sensor_pods`
     - Create migration file `priv/repo/migrations/YYYYMMDDHHMMSS_add_rule_version_to_sensor_pods.exs`
     - Add `last_deployed_rule_version` integer column (nullable) to `sensor_pods`
     - _Requirements: 9.1, 9.2_
 
-  - [ ] 2.3 Create Ecto schemas for all rule store tables
+  - [x] 2.3 Create Ecto schemas for all rule store tables
     - Create `lib/config_manager/rules/suricata_rule.ex` with changeset and toggle_changeset
     - Create `lib/config_manager/rules/rule_repository.ex` with changeset and update_status_changeset
     - Create `lib/config_manager/rules/ruleset.ex` with create_changeset and update_changeset (version increment logic)
@@ -66,7 +66,7 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Update `lib/config_manager/sensor_pod.ex` to add `last_deployed_rule_version` field
     - _Requirements: 2.1, 4.4, 6.4, 7.2_
 
-  - [ ]* 2.4 Write schema validation tests
+  - [x]* 2.4 Write schema validation tests
     - Create `test/config_manager/rules/schemas_test.exs`
     - Test SuricataRule changeset: valid attrs, missing sid, invalid severity, duplicate sid
     - Test RuleRepository changeset: valid attrs, invalid URL, duplicate name (case-insensitive)
@@ -76,8 +76,8 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Test PoolRulesetAssignment changeset: valid attrs, duplicate pool_id
     - _Requirements: 2.1, 4.4, 6.4, 7.2_
 
-- [ ] 3. Implement Rules context module — core CRUD
-  - [ ] 3.1 Create `lib/config_manager/rules.ex` with rule CRUD and category operations
+- [x] 3. Implement Rules context module — core CRUD
+  - [x] 3.1 Create `lib/config_manager/rules.ex` with rule CRUD and category operations
     - Implement `list_rules/1` with search (SID prefix, message substring), category filter, repo filter, sorting, pagination
     - Implement `get_rule/1`, `get_rule_by_sid/1`
     - Implement `toggle_rule/2` — flips enabled, writes audit entry in Ecto.Multi, broadcasts PubSub
@@ -87,7 +87,7 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - All mutations use `Ecto.Multi` with `Audit.append_multi/2`
     - _Requirements: 1.1-1.8, 2.1-2.5, 3.1-3.6, 12.1-12.4_
 
-  - [ ]* 3.2 Write property tests for rule toggle and category toggle (PropCheck)
+  - [x]* 3.2 Write property tests for rule toggle and category toggle (PropCheck)
     - **Property 3: Rule toggle is its own inverse**
     - **Property 4: Category toggle affects exactly the rules in that category**
     - Create `test/config_manager/rules/toggle_prop_test.exs`
@@ -96,7 +96,7 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Verify rules in other categories unchanged after category toggle
     - **Validates: Requirements 2.1, 2.2, 3.3, 3.4, 3.5**
 
-  - [ ]* 3.3 Write unit tests for rule CRUD and category operations
+  - [x]* 3.3 Write unit tests for rule CRUD and category operations
     - Create `test/config_manager/rules/rules_context_test.exs`
     - Test list_rules with various search/filter combinations
     - Test list_rules pagination (page 1, page 2, out of range)

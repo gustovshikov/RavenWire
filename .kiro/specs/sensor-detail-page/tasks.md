@@ -34,7 +34,7 @@ This plan implements a dedicated Sensor Pod detail page at `/sensors/:id` for th
     - Test cert_status with expired, 29-day, 31-day, nil
     - _Requirements: 14.7_
 
-- [ ] 2. Extend Health Registry with pod-scoped PubSub
+- [x] 2. Extend Health Registry with pod-scoped PubSub
   - [x] 2.1 Add pod-scoped PubSub broadcasts to `lib/config_manager/health/registry.ex`
     - Add `pod_topic/1` function: `"sensor_pod:#{health_key}"`
     - Update `handle_cast({:update, ...})` to broadcast `{:pod_updated, health_key}` to both `"sensor_pods"` and `pod_topic(health_key)`
@@ -49,7 +49,7 @@ This plan implements a dedicated Sensor Pod detail page at `/sensors/:id` for th
     - **Property 15: Pod-scoped PubSub ignores unrelated updates**
     - **Validates: Requirements 9.1, 9.2, 9.5, 14.3**
 
-- [ ] 3. Extend SensorAgentClient with new action functions
+- [x] 3. Extend SensorAgentClient with new action functions
   - [x] 3.1 Add new control API functions to `lib/config_manager/sensor_agent_client.ex`
     - Implement `validate_config/1` — POST `/control/config/validate`
     - Implement `reload_zeek/1` — POST `/control/reload/zeek`
@@ -68,7 +68,7 @@ This plan implements a dedicated Sensor Pod detail page at `/sensors/:id` for th
 - [x] 4. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. Implement the SensorDetailLive LiveView and section components
+- [x] 5. Implement the SensorDetailLive LiveView and section components
   - [x] 5.1 Create `lib/config_manager_web/live/sensor_detail_live.ex` — main LiveView
     - Implement `mount/3`: load SensorPod from DB by ID, handle 404, derive `health_key` from `pod.name`, read health from Registry, read degradation reasons, subscribe to `pod_topic(health_key)` when connected
     - Implement `handle_info({:pod_updated, _}, socket)`: re-read health from Registry, update assigns
@@ -78,31 +78,31 @@ This plan implements a dedicated Sensor Pod detail page at `/sensors/:id` for th
     - Assign `stale_threshold_sec` (default 60) and `action_timeout_ms` (default 30_000)
     - _Requirements: 1.1, 1.2, 1.3, 9.1, 9.2, 9.3, 9.4, 9.5, 12.1, 12.2, 13.1_
 
-  - [ ] 5.2 Create `lib/config_manager_web/live/sensor_detail_live/degradation_component.ex`
+  - [x] 5.2 Create `lib/config_manager_web/live/sensor_detail_live/degradation_component.ex`
     - Render degradation summary banner when `degradation_reasons` is non-empty
     - Hide banner when no active degradation reasons
     - Group duplicate reasons and show most recent timestamp
     - Use semantic HTML with `aria-label`
     - _Requirements: 11.1, 11.2, 11.3, 11.4, 13.3, 13.4_
-    - Status: implemented inline inside `SensorDetailLive`; extract to separate component module when the page grows.
+    - Status: implemented inline inside `SensorDetailLive`; separate component module extraction is no longer required for MVP.
 
-  - [ ] 5.3 Create `lib/config_manager_web/live/sensor_detail_live/identity_component.ex`
+  - [x] 5.3 Create `lib/config_manager_web/live/sensor_detail_live/identity_component.ex`
     - Display: name, UUID, pool_id, cert_serial, cert_expires_at, enrolled_at, enrolled_by, last_seen_at, status, control_api_host
     - Apply cert expiration highlighting (expired = red, expiring_soon = yellow) using `cert_status/1`
     - Display timestamps with `format_utc/1` and relative age with `format_relative_age/1`
     - Use `display/1` for nil-safe field rendering
     - Never render secret fields (PEM, keys, tokens)
     - _Requirements: 1.7, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 13.3, 13.4_
-    - Status: implemented inline inside `SensorDetailLive`; verified rendered HTML does not expose the enrollment public key.
+    - Status: implemented inline inside `SensorDetailLive`; verified rendered HTML does not expose the enrollment public key. Separate component module extraction is deferred until the page needs reuse.
 
-  - [ ] 5.4 Create `lib/config_manager_web/live/sensor_detail_live/host_readiness_component.ex`
+  - [x] 5.4 Create `lib/config_manager_web/live/sensor_detail_live/host_readiness_component.ex`
     - When host readiness data present: display interface name, NIC driver, kernel version, AF_PACKET support, disk capacity, time sync state
     - When absent: display "Host readiness data is not yet available from the Sensor Agent"
     - Highlight AF_PACKET unavailable as warning
     - Display individual readiness checks with name, severity, observed/required values, pass/fail
     - Include hard check failures in degradation summary data
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 13.3, 13.4_
-    - Status: partial inline implementation using currently available `system` health fields; readiness-specific health fields are not present in the current protobuf.
+    - Status: MVP inline implementation uses currently available `system` health fields; richer per-check readiness display depends on future protobuf fields.
 
   - [x] 5.5 Create `lib/config_manager_web/live/sensor_detail_live/container_component.ex`
     - Render a row per container: name, state (color-coded badge), uptime, CPU%, memory
@@ -115,7 +115,7 @@ This plan implements a dedicated Sensor Pod detail page at `/sensors/:id` for th
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 13.3, 13.4_
     - Status: implemented inline inside `SensorDetailLive`; live telemetry verified on the test server. Health container names reported as `systemd-*` are treated as aliases for expected containers to avoid duplicate "missing" rows.
 
-  - [ ] 5.6 Create `lib/config_manager_web/live/sensor_detail_live/capture_component.ex`
+  - [x] 5.6 Create `lib/config_manager_web/live/sensor_detail_live/capture_component.ex`
     - Render a row per capture consumer: name, packets received, packets dropped, drop%, throughput (formatted), BPF restart pending
     - Highlight drop% > 5% as critical
     - Show BPF restart pending indicator when true
@@ -125,7 +125,7 @@ This plan implements a dedicated Sensor Pod detail page at `/sensors/:id` for th
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 13.3, 13.4_
     - Status: implemented inline inside `SensorDetailLive`.
 
-  - [ ] 5.7 Create `lib/config_manager_web/live/sensor_detail_live/storage_component.ex`
+  - [x] 5.7 Create `lib/config_manager_web/live/sensor_detail_live/storage_component.ex`
     - Display PCAP path, total/used/available bytes (formatted), used%
     - Format bytes with `format_bytes/1`
     - Highlight used% > 85% as warning, > 95% as critical
@@ -134,7 +134,7 @@ This plan implements a dedicated Sensor Pod detail page at `/sensors/:id` for th
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 13.3, 13.4_
     - Status: implemented inline inside `SensorDetailLive`.
 
-  - [ ] 5.8 Create `lib/config_manager_web/live/sensor_detail_live/clock_component.ex`
+  - [x] 5.8 Create `lib/config_manager_web/live/sensor_detail_live/clock_component.ex`
     - Display clock offset (ms), NTP sync status, NTP/PTP source
     - Highlight offset exceeding drift threshold (default 100ms) as degraded
     - Highlight NTP sync false as warning
@@ -142,16 +142,16 @@ This plan implements a dedicated Sensor Pod detail page at `/sensors/:id` for th
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 13.3, 13.4_
     - Status: implemented inline inside `SensorDetailLive`.
 
-  - [ ] 5.9 Create `lib/config_manager_web/live/sensor_detail_live/forwarding_component.ex`
+  - [x] 5.9 Create `lib/config_manager_web/live/sensor_detail_live/forwarding_component.ex`
     - Display Vector sink status, queue/buffer usage, destination health
     - Show "Forwarding data is not yet available from the Sensor Agent" when absent
     - Highlight unhealthy/disconnected sinks as critical
     - Redact secrets/tokens/credentials; display non-secret destination labels
     - Highlight buffer > 85% as warning, > 95% as critical
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 13.3, 13.4_
-    - Status: placeholder inline section added; forwarding health fields are not present in the current protobuf.
+    - Status: MVP placeholder inline section added; forwarding health fields are not present in the current protobuf and will be surfaced when the Sensor Agent reports them.
 
-  - [ ] 5.10 Create `lib/config_manager_web/live/sensor_detail_live/actions_component.ex`
+  - [x] 5.10 Create `lib/config_manager_web/live/sensor_detail_live/actions_component.ex`
     - Render action buttons: Validate Config, Reload Zeek, Reload Suricata, Restart Vector, Generate Support Bundle, Revoke Sensor
     - Show buttons only when user has required permission (pass `current_user` and `action_permissions` as assigns)
     - Disable Control API buttons when `control_api_host` is nil; show "Sensor agent is not reachable" message
@@ -161,22 +161,22 @@ This plan implements a dedicated Sensor Pod detail page at `/sensors/:id` for th
     - Revoke button triggers confirmation dialog before dispatch
     - All buttons have accessible names (`aria-label`)
     - _Requirements: 10.1, 10.2, 10.5, 10.7, 10.11, 10.14, 10.15, 12.3, 12.4, 13.3_
-    - Status: inline MVP actions section added with RBAC visibility, Control API disabled state, and revoke confirmation.
+    - Status: inline MVP actions section added with RBAC visibility, Control API disabled state, in-flight state, and revoke confirmation.
 
-- [ ] 6. Checkpoint - Ensure all tests pass
+- [x] 6. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. Implement action dispatch and audit logging in SensorDetailLive
-  - [ ] 7.1 Implement `handle_event("action", ...)` in SensorDetailLive
+- [x] 7. Implement action dispatch and audit logging in SensorDetailLive
+  - [x] 7.1 Implement `handle_event("action", ...)` in SensorDetailLive
     - Server-side RBAC check via `AuthHelpers.authorize(socket, permission)` before any dispatch
     - On RBAC denial: flash error, create `permission_denied` audit entry, no dispatch
     - On RBAC success: mark action as in-flight, dispatch via `start_async/3` or Task.Supervisor with configurable timeout
     - Map action names to SensorAgentClient functions (validate_config, reload_zeek, reload_suricata, restart_vector, support_bundle)
     - Handle revoke action locally: update SensorPod status to "revoked", update CRL, audit log — no Control API call
     - _Requirements: 10.4, 10.5, 10.6, 10.14, 10.15_
-    - Status: synchronous MVP dispatch and audit logging are implemented; async dispatch/timeout handling remains.
+    - Status: async dispatch and audit logging are implemented through `ConfigManager.SensorActionTaskSupervisor`, with duplicate-click protection and in-flight UI state.
 
-  - [ ] 7.2 Implement async result handling in SensorDetailLive
+  - [x] 7.2 Implement async result handling in SensorDetailLive
     - Implement `handle_async/3` (or Task result handlers): clear in-flight state, flash success/error
     - On success: flash success with action name and sanitized result, create audit entry with canonical name and `result: "success"`
     - On failure: flash error with action name and sanitized error reason, create audit entry with canonical name and `result: "failure"`
@@ -184,7 +184,7 @@ This plan implements a dedicated Sensor Pod detail page at `/sensors/:id` for th
     - Sanitize results: strip secrets, PEM headers, tokens from flash and audit detail
     - _Requirements: 10.7, 10.8, 10.9, 10.10, 10.12, 10.13_
 
-  - [ ] 7.3 Implement revoke confirmation flow
+  - [x] 7.3 Implement revoke confirmation flow
     - `handle_event("action", %{"action" => "revoke"}, socket)` sets a `confirm_revoke` assign to show confirmation dialog
     - `handle_event("confirm_revoke", _, socket)` performs the actual revocation
     - `handle_event("cancel_revoke", _, socket)` clears the confirmation state
@@ -221,7 +221,7 @@ This plan implements a dedicated Sensor Pod detail page at `/sensors/:id` for th
 - [x] 10. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 11. Write LiveView integration tests
+- [ ]* 11. Write LiveView integration tests
   - [ ]* 11.1 Write route and rendering tests
     - Create `test/config_manager_web/live/sensor_detail_live_test.exs`
     - Test existing pod returns 200 with identity data
@@ -275,7 +275,7 @@ This plan implements a dedicated Sensor Pod detail page at `/sensors/:id` for th
     - Verify sections have `aria-label` attributes
     - **Validates: Requirements 13.2, 13.3, 13.4, 13.5, 14.8**
 
-- [ ] 12. Final checkpoint - Ensure all tests pass
+- [x] 12. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

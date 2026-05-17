@@ -24,6 +24,7 @@ defmodule ConfigManagerWeb.OperationalLiveRouteTest do
     for {path, expected} <- [
           {"/enrollment", "RavenWire Enrollment"},
           {"/pcap-config", "Alert-Driven PCAP Configuration"},
+          {"/deployments", "Fleet-wide desired-state deployment history"},
           {"/rules", "Deploy Suricata Rules"},
           {"/support-bundle", "Support Bundles"},
           {"/audit", "Audit Log"}

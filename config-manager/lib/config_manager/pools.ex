@@ -3,7 +3,7 @@ defmodule ConfigManager.Pools do
 
   import Ecto.Query
 
-  alias ConfigManager.{AuditEntry, Repo, SensorPod, SensorPool}
+  alias ConfigManager.{Audit, AuditEntry, Repo, SensorPod, SensorPool}
   alias Ecto.Multi
 
   @deployment_actions ~w(rule_deployed pool_config_deployed deployment_created deployment_completed deployment_failed)
@@ -42,8 +42,8 @@ defmodule ConfigManager.Pools do
 
     Multi.new()
     |> Multi.insert(:pool, changeset)
-    |> Multi.insert(:audit, fn %{pool: pool} ->
-      audit_changeset(%{
+    |> Audit.append_multi(fn %{pool: pool} ->
+      %{
         actor: actor_name(actor),
         actor_type: "user",
         action: "pool_created",
@@ -51,7 +51,7 @@ defmodule ConfigManager.Pools do
         target_id: pool.id,
         result: "success",
         detail: %{name: pool.name, capture_mode: pool.capture_mode}
-      })
+      }
     end)
     |> Repo.transaction()
     |> case do
@@ -73,8 +73,8 @@ defmodule ConfigManager.Pools do
 
     Multi.new()
     |> Multi.update(:pool, changeset)
-    |> Multi.insert(:audit, fn %{pool: updated} ->
-      audit_changeset(%{
+    |> Audit.append_multi(fn %{pool: updated} ->
+      %{
         actor: actor_name(actor),
         actor_type: "user",
         action: "pool_updated",
@@ -82,7 +82,7 @@ defmodule ConfigManager.Pools do
         target_id: updated.id,
         result: "success",
         detail: %{old: old, new: Map.take(updated, [:name, :description])}
-      })
+      }
     end)
     |> Repo.transaction()
     |> case do
@@ -92,6 +92,7 @@ defmodule ConfigManager.Pools do
         {:ok, updated}
 
       {:error, :pool, changeset, _changes} ->
+        log_pool_failure(pool, actor, "pool_updated", %{reason: "validation_failed"})
         {:error, changeset}
 
       {:error, _step, reason, _changes} ->
@@ -107,8 +108,8 @@ defmodule ConfigManager.Pools do
       set: [pool_id: nil]
     )
     |> Multi.delete(:pool, pool)
-    |> Multi.insert(:audit, fn _changes ->
-      audit_changeset(%{
+    |> Audit.append_multi(fn _changes ->
+      %{
         actor: actor_name(actor),
         actor_type: "user",
         action: "pool_deleted",
@@ -116,7 +117,7 @@ defmodule ConfigManager.Pools do
         target_id: pool.id,
         result: "success",
         detail: %{name: pool.name, affected_sensor_count: affected_sensor_count}
-      })
+      }
     end)
     |> Repo.transaction()
     |> case do
@@ -158,15 +159,35 @@ defmodule ConfigManager.Pools do
 
     cond do
       sensor_ids == [] ->
+        log_pool_failure(pool, actor, "sensor_assigned_to_pool", %{
+          reason: "no_sensors_selected",
+          sensor_ids: sensor_ids
+        })
+
         {:error, :no_sensors_selected}
 
       length(sensors) != length(Enum.uniq(sensor_ids)) ->
+        log_pool_failure(pool, actor, "sensor_assigned_to_pool", %{
+          reason: "sensor_not_found",
+          sensor_ids: sensor_ids
+        })
+
         {:error, :sensor_not_found}
 
       Enum.any?(sensors, &(&1.status != "enrolled")) ->
+        log_pool_failure(pool, actor, "sensor_assigned_to_pool", %{
+          reason: "sensor_not_enrolled",
+          sensor_ids: sensor_ids
+        })
+
         {:error, :sensor_not_enrolled}
 
       not allow_reassign? and Enum.any?(sensors, &(!is_nil(&1.pool_id) and &1.pool_id != pool.id)) ->
+        log_pool_failure(pool, actor, "sensor_assigned_to_pool", %{
+          reason: "sensor_already_assigned",
+          sensor_ids: sensor_ids
+        })
+
         {:error, :sensor_already_assigned}
 
       true ->
@@ -179,12 +200,27 @@ defmodule ConfigManager.Pools do
 
     cond do
       sensor_ids == [] ->
+        log_pool_failure(pool, actor, "sensor_removed_from_pool", %{
+          reason: "no_sensors_selected",
+          sensor_ids: sensor_ids
+        })
+
         {:error, :no_sensors_selected}
 
       length(sensors) != length(Enum.uniq(sensor_ids)) ->
+        log_pool_failure(pool, actor, "sensor_removed_from_pool", %{
+          reason: "sensor_not_found",
+          sensor_ids: sensor_ids
+        })
+
         {:error, :sensor_not_found}
 
       Enum.any?(sensors, &(&1.pool_id != pool.id)) ->
+        log_pool_failure(pool, actor, "sensor_removed_from_pool", %{
+          reason: "sensor_not_in_pool",
+          sensor_ids: sensor_ids
+        })
+
         {:error, :sensor_not_in_pool}
 
       true ->
@@ -198,8 +234,8 @@ defmodule ConfigManager.Pools do
 
     Multi.new()
     |> Multi.update(:pool, changeset)
-    |> Multi.insert(:audit, fn %{pool: updated} ->
-      audit_changeset(%{
+    |> Audit.append_multi(fn %{pool: updated} ->
+      %{
         actor: actor_name(actor),
         actor_type: "user",
         action: "pool_config_updated",
@@ -207,7 +243,7 @@ defmodule ConfigManager.Pools do
         target_id: updated.id,
         result: "success",
         detail: %{old: old, new: config_snapshot(updated), auto_push: false}
-      })
+      }
     end)
     |> Repo.transaction()
     |> case do
@@ -216,6 +252,7 @@ defmodule ConfigManager.Pools do
         {:ok, updated}
 
       {:error, :pool, changeset, _changes} ->
+        log_pool_failure(pool, actor, "pool_config_updated", %{reason: "validation_failed"})
         {:error, changeset}
 
       {:error, _step, reason, _changes} ->
@@ -264,8 +301,8 @@ defmodule ConfigManager.Pools do
 
         multi
         |> Multi.update({:sensor, sensor.id}, Ecto.Changeset.change(sensor, pool_id: pool.id))
-        |> Multi.insert({:audit, sensor.id}, fn _changes ->
-          audit_changeset(%{
+        |> Audit.append_multi({:audit, sensor.id}, fn _changes ->
+          %{
             actor: actor_name(actor),
             actor_type: "user",
             action: "sensor_assigned_to_pool",
@@ -278,13 +315,13 @@ defmodule ConfigManager.Pools do
               new_pool_id: pool.id,
               pool_name: pool.name
             }
-          })
+          }
         end)
       end)
 
     multi
-    |> Multi.insert(:pool_audit, fn _changes ->
-      audit_changeset(%{
+    |> Audit.append_multi(:pool_audit, fn _changes ->
+      %{
         actor: actor_name(actor),
         actor_type: "user",
         action: "sensor_assigned_to_pool",
@@ -292,7 +329,7 @@ defmodule ConfigManager.Pools do
         target_id: pool.id,
         result: "success",
         detail: %{sensor_count: length(sensors), sensor_ids: Enum.map(sensors, & &1.id)}
-      })
+      }
     end)
     |> Repo.transaction()
     |> case do
@@ -315,8 +352,8 @@ defmodule ConfigManager.Pools do
       Enum.reduce(sensors, Multi.new(), fn sensor, multi ->
         multi
         |> Multi.update({:sensor, sensor.id}, Ecto.Changeset.change(sensor, pool_id: nil))
-        |> Multi.insert({:audit, sensor.id}, fn _changes ->
-          audit_changeset(%{
+        |> Audit.append_multi({:audit, sensor.id}, fn _changes ->
+          %{
             actor: actor_name(actor),
             actor_type: "user",
             action: "sensor_removed_from_pool",
@@ -324,13 +361,13 @@ defmodule ConfigManager.Pools do
             target_id: sensor.id,
             result: "success",
             detail: %{sensor_name: sensor.name, previous_pool_id: pool.id, pool_name: pool.name}
-          })
+          }
         end)
       end)
 
     multi
-    |> Multi.insert(:pool_audit, fn _changes ->
-      audit_changeset(%{
+    |> Audit.append_multi(:pool_audit, fn _changes ->
+      %{
         actor: actor_name(actor),
         actor_type: "user",
         action: "sensor_removed_from_pool",
@@ -338,7 +375,7 @@ defmodule ConfigManager.Pools do
         target_id: pool.id,
         result: "success",
         detail: %{sensor_count: length(sensors), sensor_ids: Enum.map(sensors, & &1.id)}
-      })
+      }
     end)
     |> Repo.transaction()
     |> case do
@@ -396,20 +433,17 @@ defmodule ConfigManager.Pools do
     ])
   end
 
-  defp audit_changeset(attrs) do
-    attrs =
-      attrs
-      |> Map.put_new(:timestamp, DateTime.utc_now())
-      |> encode_detail()
-
-    AuditEntry.changeset(%AuditEntry{}, attrs)
+  defp log_pool_failure(pool, actor, action, detail) do
+    Audit.log(%{
+      actor: actor_name(actor),
+      actor_type: "user",
+      action: action,
+      target_type: "pool",
+      target_id: pool.id,
+      result: "failure",
+      detail: Map.put(detail, :pool_name, pool.name)
+    })
   end
-
-  defp encode_detail(%{detail: detail} = attrs) when is_map(detail) or is_list(detail) do
-    %{attrs | detail: Jason.encode!(detail)}
-  end
-
-  defp encode_detail(attrs), do: attrs
 
   defp actor_name(%{username: username}), do: username
   defp actor_name(actor) when is_binary(actor), do: actor

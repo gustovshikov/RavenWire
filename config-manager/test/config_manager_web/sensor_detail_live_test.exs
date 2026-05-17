@@ -2,13 +2,14 @@ defmodule ConfigManagerWeb.SensorDetailLiveTest do
   use ConfigManagerWeb.ConnCase, async: false
 
   alias ConfigManager.{Auth, Repo, SensorPod}
+  alias ConfigManager.AuditEntry
   alias ConfigManager.Health.Registry
 
-  defp login(conn, role \\ "platform-admin") do
+  defp create_user(role) do
     username = "sensor-detail-#{role}-#{System.unique_integer([:positive])}"
     password = "long-enough-password"
 
-    {:ok, _user} =
+    {:ok, user} =
       Auth.create_user(%{
         username: username,
         display_name: "Sensor Detail User",
@@ -16,7 +17,32 @@ defmodule ConfigManagerWeb.SensorDetailLiveTest do
         password: password
       })
 
-    post(conn, "/login", %{"username" => username, "password" => password})
+    {user, password}
+  end
+
+  defp login(conn, role \\ "platform-admin") do
+    {user, password} = create_user(role)
+    post(conn, "/login", %{"username" => user.username, "password" => password})
+  end
+
+  defmodule SuccessClient do
+    def validate_config(_pod), do: {:ok, %{"status" => "valid", "token" => "redacted"}}
+    def reload_zeek(_pod), do: {:ok, %{"status" => "reloaded"}}
+    def reload_suricata(_pod), do: {:ok, %{"status" => "reloaded"}}
+    def restart_vector(_pod), do: {:ok, %{"status" => "restarted"}}
+    def request_support_bundle(_pod), do: {:ok, %{"bundle_path" => "/tmp/support.tar.gz"}}
+  end
+
+  defmodule SlowClient do
+    def validate_config(_pod) do
+      Process.sleep(200)
+      {:ok, %{"status" => "valid"}}
+    end
+
+    def reload_zeek(_pod), do: {:ok, %{}}
+    def reload_suricata(_pod), do: {:ok, %{}}
+    def restart_vector(_pod), do: {:ok, %{}}
+    def request_support_bundle(_pod), do: {:ok, %{}}
   end
 
   defp insert_pod(attrs \\ %{}) do
@@ -153,6 +179,117 @@ defmodule ConfigManagerWeb.SensorDetailLiveTest do
     assert response =~ "Management Plane"
     assert response =~ "Max Drop"
     refute response =~ "Capture Consumers"
+  end
+
+  test "sensor actions run asynchronously and write sanitized audit success" do
+    put_sensor_action_env(SuccessClient, 1_000)
+
+    pod =
+      insert_pod(%{
+        status: "enrolled",
+        control_api_host: "127.0.0.1"
+      })
+
+    {user, _password} = create_user("sensor-operator")
+    socket = build_action_socket(pod, user, 1_000)
+
+    assert {:noreply, running} =
+             ConfigManagerWeb.SensorDetailLive.handle_event(
+               "action",
+               %{"action" => "validate_config"},
+               socket
+             )
+
+    assert MapSet.member?(running.assigns.in_flight_actions, "validate_config")
+    %{ref: ref} = running.assigns.action_tasks["validate_config"]
+    assert_receive {^ref, {:ok, %{"status" => "valid", "token" => "redacted"}}}, 500
+
+    assert {:noreply, finished} =
+             ConfigManagerWeb.SensorDetailLive.handle_info(
+               {ref, {:ok, %{"status" => "valid", "token" => "redacted"}}},
+               running
+             )
+
+    assert finished.assigns.flash["info"] == "Validate Config completed."
+    refute MapSet.member?(finished.assigns.in_flight_actions, "validate_config")
+
+    audit =
+      Repo.get_by!(AuditEntry,
+        action: "sensor_validate_config",
+        target_id: pod.id,
+        result: "success"
+      )
+
+    assert audit.detail =~ "valid"
+    refute audit.detail =~ "redacted"
+  end
+
+  test "sensor actions time out without blocking the LiveView" do
+    put_sensor_action_env(SlowClient, 20)
+
+    pod =
+      insert_pod(%{
+        status: "enrolled",
+        control_api_host: "127.0.0.1"
+      })
+
+    {user, _password} = create_user("sensor-operator")
+    socket = build_action_socket(pod, user, 20)
+
+    assert {:noreply, running} =
+             ConfigManagerWeb.SensorDetailLive.handle_event(
+               "action",
+               %{"action" => "validate_config"},
+               socket
+             )
+
+    %{ref: ref} = running.assigns.action_tasks["validate_config"]
+
+    assert {:noreply, timed_out} =
+             ConfigManagerWeb.SensorDetailLive.handle_info(
+               {:sensor_action_timeout, "validate_config", ref},
+               running
+             )
+
+    assert timed_out.assigns.flash["error"] == "Validate Config failed: Action timed out"
+    refute MapSet.member?(timed_out.assigns.in_flight_actions, "validate_config")
+
+    assert Repo.get_by!(AuditEntry,
+             action: "sensor_validate_config",
+             target_id: pod.id,
+             result: "failure"
+           )
+  end
+
+  defp put_sensor_action_env(client, timeout_ms) do
+    previous_client = Application.get_env(:config_manager, :sensor_agent_client)
+    previous_timeout = Application.get_env(:config_manager, :sensor_detail_action_timeout_ms)
+
+    Application.put_env(:config_manager, :sensor_agent_client, client)
+    Application.put_env(:config_manager, :sensor_detail_action_timeout_ms, timeout_ms)
+
+    on_exit(fn ->
+      restore_env(:sensor_agent_client, previous_client)
+      restore_env(:sensor_detail_action_timeout_ms, previous_timeout)
+    end)
+  end
+
+  defp restore_env(key, nil), do: Application.delete_env(:config_manager, key)
+  defp restore_env(key, value), do: Application.put_env(:config_manager, key, value)
+
+  defp build_action_socket(pod, user, timeout_ms) do
+    %Phoenix.LiveView.Socket{
+      assigns: %{
+        __changed__: %{},
+        flash: %{},
+        current_user: user,
+        pod: pod,
+        in_flight_actions: MapSet.new(),
+        action_tasks: %{},
+        action_timeout_ms: timeout_ms
+      },
+      private: %{live_temp: %{}}
+    }
   end
 
   defp health_report(pod_name) do

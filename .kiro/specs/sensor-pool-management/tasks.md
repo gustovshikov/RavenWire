@@ -133,7 +133,7 @@ This plan implements the complete pool management workflow for the RavenWire Con
     - Render 404 page if pool not found
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 5.1, 5.2, 5.3_
 
-  - [ ] 8.2 Implement `PoolLive.SensorsLive` — pool sensors page
+  - [x] 8.2 Implement `PoolLive.SensorsLive` — pool sensors page
     - Create `lib/config_manager_web/live/pool_live/sensors_live.ex`
     - Mount: load pool, list pool sensors, subscribe to `"pool:#{id}"`
     - Render sensor list with name, status, last seen, link to sensor detail
@@ -144,9 +144,9 @@ This plan implements the complete pool management workflow for the RavenWire Con
     - Show assign/remove buttons only for `pools:manage` users
     - Display notice that assignment changes desired state only (no auto-push)
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 7.1, 7.2, 7.3, 7.4_
-    - Status: MVP assigned/unassigned sensor list, assignment, per-row removal confirmation, RBAC UI hiding, and no-auto-push notice are implemented. Move-from-other-pool option and bulk removal UI remain.
+    - Status: assigned/unassigned sensor list, assignment, move-from-other-pool confirmation, per-row removal confirmation, bulk removal confirmation, RBAC UI hiding, server-side RBAC checks, PubSub refresh, and no-auto-push notice are implemented.
 
-- [ ] 9. Implement Pool LiveView pages — config and deployments
+- [x] 9. Implement Pool LiveView pages — config and deployments
   - [x] 9.1 Implement `PoolLive.ConfigLive` — pool config page
     - Create `lib/config_manager_web/live/pool_live/config_live.ex`
     - Mount: load pool, build config form changeset, subscribe to `"pool:#{id}"`
@@ -187,14 +187,14 @@ This plan implements the complete pool management workflow for the RavenWire Con
     - Replace raw pool UUID display with human-readable pool names in the deployment target dropdown
     - _Requirements: 12.3_
 
-- [ ] 12. Audit logging and transactional integrity
-  - [ ] 12.1 Verify and wire audit entry patterns for all pool mutations
+- [x] 12. Audit logging and transactional integrity
+  - [x] 12.1 Verify and wire audit entry patterns for all pool mutations
     - Ensure all context functions use `Ecto.Multi` with `Audit.append_multi/2`
     - Verify audit entries match the patterns defined in the design: `pool_created`, `pool_updated`, `pool_deleted`, `pool_config_updated`, `sensor_assigned_to_pool`, `sensor_removed_from_pool`
     - Verify bulk operations produce per-sensor entries + pool summary entry
     - Verify failure audit entries are written when actor and target can be identified
     - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5_
-    - Status: success-path audit entries are transactional for pool create/update/delete, config updates, assignment, and removal. Failure audit entries and explicit `Audit.append_multi/2` helper usage remain.
+    - Status: success-path audit entries are transactional through `Audit.append_multi/2` for pool create/update/delete, config updates, assignment, moves, and removal. Failure audit entries are written for validation/selection failures when the pool target is known.
 
   - [ ]* 12.2 Write property test for audit entry structural completeness
     - **Property 9: Every pool mutation produces a structurally complete audit entry**
@@ -204,8 +204,8 @@ This plan implements the complete pool management workflow for the RavenWire Con
     - **Property 11: Audit writes are transactional with pool mutations**
     - **Validates: Requirements 11.4**
 
-- [ ] 13. PubSub real-time updates and UI quality
-  - [ ] 13.1 Wire PubSub broadcasts and handlers across all LiveView modules
+- [x] 13. PubSub real-time updates and UI quality
+  - [x] 13.1 Wire PubSub broadcasts and handlers across all LiveView modules
     - Verify all context functions broadcast to correct topics per the design
     - Ensure `IndexLive` handles `{:pool_created, _}`, `{:pool_updated, _}`, `{:pool_deleted, _}`, `{:pool_membership_changed, _}`
     - Ensure `ShowLive` handles pool-scoped messages and redirects on deletion
@@ -213,16 +213,16 @@ This plan implements the complete pool management workflow for the RavenWire Con
     - Ensure `ConfigLive` handles `{:pool_config_updated, _}`
     - Ensure messages for unrelated pool IDs are ignored
     - _Requirements: 14.1, 14.2_
-    - Status: context broadcasts and MVP page refresh handlers are wired for pool list/detail/sensors/config plus sensor detail assignment messages. More selective unrelated-message handling tests remain.
+    - Status: context broadcasts and page refresh handlers are wired for pool list/detail/sensors/config plus sensor detail assignment messages. `SensorsLive` ignores unrelated messages and reloads only matching pool membership events.
 
-  - [ ] 13.2 Add accessible labels, confirmation text, and responsive layout
+  - [x] 13.2 Add accessible labels, confirmation text, and responsive layout
     - Add ARIA labels to all pool forms, buttons, and interactive controls
     - Ensure confirmation dialogs have clear text and keyboard-reachable controls
     - Verify pool pages render without horizontal overflow at common widths
     - _Requirements: 14.3, 14.4_
-    - Status: basic labels, confirmation text, and responsive layouts are present; dedicated accessibility/responsive verification remains.
+    - Status: labels, confirmation text, and responsive layouts are present for pool list/detail/config/sensors pages; focused coverage verifies the membership controls expose accessible labels.
 
-- [ ] 14. Final checkpoint — Ensure all tests pass
+- [x] 14. Final checkpoint — Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

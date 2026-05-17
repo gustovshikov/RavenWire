@@ -26,6 +26,14 @@ defmodule ConfigManager.Application do
       # Health registry (in-memory pod state)
       ConfigManager.Health.Registry,
 
+      # Sensor detail actions run off the LiveView process so slow Control API
+      # calls can be timed out without blocking UI state updates.
+      {Task.Supervisor, name: ConfigManager.SensorActionTaskSupervisor},
+
+      # Deployment orchestration runs in supervised tasks so deployment creation
+      # can return promptly while per-sensor push results stream in.
+      {Task.Supervisor, name: ConfigManager.Deployments.TaskSupervisor},
+
       # Intermediate CA — generates or loads keypair from persistent volume
       ConfigManager.CA.IntermediateCA,
 

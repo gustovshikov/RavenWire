@@ -9,6 +9,13 @@ defmodule ConfigManagerWeb.PoolLive.HelpersTest do
     assert Helpers.can_manage_pools?(%{role: "platform-admin"})
   end
 
+  test "can_manage_deployments? follows role permissions" do
+    refute Helpers.can_manage_deployments?(nil)
+    refute Helpers.can_manage_deployments?(%{role: "viewer"})
+    assert Helpers.can_manage_deployments?(%{role: "sensor-operator"})
+    assert Helpers.can_manage_deployments?(%{role: "platform-admin"})
+  end
+
   test "formats capture modes and severities with nil-safe fallback" do
     assert Helpers.format_capture_mode("alert_driven") == "Alert Driven"
     assert Helpers.format_capture_mode("full_pcap") == "Full PCAP"

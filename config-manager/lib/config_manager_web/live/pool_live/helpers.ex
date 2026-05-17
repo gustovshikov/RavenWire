@@ -9,6 +9,9 @@ defmodule ConfigManagerWeb.PoolLive.Helpers do
   def can_manage_pools?(nil), do: false
   def can_manage_pools?(user), do: Policy.has_permission?(user.role, "pools:manage")
 
+  def can_manage_deployments?(nil), do: false
+  def can_manage_deployments?(user), do: Policy.has_permission?(user.role, "deployments:manage")
+
   def pool_nav(assigns) do
     ~H"""
     <div class="mb-4 flex flex-wrap gap-3 text-sm">
@@ -16,6 +19,7 @@ defmodule ConfigManagerWeb.PoolLive.Helpers do
       <a href={"/pools/#{@pool.id}/sensors"} class="text-blue-600 hover:underline">Sensors</a>
       <a href={"/pools/#{@pool.id}/config"} class="text-blue-600 hover:underline">Config</a>
       <a href={"/pools/#{@pool.id}/deployments"} class="text-blue-600 hover:underline">Deployments</a>
+      <a href={"/pools/#{@pool.id}/drift"} class="text-blue-600 hover:underline">Drift</a>
     </div>
     """
   end
