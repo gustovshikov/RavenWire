@@ -135,6 +135,7 @@ func TestProperty13_ReadinessFailureReportCompleteness(t *testing.T) {
 			buf.Bsize = bytesPerBlock
 			return nil
 		}
+		stubHostIntegrationChecksPass()
 
 		// ── Build config and run checks ────────────────────────────────
 
@@ -251,8 +252,8 @@ func TestProperty13_HardFailureBlocksSoftDoesNot(t *testing.T) {
 		// Base stubs: everything passes.
 		files := map[string]string{
 			"/sys/class/net/eth0/operstate":         "up\n",
-			"/sys/class/net/eth0/gro_flush_timeout":  "0\n",
-			"/sys/class/net/eth0/tx_queue_len":       "4096\n",
+			"/sys/class/net/eth0/gro_flush_timeout": "0\n",
+			"/sys/class/net/eth0/tx_queue_len":      "4096\n",
 		}
 		readFileFunc = stubReadFile(files)
 		globFunc = stubGlob([]string{"/sys/class/net/eth0/queues/rx-0"})
@@ -260,6 +261,7 @@ func TestProperty13_HardFailureBlocksSoftDoesNot(t *testing.T) {
 		writeTestFileFunc = stubWriteTestFile(1000.0, nil)
 		getInterfaceFlagsFunc = stubInterfaceFlags(0x100, nil)
 		statfsFunc = stubStatfs(100*1024*1024, 1024)
+		stubHostIntegrationChecksPass()
 
 		cfg := DefaultConfig()
 
@@ -279,8 +281,8 @@ func TestProperty13_HardFailureBlocksSoftDoesNot(t *testing.T) {
 			case "gro":
 				readFileFunc = stubReadFile(map[string]string{
 					"/sys/class/net/eth0/operstate":         "up\n",
-					"/sys/class/net/eth0/gro_flush_timeout":  "250000\n",
-					"/sys/class/net/eth0/tx_queue_len":       "4096\n",
+					"/sys/class/net/eth0/gro_flush_timeout": "250000\n",
+					"/sys/class/net/eth0/tx_queue_len":      "4096\n",
 				})
 			}
 		} else {
@@ -342,14 +344,14 @@ func TestProperty13_HardFailureBlocksSoftDoesNot(t *testing.T) {
 func TestProperty13_IndividualCheckSeverityClassification(t *testing.T) {
 	// Map of check names to their expected severity.
 	expectedSeverity := map[string]Severity{
-		"gro_disabled":       SeverityHard,
-		"lro_disabled":       SeverityHard,
-		"rx_ring_buffer":     SeveritySoft,
-		"promiscuous_mode":   SeverityHard,
-		"rss_queues":         SeveritySoft,
-		"cpu_isolation":      SeveritySoft,
+		"gro_disabled":          SeverityHard,
+		"lro_disabled":          SeverityHard,
+		"rx_ring_buffer":        SeveritySoft,
+		"promiscuous_mode":      SeverityHard,
+		"rss_queues":            SeveritySoft,
+		"cpu_isolation":         SeveritySoft,
 		"nvme_write_throughput": SeverityHard,
-		"clock_sync":         SeverityHard,
+		"clock_sync":            SeverityHard,
 	}
 
 	rapid.Check(t, func(t *rapid.T) {

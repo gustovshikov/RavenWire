@@ -42,7 +42,8 @@ defmodule ConfigManager.Enrollment do
   # ── Enrollment submission ────────────────────────────────────────────────────
 
   @doc """
-  Called by the Sensor_Agent with a one-time token, pod name, and public key PEM.
+  Called by the Sensor_Agent with a one-time token, pod name, public key PEM,
+  and optional Control API host.
 
   Validates the token (single-use enforcement), consumes it immediately, and
   creates a pending SensorPod record.
@@ -52,11 +53,12 @@ defmodule ConfigManager.Enrollment do
   - `{:error, :token_invalid}` — token not found or already consumed
   - `{:error, :token_expired}` — token TTL has elapsed
   """
-  def submit(token_value, pod_name, public_key_pem) do
+  def submit(token_value, pod_name, public_key_pem, control_api_host \\ nil) do
     Repo.transaction(fn ->
       with {:ok, token} <- fetch_and_consume_token(token_value),
            {:ok, fingerprint} <- compute_key_fingerprint(public_key_pem),
-           {:ok, pod} <- create_pending_pod(pod_name, public_key_pem, fingerprint) do
+           {:ok, pod} <-
+             create_pending_pod(pod_name, public_key_pem, fingerprint, control_api_host) do
         Logger.info("Enrollment request received: pod=#{pod_name}, token=#{token.id}")
 
         Phoenix.PubSub.broadcast(
@@ -274,13 +276,16 @@ defmodule ConfigManager.Enrollment do
     end
   end
 
-  defp create_pending_pod(pod_name, public_key_pem, fingerprint) do
+  defp create_pending_pod(pod_name, public_key_pem, fingerprint, control_api_host) do
     attrs = %{
       name: pod_name,
       public_key_pem: public_key_pem,
       key_fingerprint: fingerprint,
-      enrolled_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      enrolled_at: DateTime.utc_now() |> DateTime.truncate(:second),
+      control_api_host: normalize_control_api_host(control_api_host)
     }
+
+    attrs = Enum.reject(attrs, fn {_key, value} -> is_nil(value) end) |> Map.new()
 
     case Repo.get_by(SensorPod, name: pod_name) do
       nil ->
@@ -296,6 +301,25 @@ defmodule ConfigManager.Enrollment do
         |> Repo.update()
     end
   end
+
+  defp normalize_control_api_host(nil), do: nil
+
+  defp normalize_control_api_host(host) when is_binary(host) do
+    host
+    |> String.trim()
+    |> String.trim_leading("https://")
+    |> String.trim_leading("http://")
+    |> String.split("/", parts: 2)
+    |> hd()
+    |> String.split(":", parts: 2)
+    |> hd()
+    |> case do
+      "" -> nil
+      normalized -> normalized
+    end
+  end
+
+  defp normalize_control_api_host(_host), do: nil
 
   defp fetch_pending_pod(pod_id) do
     case Repo.get(SensorPod, pod_id) do

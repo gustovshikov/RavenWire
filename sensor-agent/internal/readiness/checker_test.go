@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -65,11 +66,31 @@ func stubStatfs(bavail uint64, bsize int64) func(string, *syscall.Statfs_t) erro
 	}
 }
 
+func stubHostIntegrationChecksPass() {
+	mkdirAllFunc = func(string, os.FileMode) error { return nil }
+	statFunc = func(string) (os.FileInfo, error) { return stubFileInfo{}, nil }
+	socketFunc = func(int, int, int) (int, error) { return 42, nil }
+	closeFunc = func(int) error { return nil }
+}
+
+type stubFileInfo struct{}
+
+func (stubFileInfo) Name() string       { return "stub" }
+func (stubFileInfo) Size() int64        { return 0 }
+func (stubFileInfo) Mode() os.FileMode  { return 0644 }
+func (stubFileInfo) ModTime() time.Time { return time.Unix(0, 0) }
+func (stubFileInfo) IsDir() bool        { return false }
+func (stubFileInfo) Sys() any           { return nil }
+
 // saveAndRestore saves the current injectable functions and returns a cleanup func.
 func saveAndRestore() func() {
 	origRead := readFileFunc
 	origGlob := globFunc
 	origStatfs := statfsFunc
+	origMkdirAll := mkdirAllFunc
+	origStat := statFunc
+	origSocket := socketFunc
+	origClose := closeFunc
 	origAdjtimex := adjtimexFunc
 	origFlags := getInterfaceFlagsFunc
 	origWrite := writeTestFileFunc
@@ -77,6 +98,10 @@ func saveAndRestore() func() {
 		readFileFunc = origRead
 		globFunc = origGlob
 		statfsFunc = origStatfs
+		mkdirAllFunc = origMkdirAll
+		statFunc = origStat
+		socketFunc = origSocket
+		closeFunc = origClose
 		adjtimexFunc = origAdjtimex
 		getInterfaceFlagsFunc = origFlags
 		writeTestFileFunc = origWrite
@@ -436,14 +461,15 @@ func TestCheck_HardFailureBlocksBootstrap(t *testing.T) {
 	// Stub everything to pass except promiscuous mode (hard failure)
 	readFileFunc = stubReadFile(map[string]string{
 		"/sys/class/net/eth0/operstate":         "up\n",
-		"/sys/class/net/eth0/gro_flush_timeout":  "0\n",
-		"/sys/class/net/eth0/tx_queue_len":       "4096\n",
+		"/sys/class/net/eth0/gro_flush_timeout": "0\n",
+		"/sys/class/net/eth0/tx_queue_len":      "4096\n",
 	})
 	globFunc = stubGlob([]string{"/sys/class/net/eth0/queues/rx-0"})
 	adjtimexFunc = stubAdjtimex(0, 0, nil)
 	writeTestFileFunc = stubWriteTestFile(1000.0, nil)
 	getInterfaceFlagsFunc = stubInterfaceFlags(0x0, nil) // no promisc = hard fail
 	statfsFunc = stubStatfs(100*1024*1024, 1024)         // ~100 GB
+	stubHostIntegrationChecksPass()
 
 	c := New(DefaultConfig())
 	report := c.Check()
@@ -477,14 +503,15 @@ func TestCheck_SoftFailureDoesNotBlockBootstrap(t *testing.T) {
 	// Stub everything to pass except RSS queues (soft failure)
 	readFileFunc = stubReadFile(map[string]string{
 		"/sys/class/net/eth0/operstate":         "up\n",
-		"/sys/class/net/eth0/gro_flush_timeout":  "0\n",
-		"/sys/class/net/eth0/tx_queue_len":       "4096\n",
+		"/sys/class/net/eth0/gro_flush_timeout": "0\n",
+		"/sys/class/net/eth0/tx_queue_len":      "4096\n",
 	})
 	globFunc = stubGlob([]string{"/sys/class/net/eth0/queues/rx-0"}) // 1 queue < 4 workers
 	adjtimexFunc = stubAdjtimex(0, 0, nil)
 	writeTestFileFunc = stubWriteTestFile(1000.0, nil)
 	getInterfaceFlagsFunc = stubInterfaceFlags(0x100, nil) // promisc on
 	statfsFunc = stubStatfs(100*1024*1024, 1024)           // ~100 GB
+	stubHostIntegrationChecksPass()
 
 	cfg := DefaultConfig()
 	cfg.CaptureWorkers = 4 // more workers than queues → soft fail

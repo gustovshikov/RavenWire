@@ -10,10 +10,16 @@ defmodule ConfigManagerWeb.SensorDetailLive do
   alias ConfigManager.Health.Registry
 
   @expected_containers [
+    {"config_manager", ["config_manager", "config-manager", "systemd-config-manager"]},
     {"zeek", ["zeek", "systemd-zeek"]},
     {"suricata", ["suricata", "systemd-suricata"]},
     {"vector", ["vector", "systemd-vector"]},
+    {"sensor_agent", ["sensor_agent", "sensor-agent", "systemd-sensor-agent"]},
     {"pcap_ring_writer", ["pcap_ring_writer", "pcap-ring-writer", "systemd-pcap-ring-writer"]}
+  ]
+  @container_planes [
+    {"Capture / Sensor Plane", ["pcap_ring_writer", "zeek", "suricata", "vector"]},
+    {"Management Plane", ["config_manager", "sensor_agent"]}
   ]
   @action_permissions %{
     "validate_config" => "sensor:operate",
@@ -347,7 +353,12 @@ defmodule ConfigManagerWeb.SensorDetailLive do
   attr(:health, :any, required: true)
 
   def container_section(assigns) do
-    assigns = assign(assigns, :containers, expected_containers(assigns.health))
+    containers = expected_containers(assigns.health)
+
+    assigns =
+      assigns
+      |> assign(:containers, containers)
+      |> assign(:container_groups, grouped_containers(containers))
 
     ~H"""
     <section aria-label="Container Health" class="mb-4 rounded border border-gray-200 bg-white p-4">
@@ -355,36 +366,48 @@ defmodule ConfigManagerWeb.SensorDetailLive do
       <%= if @containers == [] do %>
         <p class="text-sm text-gray-600">No container data is available.</p>
       <% else %>
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-sm">
-            <thead>
-              <tr class="border-b border-gray-200 text-xs uppercase text-gray-500">
-                <th class="py-2 pr-4 font-medium">Name</th>
-                <th class="py-2 pr-4 font-medium">State</th>
-                <th class="py-2 pr-4 font-medium">Uptime</th>
-                <th class="py-2 pr-4 font-medium">CPU</th>
-                <th class="py-2 font-medium">Memory</th>
-              </tr>
-            </thead>
-            <tbody>
-              <%= for container <- @containers do %>
-                <tr class="border-b border-gray-100 last:border-0">
-                  <th class="py-2 pr-4 font-mono font-medium text-gray-900"><%= container.name %></th>
-                  <td class="py-2 pr-4">
-                    <span class={"inline-flex rounded px-2 py-0.5 text-xs font-medium #{status_class(container.state)}"}>
-                      <%= container.state %>
-                    </span>
-                  </td>
-                  <td class="py-2 pr-4 text-gray-700"><%= format_uptime(container.uptime_seconds) %></td>
-                  <td class={"py-2 pr-4 #{if container.cpu_percent && container.cpu_percent > 90, do: "font-semibold text-yellow-800", else: "text-gray-700"}"}>
-                    <%= format_percent(container.cpu_percent) %>
-                    <%= if container.cpu_percent && container.cpu_percent > 90, do: "(warning)" %>
-                  </td>
-                  <td class="py-2 text-gray-700"><%= format_bytes(container.memory_bytes) %></td>
-                </tr>
-              <% end %>
-            </tbody>
-          </table>
+        <div class="space-y-4">
+          <%= for {group_name, group_containers} <- @container_groups do %>
+            <div>
+              <div class="mb-2 flex items-center justify-between gap-3">
+                <h3 class="text-sm font-semibold text-gray-900"><%= group_name %></h3>
+                <span class={"rounded px-2 py-0.5 text-xs font-medium #{status_class(plane_status(group_containers))}"}>
+                  <%= plane_summary(group_containers) %>
+                </span>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                  <thead>
+                    <tr class="border-b border-gray-200 text-xs uppercase text-gray-500">
+                      <th class="py-2 pr-4 font-medium">Name</th>
+                      <th class="py-2 pr-4 font-medium">State</th>
+                      <th class="py-2 pr-4 font-medium">Uptime</th>
+                      <th class="py-2 pr-4 font-medium">CPU</th>
+                      <th class="py-2 font-medium">Memory</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <%= for container <- group_containers do %>
+                      <tr class="border-b border-gray-100 last:border-0">
+                        <th class="py-2 pr-4 font-mono font-medium text-gray-900"><%= container.name %></th>
+                        <td class="py-2 pr-4">
+                          <span class={"inline-flex rounded px-2 py-0.5 text-xs font-medium #{status_class(container.state)}"}>
+                            <%= container.state %>
+                          </span>
+                        </td>
+                        <td class="py-2 pr-4 text-gray-700"><%= format_uptime(container.uptime_seconds) %></td>
+                        <td class={"py-2 pr-4 #{if container.cpu_percent && container.cpu_percent > 90, do: "font-semibold text-yellow-800", else: "text-gray-700"}"}>
+                          <%= format_percent(container.cpu_percent) %>
+                          <%= if container.cpu_percent && container.cpu_percent > 90, do: "(warning)" %>
+                        </td>
+                        <td class="py-2 text-gray-700"><%= format_bytes(container.memory_bytes) %></td>
+                      </tr>
+                    <% end %>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          <% end %>
         </div>
       <% end %>
     </section>
@@ -620,6 +643,90 @@ defmodule ConfigManagerWeb.SensorDetailLive do
   end
 
   defp capture_consumers(_), do: []
+
+  defp grouped_containers(containers) do
+    canonical_by_name =
+      @expected_containers
+      |> Enum.flat_map(fn {canonical, aliases} -> Enum.map(aliases, &{&1, canonical}) end)
+      |> Map.new()
+
+    by_canonical =
+      containers
+      |> Enum.group_by(fn container ->
+        Map.get(canonical_by_name, container.name, container.name)
+      end)
+
+    expected_groups =
+      Enum.map(@container_planes, fn {label, canonical_names} ->
+        group_containers =
+          canonical_names
+          |> Enum.flat_map(&Map.get(by_canonical, &1, []))
+          |> Enum.sort_by(&container_order/1)
+
+        {label, group_containers}
+      end)
+
+    expected_canonicals =
+      @container_planes
+      |> Enum.flat_map(fn {_label, names} -> names end)
+      |> MapSet.new()
+
+    other_containers =
+      by_canonical
+      |> Enum.reject(fn {canonical, _containers} ->
+        MapSet.member?(expected_canonicals, canonical)
+      end)
+      |> Enum.flat_map(fn {_canonical, group_containers} -> group_containers end)
+      |> Enum.sort_by(& &1.name)
+
+    expected_groups
+    |> maybe_append_other_containers(other_containers)
+    |> Enum.reject(fn {_label, group_containers} -> group_containers == [] end)
+  end
+
+  defp maybe_append_other_containers(groups, []), do: groups
+  defp maybe_append_other_containers(groups, containers), do: groups ++ [{"Other", containers}]
+
+  defp container_order(container) do
+    order =
+      @container_planes
+      |> Enum.flat_map(fn {_label, canonical_names} -> canonical_names end)
+      |> Enum.with_index()
+      |> Map.new()
+
+    canonical =
+      @expected_containers
+      |> Enum.find_value(fn {canonical, aliases} ->
+        if container.name in aliases, do: canonical
+      end)
+
+    {Map.get(order, canonical, 999), container.name}
+  end
+
+  defp plane_status([]), do: "missing"
+
+  defp plane_status(containers) do
+    states = Enum.map(containers, & &1.state)
+
+    cond do
+      "error" in states -> "error"
+      "restarting" in states -> "restarting"
+      "missing" in states -> "missing"
+      Enum.all?(states, &(&1 == "running")) -> "running"
+      true -> "stopped"
+    end
+  end
+
+  defp plane_summary(containers) do
+    total = length(containers)
+    running = Enum.count(containers, &(&1.state == "running"))
+
+    case plane_status(containers) do
+      "running" -> "#{running}/#{total} running"
+      "missing" -> "#{running}/#{total} running, missing"
+      status -> "#{running}/#{total} running, #{status}"
+    end
+  end
 
   defp visible_actions(nil), do: []
 

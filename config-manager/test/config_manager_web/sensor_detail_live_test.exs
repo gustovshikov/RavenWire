@@ -110,6 +110,10 @@ defmodule ConfigManagerWeb.SensorDetailLiveTest do
     assert response =~ "systemd-suricata"
     assert response =~ "systemd-vector"
     assert response =~ "systemd-pcap-ring-writer"
+    assert response =~ "systemd-config-manager"
+    assert response =~ "systemd-sensor-agent"
+    assert response =~ "Capture / Sensor Plane"
+    assert response =~ "Management Plane"
     refute response =~ ">zeek</th>"
     refute response =~ ">suricata</th>"
     refute response =~ ">vector</th>"
@@ -145,6 +149,8 @@ defmodule ConfigManagerWeb.SensorDetailLiveTest do
     assert response =~ ~s(href="/sensors/#{pod.id}")
     assert response =~ ~s(aria-label="View details for #{pod.name}")
     assert response =~ "Disk Free"
+    assert response =~ "Capture Plane"
+    assert response =~ "Management Plane"
     assert response =~ "Max Drop"
     refute response =~ "Capture Consumers"
   end
@@ -181,6 +187,20 @@ defmodule ConfigManagerWeb.SensorDetailLiveTest do
           uptime_seconds: 3_300,
           cpu_percent: 4.0,
           memory_bytes: 32_000_000
+        },
+        %Health.ContainerHealth{
+          name: "systemd-config-manager",
+          state: "running",
+          uptime_seconds: 3_200,
+          cpu_percent: 2.0,
+          memory_bytes: 160_000_000
+        },
+        %Health.ContainerHealth{
+          name: "systemd-sensor-agent",
+          state: "running",
+          uptime_seconds: 3_100,
+          cpu_percent: 1.0,
+          memory_bytes: 24_000_000
         }
       ],
       capture: %Health.CaptureStats{

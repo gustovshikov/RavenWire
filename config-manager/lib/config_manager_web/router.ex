@@ -14,8 +14,16 @@ defmodule ConfigManagerWeb.Router do
     plug(:accepts, ["json"])
   end
 
+  pipeline :api_token_auth do
+    plug(ConfigManagerWeb.Plugs.ApiTokenAuth)
+  end
+
   pipeline :require_auth do
     plug(ConfigManagerWeb.Plugs.RequireAuth)
+  end
+
+  pipeline :require_password_change do
+    plug(ConfigManagerWeb.Plugs.RequirePasswordChange)
   end
 
   pipeline :dashboard_view do
@@ -54,12 +62,14 @@ defmodule ConfigManagerWeb.Router do
   scope "/", ConfigManagerWeb do
     pipe_through([:browser, :require_auth])
 
+    get("/password/change", PasswordController, :edit)
+    post("/password/change", PasswordController, :update)
     post("/logout", SessionController, :delete)
     delete("/logout", SessionController, :delete)
   end
 
   scope "/", ConfigManagerWeb do
-    pipe_through([:browser, :require_auth, :dashboard_view])
+    pipe_through([:browser, :require_auth, :require_password_change, :dashboard_view])
 
     live_session :dashboard,
       on_mount: [{ConfigManagerWeb.AuthHelpers, :require_auth}] do
@@ -68,7 +78,7 @@ defmodule ConfigManagerWeb.Router do
   end
 
   scope "/", ConfigManagerWeb do
-    pipe_through([:browser, :require_auth, :enrollment_manage])
+    pipe_through([:browser, :require_auth, :require_password_change, :enrollment_manage])
 
     live_session :enrollment,
       on_mount: [{ConfigManagerWeb.AuthHelpers, :require_auth}] do
@@ -77,7 +87,7 @@ defmodule ConfigManagerWeb.Router do
   end
 
   scope "/", ConfigManagerWeb do
-    pipe_through([:browser, :require_auth, :pools_manage])
+    pipe_through([:browser, :require_auth, :require_password_change, :pools_manage])
 
     live_session :pool_management,
       on_mount: [{ConfigManagerWeb.AuthHelpers, :require_auth}] do
@@ -87,7 +97,7 @@ defmodule ConfigManagerWeb.Router do
   end
 
   scope "/", ConfigManagerWeb do
-    pipe_through([:browser, :require_auth, :sensors_view])
+    pipe_through([:browser, :require_auth, :require_password_change, :sensors_view])
 
     live_session :sensor_pages,
       on_mount: [{ConfigManagerWeb.AuthHelpers, :require_auth}] do
@@ -106,7 +116,7 @@ defmodule ConfigManagerWeb.Router do
   end
 
   scope "/", ConfigManagerWeb do
-    pipe_through([:browser, :require_auth, :audit_view])
+    pipe_through([:browser, :require_auth, :require_password_change, :audit_view])
 
     live_session :audit,
       on_mount: [{ConfigManagerWeb.AuthHelpers, :require_auth}] do

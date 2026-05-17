@@ -25,6 +25,7 @@ Volume=/var/run/sensor:/var/run/sensor:rw
 Environment=SENSOR_POD_NAME=${SENSOR_POD_NAME}
 Environment=SENSOR_ENROLLMENT_TOKEN=${SENSOR_ENROLLMENT_TOKEN}
 Environment=CONFIG_MANAGER_URL=${CONFIG_MANAGER_URL}
+Environment=CONTROL_API_HOST=${CONTROL_API_HOST}
 Environment=GRPC_ADDR=${GRPC_ADDR}
 Environment=GRPC_INSECURE=true
 Environment=CAPTURE_IFACE=${CAPTURE_IFACE}

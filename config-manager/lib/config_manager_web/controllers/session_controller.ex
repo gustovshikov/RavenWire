@@ -8,7 +8,7 @@ defmodule ConfigManagerWeb.SessionController do
   end
 
   def create(conn, %{"username" => username, "password" => password}) do
-    case Auth.authenticate(username, password) do
+    case Auth.authenticate(username, password, ip: conn.remote_ip) do
       {:ok, user, session_token} ->
         Audit.log(%{
           actor: user.username,
@@ -22,7 +22,7 @@ defmodule ConfigManagerWeb.SessionController do
         conn
         |> configure_session(renew: true)
         |> put_session(:session_token, session_token)
-        |> redirect(to: "/")
+        |> redirect(to: post_login_path(user))
 
       {:error, _reason} ->
         Audit.log(%{
@@ -36,14 +36,14 @@ defmodule ConfigManagerWeb.SessionController do
 
         conn
         |> put_flash(:error, "Invalid username or password")
-        |> html(login_html(conn))
+        |> render_login()
     end
   end
 
   def create(conn, _params) do
     conn
     |> put_flash(:error, "Invalid username or password")
-    |> html(login_html(conn))
+    |> render_login()
   end
 
   def delete(conn, _params) do
@@ -67,6 +67,11 @@ defmodule ConfigManagerWeb.SessionController do
     |> redirect(to: "/login")
   end
 
+  defp post_login_path(%{must_change_password: true}), do: "/password/change"
+  defp post_login_path(_user), do: "/"
+
+  defp render_login(conn), do: html(conn, login_html(conn))
+
   defp login_html(conn) do
     error =
       case Phoenix.Flash.get(conn.assigns[:flash] || %{}, :error) do
@@ -85,7 +90,10 @@ defmodule ConfigManagerWeb.SessionController do
       </head>
       <body class="bg-gray-50">
         <main class="mx-auto max-w-md px-6 py-16">
-          <h1 class="mb-6 text-2xl font-bold text-gray-900">RavenWire Manager</h1>
+          <div class="mb-6 text-center">
+            <img class="mx-auto mb-4 w-full max-w-sm" src="/images/logos/main-logo-transparent.png" alt="RavenWire">
+            <h1 class="text-2xl font-bold text-gray-900">RavenWire Manager</h1>
+          </div>
           #{if error, do: ~s(<div class="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">#{error}</div>), else: ""}
           <form action="/login" method="post" class="space-y-4 rounded border border-gray-200 bg-white p-6 shadow-sm">
             <input type="hidden" name="_csrf_token" value="#{Plug.CSRFProtection.get_csrf_token()}">

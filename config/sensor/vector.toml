@@ -1,6 +1,6 @@
 # Vector production configuration for Sensor_Pod
 # Sources: Zeek file source, Suricata EVE JSON file source
-# Sinks: local console plus alert webhook
+# Sinks: blackhole for normalized events plus alert webhook
 # Alert webhook: HTTP POST to Sensor_Agent PCAP Manager on qualifying Suricata alerts
 # Disk-backed buffer: 1GB, FIFO drop on overflow
 
@@ -11,20 +11,29 @@ type = "file"
 include = ["/var/sensor/logs/zeek/*.log"]
 read_from = "beginning"
 ignore_older_secs = 86400
+fingerprint.strategy = "device_and_inode"
 
 [sources.suricata_eve]
 type = "file"
 include = ["/var/sensor/logs/suricata/eve*.json"]
 read_from = "beginning"
 ignore_older_secs = 86400
+fingerprint.strategy = "device_and_inode"
 
 # ── Transforms ───────────────────────────────────────────────────────────────
 
 [transforms.parse_zeek]
 type = "remap"
 inputs = ["zeek_logs"]
+drop_on_abort = true
+drop_on_error = true
+reroute_dropped = false
 source = '''
-  . = parse_json!(string!(.message))
+  parsed = parse_json(string!(.message)) ?? null
+  if parsed == null {
+    abort
+  }
+  . = parsed
   .sensor_source = "zeek"
   .sensor_pod_id = get_env_var!("SENSOR_POD_NAME")
   # Preserve community_id exactly as-is
@@ -39,8 +48,15 @@ source = '''
 [transforms.parse_suricata]
 type = "remap"
 inputs = ["suricata_eve"]
+drop_on_abort = true
+drop_on_error = true
+reroute_dropped = false
 source = '''
-  . = parse_json!(string!(.message))
+  parsed = parse_json(string!(.message)) ?? null
+  if parsed == null {
+    abort
+  }
+  . = parsed
   .sensor_source = "suricata"
   .sensor_pod_id = get_env_var!("SENSOR_POD_NAME")
   # Preserve community_id exactly as-is
@@ -71,6 +87,7 @@ source = '''
 [transforms.route_alerts]
 type = "route"
 inputs = ["parse_suricata"]
+reroute_unmatched = false
 
 [transforms.route_alerts.route]
 qualifying_alert = '.event_type == "alert" && exists(.alert.severity) && ((to_int(.alert.severity) ?? 999) <= 2)'
@@ -89,9 +106,8 @@ type = "memory"
 max_events = 1000
 when_full = "drop_newest"
 
-# ── Local normalized event sink ───────────────────────────────────────────────
+# ── Default normalized event sink ─────────────────────────────────────────────
 
-[sinks.normalized_console]
-type = "console"
+[sinks.normalized_null]
+type = "blackhole"
 inputs = ["normalize"]
-encoding.codec = "json"

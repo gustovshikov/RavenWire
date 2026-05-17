@@ -117,6 +117,10 @@ func readFilter(t *testing.T, path string) string {
 	return string(data)
 }
 
+func successfulBPFCompiler(_ string) ([]unix.SockFilter, error) {
+	return []unix.SockFilter{{Code: unix.BPF_RET | unix.BPF_K, K: 0xffff}}, nil
+}
+
 // ── Property 5: BPF filter validation before state mutation ──────────────────
 //
 // For any BPF filter string that fails compilation, the Capture_Manager SHALL
@@ -256,7 +260,9 @@ func TestProperty5_BPFFilterValidationBeforeStateMutation(t *testing.T) {
 			{Name: consumerName, FanoutGroupID: 1, FanoutMode: FanoutHash, Interface: "eth0", ThreadCount: 1},
 		}
 		cfg := &CaptureConfig{Consumers: consumers}
-		m := NewManager(cfg, filterPath, filepath.Join(dir, "pcap_ring.sock"))
+		m := NewManagerWithConfig(cfg, filterPath, filepath.Join(dir, "pcap_ring.sock"), ManagerConfig{
+			BPFCompiler: successfulBPFCompiler,
+		})
 
 		// Record state before any change attempt.
 		stateBefore, _ := os.ReadFile(filterPath)
@@ -286,7 +292,9 @@ func TestProperty5_ZeekSuricataClassifiedAsRestartRequired(t *testing.T) {
 				{Name: consumerName, FanoutGroupID: 1, FanoutMode: FanoutHash, Interface: "eth0", ThreadCount: 1},
 			}
 			cfg := &CaptureConfig{Consumers: consumers}
-			m := NewManager(cfg, filterPath, filepath.Join(dir, "pcap_ring.sock"))
+			m := NewManagerWithConfig(cfg, filterPath, filepath.Join(dir, "pcap_ring.sock"), ManagerConfig{
+				BPFCompiler: successfulBPFCompiler,
+			})
 
 			_ = m.ApplyBPFFilter("udp")
 
@@ -315,7 +323,9 @@ func TestProperty5_PcapRingWriterIsLiveReload(t *testing.T) {
 		{Name: "pcap_ring_writer", FanoutGroupID: 4, FanoutMode: FanoutHash, Interface: "eth0", ThreadCount: 1},
 	}
 	cfg := &CaptureConfig{Consumers: consumers}
-	m := NewManager(cfg, filterPath, filepath.Join(dir, "pcap_ring.sock"))
+	m := NewManagerWithConfig(cfg, filterPath, filepath.Join(dir, "pcap_ring.sock"), ManagerConfig{
+		BPFCompiler: successfulBPFCompiler,
+	})
 
 	_ = m.ApplyBPFFilter("udp")
 
@@ -385,7 +395,8 @@ func TestProperty6_BPFFilterChangeAuditLogCompleteness(t *testing.T) {
 
 		cfg := &CaptureConfig{Consumers: consumers}
 		m := NewManagerWithConfig(cfg, filterPath, filepath.Join(dir, "pcap_ring.sock"), ManagerConfig{
-			AuditLog: al,
+			AuditLog:    al,
+			BPFCompiler: successfulBPFCompiler,
 		})
 
 		// Apply the new filter (will fail for restart-required consumers since no Podman)

@@ -141,6 +141,111 @@ func TestLogrotateRuleBoundsRavenWireHostLogs(t *testing.T) {
 	}
 }
 
+func TestDefaultVectorConfigDiscardsNormalizedOutput(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(root, "config", "sensor", "vector.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+
+	for _, want := range []string{
+		"[sinks.normalized_null]",
+		`type = "blackhole"`,
+		`fingerprint.strategy = "device_and_inode"`,
+		"drop_on_abort = true",
+		"drop_on_error = true",
+		"reroute_dropped = false",
+		"parsed = parse_json",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("default Vector config missing %q", want)
+		}
+	}
+	if strings.Contains(text, "[sinks.normalized_console]") || strings.Contains(text, `type = "console"`) {
+		t.Fatal("default Vector config must not write normalized events to console")
+	}
+	if !strings.Contains(text, "reroute_unmatched = false") {
+		t.Fatal("default Vector route transform must disable the unused _unmatched output")
+	}
+	if strings.Contains(text, "parse_json!") {
+		t.Fatal("default Vector config must drop invalid log lines without noisy parse errors")
+	}
+}
+
+func TestPrepareHostInstallsSuricataStarterRules(t *testing.T) {
+	commands := strings.Join(prepareHostCommands(), "\n")
+
+	if !strings.Contains(commands, "config/sensor/suricata/rules/suricata.rules") {
+		t.Fatal("prepareHost must install the starter Suricata rules file")
+	}
+	if strings.Contains(commands, "touch /etc/sensor/suricata/rules/suricata.rules") {
+		t.Fatal("prepareHost must not replace starter Suricata rules with an empty file")
+	}
+
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(root, "config", "sensor", "suricata", "rules", "suricata.rules"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+
+	if !strings.Contains(text, "sid:9000001") || !strings.Contains(text, "alert ") {
+		t.Fatal("starter Suricata rules file must contain a loadable low-noise alert rule")
+	}
+}
+
+func TestConfigureCaptureInterfaceTunesQueuesAndOffloads(t *testing.T) {
+	commands := strings.Join(configureCaptureInterfaceCommands("ens16f1"), "\n")
+
+	for _, want := range []string{
+		"ip link set dev 'ens16f1' up promisc on",
+		"ip link set dev 'ens16f1' txqueuelen 4096",
+		"ethtool -K 'ens16f1' gro off lro off",
+		"ethtool -G 'ens16f1' rx 4096 tx 4096",
+	} {
+		if !strings.Contains(commands, want) {
+			t.Fatalf("capture interface setup missing %q", want)
+		}
+	}
+}
+
+func TestSensorAgentQuadletReceivesControlAPIHost(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(root, "deploy", "quadlet", "sensor-pod", "sensor-agent.container"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+
+	if !strings.Contains(text, "Environment=CONTROL_API_HOST=${CONTROL_API_HOST}") {
+		t.Fatal("sensor-agent quadlet must pass CONTROL_API_HOST into the container")
+	}
+}
+
+func TestDetectControlAPIHostDefaultsLoopbackForSingleNodeInstall(t *testing.T) {
+	for _, managerURL := range []string{
+		"http://127.0.0.1:4000/api/v1",
+		"http://localhost:4000/api/v1",
+	} {
+		if got := detectControlAPIHost(managerURL); got != "127.0.0.1" {
+			t.Fatalf("detectControlAPIHost(%q) = %q, want 127.0.0.1", managerURL, got)
+		}
+	}
+}
+
 func TestContainerImagesAreVersionPinned(t *testing.T) {
 	root, err := repoRoot()
 	if err != nil {

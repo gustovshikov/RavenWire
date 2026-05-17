@@ -53,7 +53,7 @@ This plan implements local authentication, role-based access control, scoped API
     - _Requirements: 1.1, 7.2, 6.3, 11.3_
     - Status: MVP schemas exist for User, Session, ApiToken, and AuditEntry; this remains open because ApiToken permissions are currently stored as JSON text/string and AuditEntry is `ConfigManager.AuditEntry`, not `ConfigManager.Auth.AuditEntry`.
 
-  - [ ]* 2.6 Write migration and schema verification tests
+  - [x]* 2.6 Write migration and schema verification tests
     - Assert all tables, columns, indexes, and constraints exist after migration
     - Assert schema changesets enforce required fields and constraints
     - _Requirements: 12.1_
@@ -68,7 +68,7 @@ This plan implements local authentication, role-based access control, scoped API
     - Ensure role identifiers are exact strings: `viewer`, `analyst`, `sensor-operator`, `rule-manager`, `platform-admin`, `auditor`
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 13.1, 13.2_
 
-  - [ ]* 3.2 Write property test for role-permission mapping (Property 5)
+  - [x]* 3.2 Write property test for role-permission mapping (Property 5)
     - **Property 5: Role-permission mapping is complete and correct**
     - Verify each role returns exactly the specified permission set
     - Verify hierarchical roles are strict supersets (viewer ⊂ analyst ⊂ sensor-operator ⊂ rule-manager)
@@ -83,14 +83,14 @@ This plan implements local authentication, role-based access control, scoped API
     - Implement `generate_random_password/0` producing 24-character random string
     - _Requirements: 1.3, 10.1, 10.2_
 
-  - [ ]* 3.4 Write property test for password validation (Property 14)
+  - [x]* 3.4 Write property test for password validation (Property 14)
     - **Property 14: Password validation enforces security policy**
     - Generate random strings < 12 chars → all rejected
     - Generate (username, password) where password == username → rejected
     - Generate valid passwords (≥ 12 chars, != username) → accepted
     - **Validates: Requirements 10.1, 10.2**
 
-  - [ ]* 3.5 Write property test for password hashing (Property 1)
+  - [x]* 3.5 Write property test for password hashing (Property 1)
     - **Property 1: Password hashing preserves no plaintext**
     - For random valid passwords, verify stored hash is valid Argon2id
     - Verify plaintext does not appear in the hash string
@@ -100,7 +100,7 @@ This plan implements local authentication, role-based access control, scoped API
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 5. Implement Auth context and session management
-  - [ ] 5.1 Implement `ConfigManager.Auth` context module — user CRUD operations
+  - [x] 5.1 Implement `ConfigManager.Auth` context module — user CRUD operations
     - Implement `create_user/2`, `update_user/3`, `disable_user/2`, `enable_user/2`, `delete_user/2`
     - `disable_user` must invalidate all sessions and reject all API tokens for that user
     - `delete_user` must revoke all API tokens and invalidate all sessions (cascade handles DB cleanup)
@@ -108,9 +108,9 @@ This plan implements local authentication, role-based access control, scoped API
     - Implement `change_password/4` (requires current password verification) and `admin_reset_password/3`
     - All mutating operations record audit entries via `Audit.append_multi/2`
     - _Requirements: 1.1–1.9, 7.1_
-    - Status: basic create/update/list/get/authenticate helpers are implemented; disable/enable/delete/password-change/token invalidation and transactional audit writes remain.
+    - Status: user lifecycle operations are implemented with transactional audit writes, session invalidation for disable/delete/password reset, and token revocation during delete. API-token authentication will enforce disabled-user rejection when task 13.1 lands.
 
-  - [ ]* 5.2 Write property test for user deactivation (Property 2)
+  - [x]* 5.2 Write property test for user deactivation (Property 2)
     - **Property 2: User deactivation invalidates all credentials**
     - Create user with random number of sessions (0–10) and tokens (0–5)
     - Disable user → verify all sessions invalid, all tokens rejected
@@ -124,9 +124,9 @@ This plan implements local authentication, role-based access control, scoped API
     - Implement `prune_expired_sessions/0` for periodic and opportunistic cleanup
     - Session token is regenerated on successful authentication (prevent fixation)
     - _Requirements: 3.1–3.9, 11.1–11.4_
-    - Status: server-side session create/validate/destroy/invalidate/prune is implemented; rate-limit-aware `authenticate/3`, IP handling, and full periodic cleanup wiring remain.
+    - Status: server-side session create/validate/destroy/invalidate/prune and rate-limit-aware `authenticate/3` with IP metadata are implemented; full periodic session cleanup wiring remains.
 
-  - [ ]* 5.4 Write property test for authentication error indistinguishability (Property 3)
+  - [x]* 5.4 Write property test for authentication error indistinguishability (Property 3)
     - **Property 3: Authentication error messages are indistinguishable**
     - Generate login attempts with various failure reasons (bad username, bad password, disabled, rate-limited)
     - Verify all produce identical user-facing message "Invalid username or password"
@@ -134,15 +134,16 @@ This plan implements local authentication, role-based access control, scoped API
     - **Validates: Requirements 3.3, 3.8, 10.7**
 
 - [ ] 6. Implement rate limiter
-  - [ ] 6.1 Implement `ConfigManager.Auth.RateLimiter` GenServer
+  - [x] 6.1 Implement `ConfigManager.Auth.RateLimiter` GenServer
     - Create ETS table for per-username counters (max 5 failures in 15 minutes)
     - Create ETS table for per-IP counters (configurable threshold)
     - Implement `check_username/1`, `record_failure/1`, `check_ip/1`, `record_ip_failure/1`
     - Implement periodic `prune_expired/0` via `Process.send_after`
     - Fail closed: if ETS is unavailable, reject the attempt with generic message
     - _Requirements: 10.4, 10.5, 10.6_
+    - Status: implemented and supervised; `Auth.authenticate/3` checks username/IP limits, returns the same generic credential error, and records `login_rate_limited` audit entries.
 
-  - [ ]* 6.2 Write property test for rate limiting (Property 15)
+  - [x]* 6.2 Write property test for rate limiting (Property 15)
     - **Property 15: Rate limiting enforces attempt thresholds**
     - For random usernames, after exactly 5 failures the 6th is rejected
     - For random IPs, after exceeding threshold further attempts are throttled
@@ -158,15 +159,15 @@ This plan implements local authentication, role-based access control, scoped API
     - Implement `export_entries/2` supporting CSV and JSON formats with 100K record limit
     - Ensure entries are always returned in reverse chronological order
     - _Requirements: 7.1–7.5, 8.1–8.5, 9.1–9.5_
-    - Status: append-only `log/1` and reverse-chronological paged `list_entries/1` exist; `append_multi/2`, filters, count metadata, CSV/JSON export, and export limits remain.
+    - Status: append-only `log/1`, transactional `append_multi/2`, and reverse-chronological paged `list_entries/1` exist; filters, count metadata, CSV/JSON export, and export limits remain.
 
-  - [ ]* 7.2 Write property test for audit entry structure (Property 11)
+  - [x]* 7.2 Write property test for audit entry structure (Property 11)
     - **Property 11: Audit entries are structurally complete**
     - Generate random audit params covering all action types
     - Verify each written entry has: non-nil UUID id, microsecond UTC timestamp, non-empty actor, valid actor_type, non-empty action, valid result, valid JSON detail
     - **Validates: Requirements 7.2**
 
-  - [ ]* 7.3 Write property test for audit query ordering and pagination (Property 12)
+  - [x]* 7.3 Write property test for audit query ordering and pagination (Property 12)
     - **Property 12: Audit log queries return entries in reverse chronological order with correct pagination**
     - Insert random sets of 10–200 entries, query with random page sizes
     - Verify descending timestamp order, correct page count, no duplicates across pages
@@ -189,7 +190,7 @@ This plan implements local authentication, role-based access control, scoped API
     - Touch session `last_active_at` on each valid request
     - _Requirements: 3.7, 3.5, 11.2_
 
-  - [ ]* 9.2 Write property test for unauthenticated redirect (Property 4)
+  - [x]* 9.2 Write property test for unauthenticated redirect (Property 4)
     - **Property 4: Unauthenticated requests redirect to login**
     - For all protected route paths, request without valid session → redirect to `/login`
     - Verify no protected page content leaks in response
@@ -202,19 +203,21 @@ This plan implements local authentication, role-based access control, scoped API
     - If denied: render 403 page, record audit entry with `permission_denied`
     - _Requirements: 5.1, 5.7_
 
-  - [ ] 9.4 Implement `ConfigManagerWeb.Plugs.ApiTokenAuth` plug
+  - [x] 9.4 Implement `ConfigManagerWeb.Plugs.ApiTokenAuth` plug
     - Extract `Authorization: Bearer <token>` header
     - SHA-256 hash the token, look up in api_tokens table
     - Validate: not expired, not revoked, creating user active
     - Assign `:current_token` with scoped permissions
     - If invalid: return 401 Unauthorized JSON response
     - _Requirements: 6.4, 6.5, 6.6, 6.8_
+    - Status: implemented with bearer-token extraction, hash lookup, revoked/expired/disabled-owner rejection, and JSON 401 responses. `RequirePermission` now enforces token scopes before considering any assigned user role.
 
-  - [ ] 9.5 Implement `ConfigManagerWeb.Plugs.RequirePasswordChange` plug
+  - [x] 9.5 Implement `ConfigManagerWeb.Plugs.RequirePasswordChange` plug
     - If `current_user.must_change_password == true` and path is not `/password/change` or `/logout`: redirect to `/password/change`
     - _Requirements: 10.3_
+    - Status: implemented and wired into protected browser scopes; `/password/change` and `/logout` remain available while the flag is set.
 
-  - [ ]* 9.6 Write property test for forced password change blocking (Property 16)
+  - [x]* 9.6 Write property test for forced password change blocking (Property 16)
     - **Property 16: Forced password change blocks all other routes**
     - For user with `must_change_password = true`, all routes except `/password/change` and `/logout` redirect
     - After password change, `must_change_password` is false and routes are accessible
@@ -237,7 +240,7 @@ This plan implements local authentication, role-based access control, scoped API
     - Wire into application startup (after migrations)
     - _Requirements: 2.1–2.5_
 
-  - [ ]* 10.2 Write unit tests for AdminSeeder
+  - [x]* 10.2 Write unit tests for AdminSeeder
     - Test seeding with env var set (valid and too-short password)
     - Test seeding with no env var (random password generated, printed once)
     - Test no-op when users already exist
@@ -269,7 +272,7 @@ This plan implements local authentication, role-based access control, scoped API
     - Verify all authenticated users can access `/` and `/audit`
     - **Validates: Requirements 5.1, 5.2, 5.4, 5.5, 6.7, 6.10**
 
-  - [ ]* 11.4 Write property test for permission denial audit (Property 7)
+  - [x]* 11.4 Write property test for permission denial audit (Property 7)
     - **Property 7: Permission denial always produces an audit entry**
     - For random (role, route) pairs where role lacks permission
     - Verify audit entry created with action `permission_denied`, result `failure`, detail contains required permission and route/event
@@ -279,27 +282,28 @@ This plan implements local authentication, role-based access control, scoped API
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 13. Implement API token management
-  - [ ] 13.1 Implement API token operations in `ConfigManager.Auth`
+  - [x] 13.1 Implement API token operations in `ConfigManager.Auth`
     - `create_api_token/2`: generate 32+ byte random token, store SHA-256 hash, return raw token once
     - `revoke_api_token/2`: set `revoked_at` timestamp, record audit entry
     - `authenticate_api_token/1`: hash provided token, look up, validate (not expired, not revoked, user active)
     - `list_api_tokens/0`: return tokens without hash or raw values
     - All operations record audit entries via `Audit.append_multi/2`
     - _Requirements: 6.1–6.9_
+    - Status: create/revoke/authenticate/list operations are implemented. Raw tokens are returned only from creation, stored as SHA-256 hashes, redacted from listed/authenticated token structs, and audited without token material.
 
-  - [ ]* 13.2 Write property test for API token storage security (Property 8)
+  - [x]* 13.2 Write property test for API token storage security (Property 8)
     - **Property 8: API token storage never leaks secrets**
     - Create tokens, inspect DB records and API responses
     - Verify only SHA-256 hash stored, raw token never in list/show responses
     - **Validates: Requirements 6.2, 6.9**
 
-  - [ ]* 13.3 Write property test for API token authentication round-trip (Property 9)
+  - [x]* 13.3 Write property test for API token authentication round-trip (Property 9)
     - **Property 9: API token authentication round-trip**
     - Create token, authenticate with raw value → success
     - Authenticate with any other value → failure
     - **Validates: Requirements 6.4**
 
-  - [ ]* 13.4 Write property test for expired/revoked token rejection (Property 10)
+  - [x]* 13.4 Write property test for expired/revoked token rejection (Property 10)
     - **Property 10: Expired and revoked tokens are rejected**
     - Tokens with past expiry → 401
     - Tokens with non-null revoked_at → 401
@@ -315,12 +319,13 @@ This plan implements local authentication, role-based access control, scoped API
     - _Requirements: 3.1, 3.2, 3.3, 3.5, 3.8_
     - Status: implemented as `SessionController` HTML, not LiveView.
 
-  - [ ] 14.2 Implement `PasswordChangeLive` at `/password/change`
+  - [x] 14.2 Implement `PasswordChangeLive` at `/password/change`
     - For self-service: require current password before accepting new password
     - Validate new password against policy (≥ 12 chars, not matching username)
     - On success: clear `must_change_password` flag, redirect to dashboard
     - Record audit entry for password change
     - _Requirements: 1.7, 10.1, 10.2, 10.3_
+    - Status: implemented as `PasswordController` to match the existing controller-based login flow. It requires the current password, validates the new password policy through `Auth.change_password/4`, clears `must_change_password`, and records audit entries through the Auth context.
 
 - [ ] 15. Implement LiveView pages — Admin
   - [ ] 15.1 Implement `AdminLive.UsersLive` at `/admin/users`

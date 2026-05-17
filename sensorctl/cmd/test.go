@@ -9,6 +9,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type repositoryCheck struct {
+	name string
+	dir  string
+	env  []string
+	args []string
+}
+
 func testCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "test",
@@ -19,19 +26,8 @@ func testCmd() *cobra.Command {
 				return err
 			}
 
-			checks := []struct {
-				name string
-				dir  string
-				env  []string
-				args []string
-			}{
-				{"sensorctl Go tests", filepath.Join(root, "sensorctl"), nil, []string{"go", "test", "./..."}},
-				{"sensor-agent Go tests", filepath.Join(root, "sensor-agent"), nil, []string{"go", "test", "./..."}},
-				{"pcap ring writer Linux build check", filepath.Join(root, "sensor-agent"), []string{"GOOS=linux"}, []string{"go", "test", "./cmd/pcap-ring-writer"}},
-			}
-
-			for _, check := range checks {
-				if err := runCheck(check.name, check.dir, check.env, check.args...); err != nil {
+			for _, check := range repositoryChecks(root) {
+				if err := runRepositoryCheck(check); err != nil {
 					return err
 				}
 			}
@@ -40,6 +36,35 @@ func testCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func repositoryChecks(root string) []repositoryCheck {
+	return []repositoryCheck{
+		{
+			name: "sensorctl Go tests",
+			dir:  filepath.Join(root, "sensorctl"),
+			args: []string{"go", "test", "./..."},
+		},
+		{
+			name: "sensor-agent Go tests",
+			dir:  filepath.Join(root, "sensor-agent"),
+			args: []string{"go", "test", "./..."},
+		},
+		sensorAgentLinuxCompileCheck(root),
+	}
+}
+
+func sensorAgentLinuxCompileCheck(root string) repositoryCheck {
+	return repositoryCheck{
+		name: "sensor-agent Linux compile check",
+		dir:  filepath.Join(root, "sensor-agent"),
+		env:  []string{"GOOS=linux"},
+		args: []string{"go", "test", "-exec=/usr/bin/true", "./..."},
+	}
+}
+
+func runRepositoryCheck(check repositoryCheck) error {
+	return runCheck(check.name, check.dir, check.env, check.args...)
 }
 
 func runCheck(name, dir string, env []string, args ...string) error {

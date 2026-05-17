@@ -13,6 +13,17 @@ defmodule ConfigManagerWeb.DashboardLive do
   alias ConfigManager.{Repo, SensorPod}
   alias ConfigManager.Health.Registry
 
+  @capture_plane_containers [
+    {"pcap_ring_writer", ["pcap_ring_writer", "pcap-ring-writer", "systemd-pcap-ring-writer"]},
+    {"zeek", ["zeek", "systemd-zeek"]},
+    {"suricata", ["suricata", "systemd-suricata"]},
+    {"vector", ["vector", "systemd-vector"]}
+  ]
+  @management_plane_containers [
+    {"config_manager", ["config_manager", "config-manager", "systemd-config-manager"]},
+    {"sensor_agent", ["sensor_agent", "sensor-agent", "systemd-sensor-agent"]}
+  ]
+
   # ── Mount ────────────────────────────────────────────────────────────────────
 
   @impl true
@@ -189,15 +200,54 @@ defmodule ConfigManagerWeb.DashboardLive do
     end
   end
 
-  defp container_summary(containers) do
-    total = length(containers || [])
-    running = Enum.count(containers || [], &(&1.state == "running"))
+  defp plane_containers(containers, :capture),
+    do: containers_for_plane(containers, @capture_plane_containers)
+
+  defp plane_containers(containers, :management),
+    do: containers_for_plane(containers, @management_plane_containers)
+
+  defp containers_for_plane(containers, plane_definitions) do
+    aliases =
+      plane_definitions
+      |> Enum.flat_map(fn {_canonical, aliases} -> aliases end)
+      |> MapSet.new()
+
+    Enum.filter(containers || [], &MapSet.member?(aliases, &1.name))
+  end
+
+  defp plane_status(containers, plane), do: plane_status(plane_containers(containers, plane))
+
+  defp plane_status([]), do: "unknown"
+
+  defp plane_status(containers) do
+    states = Enum.map(containers, & &1.state)
 
     cond do
-      total == 0 -> "No containers"
-      running == total -> "#{running}/#{total} running"
-      true -> "#{running}/#{total} running"
+      "error" in states -> "error"
+      "restarting" in states -> "restarting"
+      Enum.all?(states, &(&1 == "running")) -> "running"
+      true -> "stopped"
     end
+  end
+
+  defp capture_plane_status(containers, degradation_reasons, capture) do
+    status = plane_status(containers, :capture)
+
+    cond do
+      status == "running" and degradation_reasons != [] -> "degraded"
+      status == "running" and max_drop_percent(capture) > 5.0 -> "degraded"
+      true -> status
+    end
+  end
+
+  defp plane_summary(containers, plane), do: plane_summary(plane_containers(containers, plane))
+
+  defp plane_summary([]), do: "No data"
+
+  defp plane_summary(containers) do
+    total = length(containers)
+    running = Enum.count(containers, &(&1.state == "running"))
+    "#{running}/#{total} running"
   end
 
   defp max_drop_percent(nil), do: 0.0
@@ -259,6 +309,8 @@ defmodule ConfigManagerWeb.DashboardLive do
             <% overall = pod_status_with_degraded(pod.containers, degradation_reasons) %>
             <% issues = issue_count(overall, degradation_reasons, pod) %>
             <% max_drop = max_drop_percent(pod.capture) %>
+            <% capture_status = capture_plane_status(pod.containers, degradation_reasons, pod.capture) %>
+            <% management_status = plane_status(pod.containers, :management) %>
             <article class="rounded border border-gray-200 bg-white p-4 shadow-sm">
               <div class="mb-4 flex items-start justify-between gap-3">
                 <div class="min-w-0">
@@ -292,6 +344,24 @@ defmodule ConfigManagerWeb.DashboardLive do
                   <dd class="mt-1 font-medium text-gray-900"><%= if pod.system, do: pod.system.health || "unknown", else: "unknown" %></dd>
                 </div>
                 <div>
+                  <dt class="text-xs font-medium uppercase text-gray-500">Capture Plane</dt>
+                  <dd class="mt-1">
+                    <span class={"inline-flex rounded px-2 py-0.5 text-xs font-medium #{status_color(capture_status)}"}>
+                      <%= capture_status %>
+                    </span>
+                    <span class="mt-1 block text-xs text-gray-500"><%= plane_summary(pod.containers, :capture) %></span>
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-medium uppercase text-gray-500">Management Plane</dt>
+                  <dd class="mt-1">
+                    <span class={"inline-flex rounded px-2 py-0.5 text-xs font-medium #{status_color(management_status)}"}>
+                      <%= management_status %>
+                    </span>
+                    <span class="mt-1 block text-xs text-gray-500"><%= plane_summary(pod.containers, :management) %></span>
+                  </dd>
+                </div>
+                <div>
                   <dt class="text-xs font-medium uppercase text-gray-500">CPU</dt>
                   <dd class="mt-1 font-medium text-gray-900"><%= if pod.system, do: format_percent(pod.system.cpu_percent), else: "—" %></dd>
                 </div>
@@ -302,10 +372,6 @@ defmodule ConfigManagerWeb.DashboardLive do
                 <div>
                   <dt class="text-xs font-medium uppercase text-gray-500">Disk Free</dt>
                   <dd class="mt-1 font-medium text-gray-900"><%= disk_free(pod) %></dd>
-                </div>
-                <div>
-                  <dt class="text-xs font-medium uppercase text-gray-500">Containers</dt>
-                  <dd class="mt-1 font-medium text-gray-900"><%= container_summary(pod.containers) %></dd>
                 </div>
                 <div>
                   <dt class="text-xs font-medium uppercase text-gray-500">Max Drop</dt>

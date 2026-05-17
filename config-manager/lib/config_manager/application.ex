@@ -14,6 +14,9 @@ defmodule ConfigManager.Application do
       # Database
       ConfigManager.Repo,
 
+      # Login attempt rate limiting
+      ConfigManager.Auth.RateLimiter,
+
       # Bootstrap local admin account when the users table is empty
       ConfigManager.Auth.AdminSeeder,
 

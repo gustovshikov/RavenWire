@@ -60,3 +60,8 @@ The existing `network-sensor-stack` and `sensor-stack-production-hardening` spec
 - Do not expose secret values in examples, snapshots, bundles, audits, or API schemas.
 - Cross-spec dependencies should be named explicitly in the Introduction or Glossary.
 - Deferred functionality belongs in a `Deferred Capabilities` requirement rather than being left ambiguous.
+
+## Testing Requirements
+
+- Every behavior change must include or update unit tests for the changed module or workflow unless the implementation notes document why a unit test is not practical.
+- Broaden coverage with integration or property tests when a change crosses route guards, parsers, validators, LiveView workflows, API contracts, or deployment validation paths.

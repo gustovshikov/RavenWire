@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -241,8 +242,8 @@ func prepareHostCommands() []string {
 		"sudo install -D -m 0644 config/sensor/suricata/classification.config /etc/sensor/suricata/classification.config",
 		"sudo install -D -m 0644 config/sensor/suricata/reference.config /etc/sensor/suricata/reference.config",
 		"sudo install -D -m 0644 config/sensor/suricata/threshold.config /etc/sensor/suricata/threshold.config",
+		"sudo install -D -m 0644 config/sensor/suricata/rules/suricata.rules /etc/sensor/suricata/rules/suricata.rules",
 		"sudo install -D -m 0644 config/sensor/zeek/local.zeek /etc/sensor/zeek/local.zeek",
-		"sudo touch /etc/sensor/suricata/rules/suricata.rules",
 	}
 }
 
@@ -296,11 +297,16 @@ func configureEnvironment(opts installOptions) error {
 	if managerURL == "" {
 		managerURL = defaultManagerURL
 	}
+	controlAPIHost := os.Getenv("CONTROL_API_HOST")
+	if controlAPIHost == "" {
+		controlAPIHost = detectControlAPIHost(managerURL)
+	}
 
 	env := map[string]string{
 		"CAPTURE_IFACE":       iface,
 		"SENSOR_POD_NAME":     podName,
 		"CONFIG_MANAGER_URL":  strings.TrimRight(managerURL, "/"),
+		"CONTROL_API_HOST":    controlAPIHost,
 		"GRPC_ADDR":           "127.0.0.1:9090",
 		"SENSOR_SVC_UID":      "0",
 		"MIN_DISK_WRITE_MBPS": envOr("MIN_DISK_WRITE_MBPS", "50"),
@@ -324,20 +330,70 @@ func configureEnvironment(opts installOptions) error {
 	}
 
 	fmt.Printf("Configured sensor pod %q on interface %q using manager %s\n", podName, iface, managerURL)
+	if controlAPIHost != "" {
+		fmt.Printf("Configured Control API host %q for automatic enrollment\n", controlAPIHost)
+	}
 	return nil
 }
 
-func configureCaptureInterface(iface string) error {
-	commands := []string{
-		fmt.Sprintf("sudo ip link set dev %s up promisc on", shellQuote(iface)),
-		fmt.Sprintf("if command -v ethtool >/dev/null 2>&1; then sudo ethtool -K %s gro off lro off || true; fi", shellQuote(iface)),
+func detectControlAPIHost(managerURL string) string {
+	parsed, err := url.Parse(managerURL)
+	if err != nil {
+		return "127.0.0.1"
 	}
-	for _, command := range commands {
+
+	host := parsed.Hostname()
+	if host == "" || host == "localhost" {
+		return "127.0.0.1"
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return "127.0.0.1"
+	}
+
+	port := parsed.Port()
+	if port == "" {
+		switch parsed.Scheme {
+		case "https":
+			port = "443"
+		default:
+			port = "80"
+		}
+	}
+
+	conn, err := net.DialTimeout("udp", net.JoinHostPort(host, port), time.Second)
+	if err != nil {
+		if hostname, hostErr := os.Hostname(); hostErr == nil && hostname != "" {
+			return hostname
+		}
+		return "127.0.0.1"
+	}
+	defer conn.Close()
+
+	if localAddr, ok := conn.LocalAddr().(*net.UDPAddr); ok && localAddr.IP != nil {
+		return localAddr.IP.String()
+	}
+
+	return "127.0.0.1"
+}
+
+func configureCaptureInterface(iface string) error {
+	for _, command := range configureCaptureInterfaceCommands(iface) {
 		if err := runShell("", command); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func configureCaptureInterfaceCommands(iface string) []string {
+	quoted := shellQuote(iface)
+
+	return []string{
+		fmt.Sprintf("sudo ip link set dev %s up promisc on", quoted),
+		fmt.Sprintf("sudo ip link set dev %s txqueuelen 4096 || true", quoted),
+		fmt.Sprintf("if command -v ethtool >/dev/null 2>&1; then sudo ethtool -K %s gro off lro off || true; fi", quoted),
+		fmt.Sprintf("if command -v ethtool >/dev/null 2>&1; then sudo ethtool -G %s rx 4096 tx 4096 || sudo ethtool -G %s rx 4096 || true; fi", quoted, quoted),
+	}
 }
 
 func startApp() error {
@@ -542,7 +598,7 @@ func uninstallApp(purge, images bool) error {
 		"sudo systemctl restart systemd-journald.service",
 		"sudo systemctl daemon-reload",
 		"sudo systemctl reset-failed",
-		"sudo systemctl unset-environment CAPTURE_IFACE SENSOR_POD_NAME SENSOR_ENROLLMENT_TOKEN CONFIG_MANAGER_URL GRPC_ADDR SENSOR_SVC_UID MIN_DISK_WRITE_MBPS MIN_STORAGE_GB SPLUNK_HEC_URL SPLUNK_HEC_TOKEN CRIBL_URL CRIBL_TOKEN",
+		"sudo systemctl unset-environment CAPTURE_IFACE SENSOR_POD_NAME SENSOR_ENROLLMENT_TOKEN CONFIG_MANAGER_URL CONTROL_API_HOST GRPC_ADDR SENSOR_SVC_UID MIN_DISK_WRITE_MBPS MIN_STORAGE_GB SPLUNK_HEC_URL SPLUNK_HEC_TOKEN CRIBL_URL CRIBL_TOKEN",
 	)
 
 	if purge {

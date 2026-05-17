@@ -42,15 +42,15 @@ type ReadinessReport struct {
 
 // Config holds thresholds for readiness checks.
 type Config struct {
-	Interface        string
-	MinDiskWriteMBps float64 // minimum disk write speed in MB/s
-	MinStorageGB     float64 // minimum available storage in GB
-	MaxClockOffsetMs int64   // maximum acceptable clock offset in milliseconds
-	PCAPStoragePath  string  // path to check for available storage
-	MinRXRingBuffer  int     // minimum RX ring buffer size
-	CaptureWorkers   int     // number of capture worker threads (for RSS queue check)
-	CaptureCPUList   string  // CPU list for isolation check (from CAPTURE_CPU_LIST env)
-	DiskTestSizeBytes int64  // size of test file for NVMe throughput test (default 1GB)
+	Interface         string
+	MinDiskWriteMBps  float64 // minimum disk write speed in MB/s
+	MinStorageGB      float64 // minimum available storage in GB
+	MaxClockOffsetMs  int64   // maximum acceptable clock offset in milliseconds
+	PCAPStoragePath   string  // path to check for available storage
+	MinRXRingBuffer   int     // minimum RX ring buffer size
+	CaptureWorkers    int     // number of capture worker threads (for RSS queue check)
+	CaptureCPUList    string  // CPU list for isolation check (from CAPTURE_CPU_LIST env)
+	DiskTestSizeBytes int64   // size of test file for NVMe throughput test (default 1GB)
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -80,6 +80,18 @@ var globFunc = filepath.Glob
 var statfsFunc = func(path string, buf *syscall.Statfs_t) error {
 	return syscall.Statfs(path, buf)
 }
+
+// mkdirAllFunc is used by storage check; injectable for testing.
+var mkdirAllFunc = os.MkdirAll
+
+// statFunc is used by file accessibility checks; injectable for testing.
+var statFunc = os.Stat
+
+// socketFunc is used by AF_PACKET readiness checks; injectable for testing.
+var socketFunc = unix.Socket
+
+// closeFunc closes file descriptors opened by readiness checks; injectable for testing.
+var closeFunc = unix.Close
 
 // adjtimexFunc is used by clock sync check; injectable for testing.
 var adjtimexFunc = func(buf *unix.Timex) (int, error) {
@@ -180,7 +192,7 @@ func (c *Checker) checkInterface() CheckResult {
 func (c *Checker) checkAFPacket() CheckResult {
 	name := "af_packet_bindable"
 
-	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, 0)
+	fd, err := socketFunc(unix.AF_PACKET, unix.SOCK_RAW, 0)
 	if err != nil {
 		return CheckResult{
 			Name:          name,
@@ -191,7 +203,7 @@ func (c *Checker) checkAFPacket() CheckResult {
 			Severity:      SeverityHard,
 		}
 	}
-	unix.Close(fd)
+	closeFunc(fd)
 
 	return CheckResult{
 		Name:          name,
@@ -207,7 +219,7 @@ func (c *Checker) checkAFPacket() CheckResult {
 func (c *Checker) checkStorage() CheckResult {
 	name := "available_storage"
 
-	if err := os.MkdirAll(c.cfg.PCAPStoragePath, 0755); err != nil {
+	if err := mkdirAllFunc(c.cfg.PCAPStoragePath, 0755); err != nil {
 		return CheckResult{
 			Name:          name,
 			Passed:        false,
@@ -261,7 +273,7 @@ func (c *Checker) checkCapabilities() CheckResult {
 		podmanSock = "/run/podman/podman.sock"
 	}
 
-	if _, err := os.Stat(podmanSock); err != nil {
+	if _, err := statFunc(podmanSock); err != nil {
 		return CheckResult{
 			Name:          name,
 			Passed:        false,
@@ -272,7 +284,7 @@ func (c *Checker) checkCapabilities() CheckResult {
 		}
 	}
 
-	if _, err := os.Stat("/proc/net/packet"); err != nil {
+	if _, err := statFunc("/proc/net/packet"); err != nil {
 		return CheckResult{
 			Name:          name,
 			Passed:        false,

@@ -42,6 +42,22 @@ defmodule ConfigManager.Enrollment.ReenrollmentTest do
     assert pod.key_fingerprint != "old fingerprint"
   end
 
+  test "enrollment stores normalized control api host" do
+    pod_name = "control-host-pod-#{System.unique_integer([:positive])}"
+    {:ok, token} = Enrollment.generate_token("test")
+
+    {:ok, :pending} =
+      Enrollment.submit(
+        token,
+        pod_name,
+        public_key_pem("control-host"),
+        "https://172.16.10.38:9091/control"
+      )
+
+    pod = Repo.get_by!(SensorPod, name: pod_name)
+    assert pod.control_api_host == "172.16.10.38"
+  end
+
   defp public_key_pem(label) do
     """
     -----BEGIN PUBLIC KEY-----

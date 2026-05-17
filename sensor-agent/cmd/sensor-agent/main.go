@@ -39,6 +39,7 @@ func main() {
 	enrollmentPort := envOrDefault("ENROLLMENT_PORT", "9090")
 	devMode := os.Getenv("SENSOR_DEV_MODE") == "true"
 	configManagerURL := envOrDefault("CONFIG_MANAGER_URL", "")
+	controlAPIHost := envOrDefault("CONTROL_API_HOST", "")
 	grpcAddr := envOrDefault("GRPC_ADDR", "") // host:port for gRPC health stream; defaults to CONFIG_MANAGER_URL if empty
 	if grpcAddr == "" {
 		grpcAddr = configManagerURL
@@ -98,6 +99,7 @@ func main() {
 			ConfigManagerURL: configManagerURL,
 			EnrollmentToken:  enrollmentToken,
 			PodName:          podName,
+			ControlAPIHost:   controlAPIHost,
 			CertDir:          certDir,
 			Validator:        &bootstrapConfigValidator{ruleValidator: ruleValidator},
 			Readiness:        &bootstrapReadinessAdapter{checker: checker},
@@ -159,7 +161,7 @@ func main() {
 	ruleValidator := rules.NewValidator()
 
 	// ── Module 7: Certificate Manager ────────────────────────────────────────
-	certManager := certs.NewManager(certDir, configManagerURL, podName, enrollmentToken, auditLog)
+	certManager := certs.NewManager(certDir, configManagerURL, podName, enrollmentToken, controlAPIHost, auditLog)
 	certsPresent, certsPresentReason := certs.BundleReady(certFile, keyFile, caFile, time.Now())
 	if enrollmentToken != "" && !certsPresent {
 		log.Println("sensor-agent: enrollment token present, initiating enrollment")

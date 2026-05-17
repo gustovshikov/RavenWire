@@ -47,7 +47,14 @@ defmodule ConfigManager.SensorPod do
   @doc "Changeset for creating a new pending enrollment."
   def enrollment_changeset(pod, attrs) do
     pod
-    |> cast(attrs, [:name, :public_key_pem, :key_fingerprint, :enrolled_at, :enrolled_by])
+    |> cast(attrs, [
+      :name,
+      :public_key_pem,
+      :key_fingerprint,
+      :enrolled_at,
+      :enrolled_by,
+      :control_api_host
+    ])
     |> validate_required([:name, :public_key_pem, :key_fingerprint])
     |> validate_length(:name, min: 1, max: 255)
     |> unique_constraint(:name)
@@ -56,7 +63,14 @@ defmodule ConfigManager.SensorPod do
   @doc "Changeset for replacing an existing pod identity with a fresh pending enrollment."
   def reenrollment_changeset(pod, attrs) do
     pod
-    |> cast(attrs, [:name, :public_key_pem, :key_fingerprint, :enrolled_at, :enrolled_by])
+    |> cast(attrs, [
+      :name,
+      :public_key_pem,
+      :key_fingerprint,
+      :enrolled_at,
+      :enrolled_by,
+      :control_api_host
+    ])
     |> validate_required([:name, :public_key_pem, :key_fingerprint])
     |> validate_length(:name, min: 1, max: 255)
     |> change(

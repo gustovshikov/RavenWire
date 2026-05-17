@@ -24,6 +24,7 @@ type Manager struct {
 	configManagerURL string
 	podName          string
 	enrollmentToken  string
+	controlAPIHost   string
 	auditLog         *audit.Logger
 
 	cert    *tls.Certificate
@@ -31,12 +32,13 @@ type Manager struct {
 }
 
 // NewManager creates a new Certificate Manager.
-func NewManager(certDir, configManagerURL, podName, enrollmentToken string, auditLog *audit.Logger) *Manager {
+func NewManager(certDir, configManagerURL, podName, enrollmentToken, controlAPIHost string, auditLog *audit.Logger) *Manager {
 	return &Manager{
 		certDir:          certDir,
 		configManagerURL: configManagerURL,
 		podName:          podName,
 		enrollmentToken:  enrollmentToken,
+		controlAPIHost:   controlAPIHost,
 		auditLog:         auditLog,
 	}
 }
@@ -62,6 +64,9 @@ func (m *Manager) Enroll() error {
 		"token":      m.enrollmentToken,
 		"pod_name":   m.podName,
 		"public_key": string(pubKeyPEM),
+	}
+	if m.controlAPIHost != "" {
+		enrollReq["control_api_host"] = m.controlAPIHost
 	}
 
 	body, _ := json.Marshal(enrollReq)

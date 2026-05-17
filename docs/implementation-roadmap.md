@@ -100,4 +100,5 @@ system:manage
 - Keep secrets out of snapshots, support bundles, audit logs, generated OpenAPI examples, and exported manifests.
 - Use existing `sensorctl` and Quadlet deployment flows for validation.
 - Keep current internal Sensor Agent routes allowlisted.
+- Every behavior change must include or update unit tests for the changed module or workflow unless the reason for omitting them is documented in the implementation notes.
 - Add tests proportional to the blast radius: route guards and policy checks for auth work, property tests for parsers/validators, and LiveView/API tests for user workflows.

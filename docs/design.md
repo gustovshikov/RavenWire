@@ -6,18 +6,18 @@ The goal is a tactical, deep-space operations interface that can carry dense Zee
 
 ## Palette
 
-| Token | Use | Hex |
-|---|---|---|
-| Void Black | App background | `#0B0E14` |
-| Plasma Slate | Cards, modals, panels | `#171A21` |
-| Surface Highlight | Hover and active states | `#242933` |
-| Precision Border | Hairline borders and table structure | `#2D323B` |
-| Starlight Silver | Primary text | `#E2E8F0` |
-| Muted Orbit | Secondary text, timestamps, headers | `#8B949E` |
-| Arch Cyan | Primary actions, active navigation, baseline charts | `#1793D1` |
-| Tactical Crimson | Critical alerts, disconnected sensors, dropped packets | `#F43F5E` |
-| Sensor Green | Healthy sensors, active containers, successful enrollment | `#10B981` |
-| Warning Amber | Warnings, degraded throughput, missing configuration | `#F59E0B` |
+| Token             | Use                                                       | Hex       |
+| ----------------- | --------------------------------------------------------- | --------- |
+| Void Black        | App background                                            | `#0B0E14` |
+| Plasma Slate      | Cards, modals, panels                                     | `#171A21` |
+| Surface Highlight | Hover and active states                                   | `#242933` |
+| Precision Border  | Hairline borders and table structure                      | `#2D323B` |
+| Starlight Silver  | Primary text                                              | `#E2E8F0` |
+| Muted Orbit       | Secondary text, timestamps, headers                       | `#8B949E` |
+| Arch Cyan         | Primary actions, active navigation, baseline charts       | `#1793D1` |
+| Tactical Crimson  | Critical alerts, disconnected sensors, dropped packets    | `#F43F5E` |
+| Sensor Green      | Healthy sensors, active containers, successful enrollment | `#10B981` |
+| Warning Amber     | Warnings, degraded throughput, missing configuration      | `#F59E0B` |
 
 ## Styling Rules
 

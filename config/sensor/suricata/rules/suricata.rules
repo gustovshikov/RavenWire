@@ -1,0 +1,7 @@
+# RavenWire MVP starter rules.
+#
+# This deliberately low-noise rule keeps Suricata's detect engine active in a
+# fresh install and gives operators a known SID for pipeline smoke tests. Replace
+# or extend this file through rule deployment before using the sensor in earnest.
+
+alert tcp any any -> $HOME_NET 65000 (msg:"RavenWire MVP starter rule: TCP 65000 observed"; flow:to_server; classtype:misc-activity; sid:9000001; rev:1;)

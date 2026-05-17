@@ -379,20 +379,29 @@ type = "file"
 include = ["/var/sensor/logs/zeek/*.log"]
 read_from = "beginning"
 ignore_older_secs = 86400
+fingerprint.strategy = "device_and_inode"
 
 [sources.suricata_eve]
 type = "file"
 include = ["/var/sensor/logs/suricata/eve*.json"]
 read_from = "beginning"
 ignore_older_secs = 86400
+fingerprint.strategy = "device_and_inode"
 
 # ── Transforms ───────────────────────────────────────────────────────────────
 
 [transforms.parse_zeek]
 type = "remap"
 inputs = ["zeek_logs"]
+drop_on_abort = true
+drop_on_error = true
+reroute_dropped = false
 source = '''
-  . = parse_json!(string!(.message))
+  parsed = parse_json(string!(.message)) ?? null
+  if parsed == null {
+    abort
+  }
+  . = parsed
   .sensor_source = "zeek"
   .sensor_pod_id = get_env_var!("SENSOR_POD_NAME")
   if !exists(.community_id) {
@@ -406,8 +415,15 @@ source = '''
 [transforms.parse_suricata]
 type = "remap"
 inputs = ["suricata_eve"]
+drop_on_abort = true
+drop_on_error = true
+reroute_dropped = false
 source = '''
-  . = parse_json!(string!(.message))
+  parsed = parse_json(string!(.message)) ?? null
+  if parsed == null {
+    abort
+  }
+  . = parsed
   .sensor_source = "suricata"
   .sensor_pod_id = get_env_var!("SENSOR_POD_NAME")
   if !exists(.community_id) {
@@ -433,6 +449,7 @@ source = '''
 [transforms.route_alerts]
 type = "route"
 inputs = ["parse_suricata"]
+reroute_unmatched = false
 
 [transforms.route_alerts.route]
 qualifying_alert = '.event_type == "alert" && exists(.alert.severity) && ((to_int(.alert.severity) ?? 999) <= {{ .SeverityThreshold }})'
@@ -450,6 +467,13 @@ encoding.codec = "json"
 type = "memory"
 max_events = 1000
 when_full = "drop_newest"
+{{ if not .Sinks }}
+# ── Default normalized event sink ─────────────────────────────────────────────
+
+[sinks.normalized_null]
+type = "blackhole"
+inputs = ["normalize"]
+{{ end }}
 {{ range $i, $sink := .Sinks }}
 # ── Sink: {{ $sink.Name }} ({{ $sink.Type }}) ────────────────────────────────
 {{ if and $sink.SchemaMode (ne $sink.SchemaMode "raw") }}

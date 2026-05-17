@@ -39,12 +39,24 @@ func TestGenerateConfigBasicSources(t *testing.T) {
 		"[transforms.normalize]",
 		"[transforms.route_alerts]",
 		"[sinks.pcap_alert_webhook]",
+		`fingerprint.strategy = "device_and_inode"`,
+		"drop_on_abort = true",
+		"drop_on_error = true",
+		"reroute_dropped = false",
+		"parsed = parse_json",
 	}
 
 	for _, s := range required {
 		if !strings.Contains(content, s) {
 			t.Errorf("generated config missing required section %q", s)
 		}
+	}
+
+	if !strings.Contains(content, "reroute_unmatched = false") {
+		t.Error("generated alert route must disable Vector's unused _unmatched output")
+	}
+	if strings.Contains(content, "parse_json!") {
+		t.Error("generated parse transforms must drop invalid lines without logging parse_json errors")
 	}
 }
 
@@ -99,7 +111,7 @@ func TestGenerateConfigSinkIsolation(t *testing.T) {
 		{
 			name:          "no sinks",
 			sinks:         nil,
-			wantSinks:     []string{"pcap_alert_webhook"}, // always present
+			wantSinks:     []string{"pcap_alert_webhook", "normalized_null"}, // always present without forwarding sinks
 			dontWantSinks: []string{"splunk", "cribl", "elasticsearch"},
 		},
 		{
@@ -158,6 +170,45 @@ func TestGenerateConfigSinkIsolation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestGenerateConfigDefaultNullSink verifies that normalized event output is
+// discarded by default until a forwarding sink is configured.
+func TestGenerateConfigDefaultNullSink(t *testing.T) {
+	gen := NewVectorConfigGenerator()
+
+	t.Run("no forwarding sinks", func(t *testing.T) {
+		content, err := gen.GenerateConfig(SensorConfig{SeverityThreshold: 2})
+		if err != nil {
+			t.Fatalf("GenerateConfig: %v", err)
+		}
+
+		if !strings.Contains(content, "[sinks.normalized_null]") {
+			t.Fatal("default config should include the normalized blackhole sink")
+		}
+		if !strings.Contains(content, `type = "blackhole"`) {
+			t.Error("default normalized sink should use Vector's blackhole sink")
+		}
+		if strings.Contains(content, `type = "console"`) {
+			t.Error("default config should not write normalized events to console")
+		}
+	})
+
+	t.Run("with forwarding sink", func(t *testing.T) {
+		content, err := gen.GenerateConfig(SensorConfig{
+			SeverityThreshold: 2,
+			Sinks: []SinkConfig{
+				{Name: "es_main", Type: "elasticsearch", URI: "https://es.example.com:9200", SchemaMode: "raw"},
+			},
+		})
+		if err != nil {
+			t.Fatalf("GenerateConfig: %v", err)
+		}
+
+		if strings.Contains(content, "[sinks.normalized_null]") {
+			t.Error("generated config should omit the default null sink when forwarding sinks are configured")
+		}
+	})
 }
 
 // TestGenerateConfigSplunkHECSink verifies Splunk HEC sink uses the correct
@@ -241,7 +292,7 @@ func TestGenerateConfigSchemaTransforms(t *testing.T) {
 	gen := NewVectorConfigGenerator()
 
 	tests := []struct {
-		mode       string
+		mode          string
 		wantTransform bool
 		wantSnippet   string
 	}{
@@ -760,6 +811,7 @@ func TestProperty11_VectorConfigSinkIsolation(t *testing.T) {
 	systemSinks := map[string]bool{
 		"pcap_alert_webhook": true,
 		"dead_letter":        true,
+		"normalized_null":    true,
 	}
 
 	// sinkSectionRe matches all [sinks.XXX] headers in the generated TOML config.
@@ -834,7 +886,15 @@ func TestProperty11_VectorConfigSinkIsolation(t *testing.T) {
 			t.Fatal("pcap_alert_webhook system sink must always be present in generated config")
 		}
 
-		// 2. dead_letter must be present iff DeadLetterPath is non-empty.
+		// 2. normalized_null must be present only when no user sinks are configured.
+		if len(sinks) == 0 && !foundSinks["normalized_null"] {
+			t.Fatal("normalized_null sink must be present when no forwarding sinks are configured")
+		}
+		if len(sinks) > 0 && foundSinks["normalized_null"] {
+			t.Fatal("normalized_null sink must NOT be present when forwarding sinks are configured")
+		}
+
+		// 3. dead_letter must be present iff DeadLetterPath is non-empty.
 		if hasDeadLetter && !foundSinks["dead_letter"] {
 			t.Fatal("dead_letter sink must be present when DeadLetterPath is configured")
 		}
@@ -842,7 +902,7 @@ func TestProperty11_VectorConfigSinkIsolation(t *testing.T) {
 			t.Fatal("dead_letter sink must NOT be present when DeadLetterPath is not configured")
 		}
 
-		// 3. The set of user sinks in the config must equal exactly the set of
+		// 4. The set of user sinks in the config must equal exactly the set of
 		//    sink names from the input (excluding system sinks).
 		var configUserSinks []string
 		for name := range foundSinks {

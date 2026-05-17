@@ -110,7 +110,7 @@ func TestRotateSendsFreshPublicKeyAndStoresReturnedBundle(t *testing.T) {
 	}
 	defer auditLog.Close()
 
-	manager := NewManager(certDir, server.URL, "rotate-test", "", auditLog)
+	manager := NewManager(certDir, server.URL, "rotate-test", "", "", auditLog)
 	if err := manager.Rotate(); err != nil {
 		t.Fatalf("Rotate failed: %v", err)
 	}

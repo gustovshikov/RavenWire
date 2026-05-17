@@ -4,17 +4,24 @@ defmodule ConfigManager.Audit do
   import Ecto.Query
 
   alias ConfigManager.{AuditEntry, Repo}
+  alias Ecto.Multi
 
   def log(attrs) do
-    attrs =
-      attrs
-      |> Map.new()
-      |> Map.put_new(:timestamp, DateTime.utc_now())
-      |> encode_detail()
-
-    %AuditEntry{}
-    |> AuditEntry.changeset(attrs)
+    attrs
+    |> entry_changeset()
     |> Repo.insert()
+  end
+
+  def append_multi(%Multi{} = multi, attrs_or_fun) do
+    append_multi(multi, :audit, attrs_or_fun)
+  end
+
+  def append_multi(%Multi{} = multi, name, attrs_or_fun) do
+    Multi.insert(multi, name, fn changes ->
+      attrs_or_fun
+      |> resolve_attrs(changes)
+      |> entry_changeset()
+    end)
   end
 
   def list_entries(opts \\ []) do
@@ -27,6 +34,19 @@ defmodule ConfigManager.Audit do
     |> offset(^((page - 1) * page_size))
     |> Repo.all()
   end
+
+  defp entry_changeset(attrs) do
+    attrs =
+      attrs
+      |> Map.new()
+      |> Map.put_new(:timestamp, DateTime.utc_now())
+      |> encode_detail()
+
+    AuditEntry.changeset(%AuditEntry{}, attrs)
+  end
+
+  defp resolve_attrs(fun, changes) when is_function(fun, 1), do: fun.(changes)
+  defp resolve_attrs(attrs, _changes), do: attrs
 
   defp encode_detail(%{detail: detail} = attrs) when is_map(detail) or is_list(detail) do
     %{attrs | detail: Jason.encode!(detail)}

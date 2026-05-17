@@ -117,6 +117,8 @@ type Config struct {
 	EnrollmentToken string
 	// PodName is the name of this sensor pod.
 	PodName string
+	// ControlAPIHost is the host Config_Manager should use to reach the Sensor_Agent control API.
+	ControlAPIHost string
 	// CertDir is the directory where certs are stored.
 	CertDir string
 
@@ -376,6 +378,9 @@ func (m *Machine) postEnrollment(pubKeyPEM []byte, privKey *ecdsa.PrivateKey) (*
 		"token":      m.cfg.EnrollmentToken,
 		"pod_name":   m.cfg.PodName,
 		"public_key": string(pubKeyPEM),
+	}
+	if m.cfg.ControlAPIHost != "" {
+		enrollReq["control_api_host"] = m.cfg.ControlAPIHost
 	}
 
 	body, err := json.Marshal(enrollReq)

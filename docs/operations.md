@@ -36,6 +36,18 @@ If no unit is provided, `start`, `stop`, and `restart` operate on the full dual-
 | `--manager-url` | Config Manager enrollment API base URL. Defaults to `http://127.0.0.1:4000/api/v1`. |
 | `--skip-build` | Reuse existing local images instead of rebuilding them. |
 
+`sensorctl install` also reads a small set of environment overrides before it writes the systemd manager environment:
+
+| Environment | Default | Purpose |
+|---|---:|---|
+| `MIN_STORAGE_GB` | `10` | Minimum available storage required at `/sensor/pcap` before Sensor Agent allows capture startup. Lower only for constrained lab hosts. |
+| `MIN_DISK_WRITE_MBPS` | `50` | Minimum write-throughput gate for the PCAP storage path. |
+| `CAPTURE_IFACE` | detected | Capture interface when `--capture-iface` is omitted. |
+| `SENSOR_POD_NAME` | hostname | Sensor identity when `--pod-name` is omitted. |
+| `CONTROL_API_HOST` | detected | Host/IP advertised to Config Manager during enrollment. |
+
+During install, `sensorctl` brings the capture interface up, enables promiscuous mode, disables GRO/LRO when `ethtool` is available, and best-effort tunes queue/ring depth to reduce burst drops. Unsupported NIC tuning commands are allowed to fail so portable installs still proceed; Sensor Agent reports any remaining tuning gaps as soft readiness warnings.
+
 ## Quadlet Layout
 
 ```text
@@ -67,6 +79,8 @@ deploy/quadlet/
 /var/run/sensor
 /sensor/pcap
 ```
+
+The baseline Suricata rules file is installed at `/etc/sensor/suricata/rules/suricata.rules`. It contains one low-noise starter SID so Suricata loads without an empty-rules warning on first boot. Treat it as a smoke-test placeholder, not a real detection ruleset.
 
 `sensorctl uninstall` removes installed Quadlet and target files. `sensorctl uninstall --purge` also removes RavenWire host data and generated certificates/config. `sensorctl uninstall --images` removes locally built RavenWire images.
 

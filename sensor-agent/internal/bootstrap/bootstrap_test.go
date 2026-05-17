@@ -118,6 +118,13 @@ func TestRun_ImmediateApproval(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/enroll":
+			var req map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode enrollment request: %v", err)
+			}
+			if req["control_api_host"] != "172.16.10.38" {
+				t.Fatalf("control_api_host = %q, want 172.16.10.38", req["control_api_host"])
+			}
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(EnrollmentResponse{
 				Status:     "approved",
@@ -139,6 +146,7 @@ func TestRun_ImmediateApproval(t *testing.T) {
 		ConfigManagerURL: server.URL,
 		EnrollmentToken:  "test-token",
 		PodName:          "test-pod",
+		ControlAPIHost:   "172.16.10.38",
 		CertDir:          certDir,
 		Validator:        &stubValidator{errors: nil},
 		Readiness:        &stubReadiness{passed: true},

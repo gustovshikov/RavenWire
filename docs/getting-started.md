@@ -9,7 +9,11 @@ The current project state is an MVP sensor/manager stack with local install, aut
 - Linux host with systemd
 - Rootful Podman access through `sudo`
 - A capture interface connected to a span/TAP feed
+- At least `10 GB` free under `/sensor/pcap` for the default readiness gate
+- Capture NIC queue/ring tuning through `iproute2` and, when available, `ethtool`
 - Go, if building `sensorctl` locally
+
+The default readiness thresholds are intentionally conservative for packet capture. Lab VMs with less storage can lower the install/start gate by exporting `MIN_STORAGE_GB`, for example `MIN_STORAGE_GB=8 sensorctl install --capture-iface ens16f1`. Production sensors should leave the default in place or raise it to match expected PCAP retention.
 
 ## Build sensorctl
 
@@ -33,6 +37,8 @@ This builds the RavenWire images with rootful Podman, prepares host directories 
 ```
 
 If `--capture-iface` is omitted, `sensorctl` checks `CAPTURE_IFACE` and then tries the first up, non-loopback interface. Pass the interface explicitly for repeatable deployments.
+
+Install also seeds a low-noise Suricata starter rule so the detection engine is active on first boot. Replace or extend `/etc/sensor/suricata/rules/suricata.rules` through rule deployment before using the sensor for real monitoring.
 
 ## Start
 
