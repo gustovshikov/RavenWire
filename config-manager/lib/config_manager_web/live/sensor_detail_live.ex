@@ -291,11 +291,12 @@ defmodule ConfigManagerWeb.SensorDetailLive do
           <%= drift_status_label(@drift.status) %>
         </span>
       </div>
-      <dl class="grid gap-3 text-sm md:grid-cols-2 lg:grid-cols-5">
+      <dl class="grid gap-3 text-sm md:grid-cols-2 lg:grid-cols-6">
         <.field label="Last Deployment" value={short_id(@pod.last_deployment_id)} mono />
         <.field label="Config Version" value={@pod.last_deployed_config_version} />
         <.field label="Forwarding Version" value={@pod.last_deployed_forwarding_version} />
         <.field label="BPF Version" value={@pod.last_deployed_bpf_version} />
+        <.field label="Rule Version" value={rule_version_label(@pod.last_deployed_rule_version)} />
         <.field label="Last Deployed At" value={format_utc(@pod.last_deployed_at)} />
       </dl>
       <%= if @drift.domains != [] do %>
@@ -757,6 +758,9 @@ defmodule ConfigManagerWeb.SensorDetailLive do
 
   defp maybe_append_other_containers(groups, []), do: groups
   defp maybe_append_other_containers(groups, containers), do: groups ++ [{"Other", containers}]
+
+  defp rule_version_label(nil), do: "never deployed"
+  defp rule_version_label(version), do: version
 
   defp container_order(container) do
     order =

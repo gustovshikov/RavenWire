@@ -7,7 +7,11 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
     only: [drift_summary_label: 1, drift_summary_status: 1, status_class: 1, status_label: 1]
 
   import ConfigManagerWeb.PoolLive.Helpers
-  alias ConfigManager.{Deployments, Pools}
+
+  import ConfigManagerWeb.RulesLive.Helpers,
+    only: [can_deploy_rules?: 1, sync_status_class: 1, sync_status_label: 1]
+
+  alias ConfigManager.{Deployments, Pools, Rules}
   alias ConfigManagerWeb.Formatters
 
   @impl true
@@ -29,6 +33,8 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
            drift_summary: Deployments.drift_summary(pool),
            last_deployment: Deployments.last_deployment(pool.id),
            active_deployment?: Deployments.has_active_deployment?(pool.id),
+           rule_assignment: Rules.pool_assignment(pool.id),
+           rule_out_of_sync_count: Rules.out_of_sync_count(pool.id),
            confirm_delete: false
          )}
     end
@@ -86,6 +92,31 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
     end
   end
 
+  def handle_event("deploy_rules", _params, socket) do
+    cond do
+      not can_deploy_rules?(socket.assigns.current_user) ->
+        {:noreply, put_flash(socket, :error, "Insufficient permissions.")}
+
+      is_nil(socket.assigns.rule_assignment) ->
+        {:noreply, put_flash(socket, :error, "No ruleset is assigned to this pool.")}
+
+      true ->
+        case Rules.deploy_ruleset_to_pool(socket.assigns.pool.id, socket.assigns.current_user) do
+          {:ok, %{results: results, version: version}} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Ruleset v#{version} deployed to #{length(results)} sensor(s).")
+             |> refresh()}
+
+          {:error, :empty_ruleset} ->
+            {:noreply, put_flash(socket, :error, "Ruleset has no enabled rules to deploy.")}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Rule deployment failed: #{inspect(reason)}")}
+        end
+    end
+  end
+
   defp refresh(socket) do
     pool = Pools.get_pool!(socket.assigns.pool.id)
 
@@ -94,7 +125,9 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
       member_count: Pools.member_count(pool.id),
       drift_summary: Deployments.drift_summary(pool),
       last_deployment: Deployments.last_deployment(pool.id),
-      active_deployment?: Deployments.has_active_deployment?(pool.id)
+      active_deployment?: Deployments.has_active_deployment?(pool.id),
+      rule_assignment: Rules.pool_assignment(pool.id),
+      rule_out_of_sync_count: Rules.out_of_sync_count(pool.id)
     )
   end
 
@@ -102,6 +135,7 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
     Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pool:#{pool_id}")
     Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pool:#{pool_id}:deployments")
     Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pool:#{pool_id}:drift")
+    Phoenix.PubSub.subscribe(ConfigManager.PubSub, "rulesets")
   end
 
   @impl true
@@ -143,6 +177,25 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
           <.field label="Members" value={@member_count} />
           <.field label="Config Version" value={@pool.config_version} />
           <div>
+            <dt class="text-xs font-medium uppercase text-gray-500">Assigned Ruleset</dt>
+            <dd class="mt-1 break-words text-gray-900">
+              <%= if @rule_assignment && @rule_assignment.ruleset do %>
+                <a href={"/rules/rulesets/#{@rule_assignment.ruleset.id}"} class="text-blue-700 hover:underline"><%= @rule_assignment.ruleset.name %></a>
+              <% else %>
+                <%= Formatters.display(nil) %>
+              <% end %>
+            </dd>
+          </div>
+          <div>
+            <dt class="text-xs font-medium uppercase text-gray-500">Rule Sync</dt>
+            <dd class="mt-1">
+              <span class={"inline-flex rounded px-2 py-0.5 text-xs font-medium #{sync_status_class(rule_sync_status(@rule_assignment, @rule_out_of_sync_count))}"}>
+                <%= rule_sync_label(@rule_assignment, @rule_out_of_sync_count) %>
+              </span>
+            </dd>
+          </div>
+          <.field label="Out-of-sync Sensors" value={if @rule_assignment, do: @rule_out_of_sync_count, else: nil} />
+          <div>
             <dt class="text-xs font-medium uppercase text-gray-500">Drift</dt>
             <dd class="mt-1">
               <a href={"/pools/#{@pool.id}/drift"} class={"inline-flex rounded px-2 py-0.5 text-xs font-medium #{status_class(drift_summary_status(@drift_summary))}"}>
@@ -166,6 +219,11 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
           <.field label="Config Updated By" value={@pool.config_updated_by} />
           <.field label="Created At" value={Formatters.format_utc(@pool.inserted_at)} />
         </dl>
+        <%= if @rule_assignment && can_deploy_rules?(@current_user) do %>
+          <div class="mt-4">
+            <button type="button" phx-click="deploy_rules" class="rounded bg-green-700 px-3 py-2 text-sm font-medium text-white hover:bg-green-800">Deploy Rules</button>
+          </div>
+        <% end %>
       </section>
 
       <%= if @confirm_delete do %>
@@ -186,4 +244,12 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
   defp format_deploy_error(:active_deployment_exists), do: "active deployment exists"
   defp format_deploy_error(:no_deployable_sensors), do: "no deployable sensors"
   defp format_deploy_error(reason), do: inspect(reason)
+
+  defp rule_sync_status(nil, _count), do: :no_ruleset_assigned
+  defp rule_sync_status(_assignment, 0), do: :in_sync
+  defp rule_sync_status(_assignment, _count), do: :out_of_sync
+
+  defp rule_sync_label(nil, _count), do: sync_status_label(:no_ruleset_assigned)
+  defp rule_sync_label(_assignment, 0), do: sync_status_label(:in_sync)
+  defp rule_sync_label(_assignment, count), do: "#{count} Out of Sync"
 end

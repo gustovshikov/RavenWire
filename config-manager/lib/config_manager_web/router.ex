@@ -111,6 +111,39 @@ defmodule ConfigManagerWeb.Router do
       live("/deployments/:id", DeploymentLive.DetailLive, :show)
       live("/pcap-config", PcapConfigLive, :index)
       live("/rules", RuleDeploymentLive, :index)
+
+      live("/rules/store", RulesLive.StoreLive, :index,
+        private: %{required_permission: "sensors:view"}
+      )
+
+      live("/rules/categories", RulesLive.CategoriesLive, :index,
+        private: %{required_permission: "sensors:view"}
+      )
+
+      live("/rules/repositories", RulesLive.RepositoriesLive, :index,
+        private: %{required_permission: "sensors:view"}
+      )
+
+      live("/rules/rulesets", RulesLive.RulesetsLive, :index,
+        private: %{required_permission: "sensors:view"}
+      )
+
+      live("/rules/rulesets/new", RulesLive.RulesetDetailLive, :new,
+        private: %{required_permission: "sensors:view"}
+      )
+
+      live("/rules/rulesets/:id", RulesLive.RulesetDetailLive, :show,
+        private: %{required_permission: "sensors:view"}
+      )
+
+      live("/rules/rulesets/:id/edit", RulesLive.RulesetDetailLive, :edit,
+        private: %{required_permission: "sensors:view"}
+      )
+
+      live("/rules/deployments", RulesLive.DeploymentsLive, :index,
+        private: %{required_permission: "sensors:view"}
+      )
+
       live("/support-bundle", SupportBundleLive, :index)
       live("/sensors/:id", SensorDetailLive, :show)
     end

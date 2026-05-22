@@ -107,15 +107,15 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Test toggle_category does not affect other categories
     - _Requirements: 1.1-1.8, 2.1-2.5, 3.1-3.6_
 
-- [ ] 4. Implement repository management
-  - [ ] 4.1 Create `lib/config_manager/rules/fetcher.ex` with HTTP fetch and archive extraction
+- [x] 4. Implement repository management
+  - [x] 4.1 Create `lib/config_manager/rules/fetcher.ex` with HTTP fetch and archive extraction
     - Implement `fetch/1` — HTTP GET via Finch with 60s timeout, returns `{:ok, binary}` or `{:error, reason}`
     - Implement `extract/1` — uses `:erl_tar.extract/2` with `:compressed` and `:memory` options to extract `.rules` files from `.tar.gz`
     - Implement `fetch_and_parse/1` — pipeline: fetch → extract → Parser.parse_files
     - Handle errors: network timeout, non-200 status, invalid archive format, empty archive
     - _Requirements: 4.6, 5.6_
 
-  - [ ] 4.2 Add repository CRUD and async update to Rules context
+  - [x] 4.2 Add repository CRUD and async update to Rules context
     - Implement `list_repositories/0`, `get_repository/1`
     - Implement `create_repository/2` — validates, creates, writes audit entry
     - Implement `delete_repository/2` — deletes repo record (preserves rules), writes audit entry
@@ -125,7 +125,7 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Async task: calls `Fetcher.fetch_and_parse/1`, then `bulk_upsert_rules/3`, updates repo status, broadcasts PubSub
     - _Requirements: 4.1-4.10, 5.1-5.6, 12.1_
 
-  - [ ]* 4.3 Write property tests for SID-based upsert (PropCheck)
+  - [x]* 4.3 Write property tests for SID-based upsert (PropCheck)
     - **Property 2: SID-based upsert preserves enabled state and is idempotent**
     - **Property 11: Repository deletion preserves imported rules**
     - Create `test/config_manager/rules/upsert_prop_test.exs`
@@ -136,7 +136,7 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Verify deleting repository preserves all imported rules
     - **Validates: Requirements 4.9, 5.3, 5.5**
 
-  - [ ]* 4.4 Write unit tests for repository management
+  - [x]* 4.4 Write unit tests for repository management
     - Create `test/config_manager/rules/repository_test.exs`
     - Test create_repository with valid/invalid attrs
     - Test create_repository with duplicate name (case-insensitive)
@@ -147,12 +147,12 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Test audit entries created for all repository operations
     - _Requirements: 4.1-4.10, 5.1-5.6_
 
-- [ ] 5. Checkpoint — Ensure all tests pass
+- [x] 5. Checkpoint — Ensure all tests pass
   - Run `mix test` and verify all property and unit tests pass
   - Ask the user if questions arise
 
-- [ ] 6. Implement ruleset management and compilation
-  - [ ] 6.1 Add ruleset CRUD to Rules context
+- [x] 6. Implement ruleset management and compilation
+  - [x] 6.1 Add ruleset CRUD to Rules context
     - Implement `list_rulesets/0` — returns rulesets with effective rule counts and assigned pool counts
     - Implement `get_ruleset/1`, `get_ruleset!/1` — with preloaded overrides
     - Implement `create_ruleset/2` — validates name, creates with version 1, writes audit entry
@@ -162,14 +162,14 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Implement `effective_rule_count/1`
     - _Requirements: 6.1-6.8_
 
-  - [ ] 6.2 Add SID override management to Rules context
+  - [x] 6.2 Add SID override management to Rules context
     - Implement adding/removing SID overrides (include/exclude) on a ruleset
     - Override changes increment ruleset version
     - Validate SID exists in rule store for includes
     - Write audit entries for override changes
     - _Requirements: 6.3, 6.5, 6.6_
 
-  - [ ] 6.3 Create `lib/config_manager/rules/compiler.ex` with ruleset compilation
+  - [x] 6.3 Create `lib/config_manager/rules/compiler.ex` with ruleset compilation
     - Implement `compile/1` — takes ruleset_id, computes effective rules, groups by category, produces `%{filename => content}` map
     - Each category produces a `<category>.rules` file with one rule per line
     - Explicit SID includes not in any included category go into `local-overrides.rules`
@@ -178,7 +178,7 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Returns `{:ok, rule_map}` or `{:error, :empty_ruleset}`
     - _Requirements: 8.1_
 
-  - [ ]* 6.4 Write property tests for ruleset composition and compilation (PropCheck)
+  - [x]* 6.4 Write property tests for ruleset composition and compilation (PropCheck)
     - **Property 5: Ruleset effective rule computation matches composition model**
     - **Property 6: Ruleset name uniqueness is case-insensitive**
     - **Property 7: Ruleset version increments only on content changes**
@@ -192,7 +192,7 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Verify version increment behavior
     - **Validates: Requirements 6.4, 6.5, 6.6, 8.1**
 
-  - [ ]* 6.5 Write unit tests for ruleset management
+  - [x]* 6.5 Write unit tests for ruleset management
     - Create `test/config_manager/rules/ruleset_test.exs`
     - Test create_ruleset with valid/invalid attrs
     - Test create_ruleset with duplicate name (case-insensitive)
@@ -206,15 +206,15 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Test audit entries for all ruleset operations
     - _Requirements: 6.1-6.8, 8.1_
 
-- [ ] 7. Implement pool assignment and deployment
-  - [ ] 7.1 Add pool assignment operations to Rules context
+- [x] 7. Implement pool assignment and deployment
+  - [x] 7.1 Add pool assignment operations to Rules context
     - Implement `assign_ruleset_to_pool/3` — creates or replaces assignment, writes audit entry
     - Implement `unassign_ruleset_from_pool/2` — deletes assignment, writes audit entry
     - Implement `pool_assignment/1`, `pool_ruleset/1` — query helpers
     - Enforce one-ruleset-per-pool constraint via unique index on pool_id
     - _Requirements: 7.1-7.6_
 
-  - [ ] 7.2 Add rule deployment to Rules context
+  - [x] 7.2 Add rule deployment to Rules context
     - Implement `deploy_ruleset_to_pool/3`:
       1. Load pool assignment, verify ruleset exists
       2. Compile ruleset via `Compiler.compile/1`
@@ -227,13 +227,13 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Implement `list_rule_deployments/1`, `list_pool_rule_deployments/2` — query audit_log
     - _Requirements: 8.1-8.6, 9.1-9.4_
 
-  - [ ] 7.3 Add out-of-sync detection to Rules context
+  - [x] 7.3 Add out-of-sync detection to Rules context
     - Implement `out_of_sync_count/1` — counts sensors where last_deployed_rule_version != assigned ruleset version
     - Implement `sensor_sync_statuses/1` — returns per-sensor sync status list
     - Handle edge cases: no assignment (all sensors are "no ruleset assigned"), sensor never deployed (NULL version)
     - _Requirements: 10.1-10.5_
 
-  - [ ]* 7.4 Write property tests for pool assignment and drift detection (PropCheck)
+  - [x]* 7.4 Write property tests for pool assignment and drift detection (PropCheck)
     - **Property 8: One ruleset per pool invariant**
     - **Property 10: Out-of-sync detection is correct**
     - Create `test/config_manager/rules/assignment_prop_test.exs`
@@ -241,7 +241,7 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Generate random sensors with various deployed versions, verify out-of-sync classification
     - **Validates: Requirements 7.2, 10.1, 10.2, 10.3**
 
-  - [ ]* 7.5 Write unit tests for pool assignment and deployment
+  - [x]* 7.5 Write unit tests for pool assignment and deployment
     - Create `test/config_manager/rules/deployment_test.exs`
     - Test assign_ruleset_to_pool creates assignment
     - Test assign_ruleset_to_pool replaces existing assignment
@@ -254,12 +254,12 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Test audit entries for all assignment and deployment operations
     - _Requirements: 7.1-7.6, 8.1-8.6, 9.1-9.4, 10.1-10.5_
 
-- [ ] 8. Checkpoint — Ensure all tests pass
+- [x] 8. Checkpoint — Ensure all tests pass
   - Run `mix test` and verify all property and unit tests pass
   - Ask the user if questions arise
 
-- [ ] 9. Implement Rule Store LiveView page
-  - [ ] 9.1 Create `lib/config_manager_web/live/rules_live/store_live.ex` — Rule Store browse/search
+- [x] 9. Implement Rule Store LiveView page
+  - [x] 9.1 Create `lib/config_manager_web/live/rules_live/store_live.ex` — Rule Store browse/search
     - Mount: check `sensors:view` permission, load paginated rules with default sort (SID asc), load categories and repositories for filter dropdowns, subscribe to `"rules"` PubSub topic
     - Render searchable, filterable, paginated rule table with columns: SID, message, category, source, revision, severity, enabled toggle
     - Implement `phx-change` on search input for real-time filtering
@@ -273,7 +273,7 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - RBAC: hide toggle controls from users without `rules:manage`
     - _Requirements: 1.1-1.8, 2.1-2.5, 11.5_
 
-  - [ ] 9.2 Create `lib/config_manager_web/live/rules_live/categories_live.ex` — Categories page
+  - [x] 9.2 Create `lib/config_manager_web/live/rules_live/categories_live.ex` — Categories page
     - Mount: check `sensors:view` permission, load categories with counts
     - Render category table: name, total rules, enabled count, disabled count, toggle
     - Implement category toggle (check `rules:manage` in handle_event)
@@ -281,8 +281,8 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - RBAC: hide toggle from users without `rules:manage`
     - _Requirements: 3.1-3.6, 11.5_
 
-- [ ] 10. Implement Repository management LiveView
-  - [ ] 10.1 Create `lib/config_manager_web/live/rules_live/repositories_live.ex` — Repositories page
+- [x] 10. Implement Repository management LiveView
+  - [x] 10.1 Create `lib/config_manager_web/live/rules_live/repositories_live.ex` — Repositories page
     - Mount: check `sensors:view` permission, load repositories, subscribe to `"rule_repositories"` topic
     - Render repository table: name, URL, type, last updated, rule count, status
     - Implement "Add Repository" form (inline or modal) with name, URL, type fields (check `rules:manage`)
@@ -294,8 +294,8 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - RBAC: hide management actions from users without `rules:manage`
     - _Requirements: 4.1-4.10, 11.5_
 
-- [ ] 11. Implement Ruleset management LiveViews
-  - [ ] 11.1 Create `lib/config_manager_web/live/rules_live/rulesets_live.ex` — Rulesets list page
+- [x] 11. Implement Ruleset management LiveViews
+  - [x] 11.1 Create `lib/config_manager_web/live/rules_live/rulesets_live.ex` — Rulesets list page
     - Mount: check `sensors:view` permission, load rulesets with effective counts and pool counts
     - Render ruleset table: name, description, version, effective rule count, assigned pools, last modified
     - "Create Ruleset" button (visible only with `rules:manage`)
@@ -303,7 +303,7 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Subscribe to `"rulesets"` topic for updates
     - _Requirements: 6.1, 6.2, 6.8, 11.5_
 
-  - [ ] 11.2 Create `lib/config_manager_web/live/rules_live/ruleset_detail_live.ex` — Ruleset detail/edit page
+  - [x] 11.2 Create `lib/config_manager_web/live/rules_live/ruleset_detail_live.ex` — Ruleset detail/edit page
     - Mount: load ruleset with overrides, effective rule count, pool assignments, all pools list
     - For `:new` action: empty changeset, category selector, SID override inputs
     - For `:show` action: display ruleset info, categories, overrides, effective rule count, pool assignments
@@ -317,7 +317,7 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - RBAC: hide write actions from users without `rules:manage`; hide deploy from users without `rules:deploy`
     - _Requirements: 6.1-6.8, 7.1-7.6, 8.5, 8.6, 11.5_
 
-  - [ ] 11.3 Create `lib/config_manager_web/live/rules_live/deployments_live.ex` — Rule Deployments history page
+  - [x] 11.3 Create `lib/config_manager_web/live/rules_live/deployments_live.ex` — Rule Deployments history page
     - Mount: check `sensors:view` permission, load rule deployment audit entries
     - Render deployment history table: timestamp, operator, pool, ruleset, version, result summary
     - Paginate with 25 per page default
@@ -326,8 +326,8 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Empty state when no deployments exist
     - _Requirements: 9.4, 10.5_
 
-- [ ] 12. Update existing pages and navigation
-  - [ ] 12.1 Update router with rule store routes
+- [x] 12. Update existing pages and navigation
+  - [x] 12.1 Update router with rule store routes
     - Add all rule store LiveView routes inside authenticated live_session block:
       - `live "/rules/store", RulesLive.StoreLive, :index`
       - `live "/rules/categories", RulesLive.CategoriesLive, :index`
@@ -341,41 +341,41 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Set appropriate `required_permission` private metadata on each route
     - _Requirements: 13.1, 13.2_
 
-  - [ ] 12.2 Update navigation to include Rules section with sub-links
+  - [x] 12.2 Update navigation to include Rules section with sub-links
     - Update navigation template/component to expand "Rules" into a section with sub-links:
       Rule Store, Categories, Repositories, Rulesets, Deployments, Quick Deploy
     - Show sub-links based on user permissions
     - _Requirements: 13.1, 13.2_
 
-  - [ ] 12.3 Update existing rule deployment page (`RuleDeploymentLive`)
+  - [x] 12.3 Update existing rule deployment page (`RuleDeploymentLive`)
     - Add banner/link at top: "Looking for managed rulesets? Go to Rule Store →"
     - Update pool dropdown to show pool names instead of raw UUIDs (use `Pools.pool_name_map/0`)
     - Add audit entry with action `adhoc_rules_deployed` on successful deploy
     - Label page as "Quick Deploy" in navigation
     - _Requirements: 14.1-14.4_
 
-  - [ ] 12.4 Update pool detail page to show assigned ruleset and sync status
+  - [x] 12.4 Update pool detail page to show assigned ruleset and sync status
     - Display assigned Ruleset name (linked to `/rules/rulesets/:id`) on pool detail page
     - Display sync status badge (in-sync / out-of-sync / no ruleset)
     - Display out-of-sync sensor count
     - Show "Deploy Rules" button when ruleset is assigned and user has `rules:deploy`
     - _Requirements: 9.1, 9.3, 10.3, 13.3_
 
-  - [ ] 12.5 Update sensor detail page to show deployed rule version
+  - [x] 12.5 Update sensor detail page to show deployed rule version
     - Display `last_deployed_rule_version` in the sensor identity or detection section
     - Show "never deployed" when value is NULL
     - _Requirements: 9.2, 13.4_
 
-  - [ ] 12.6 Add `ConfigManager.Rules.TaskSupervisor` to application supervision tree
+  - [x] 12.6 Add `ConfigManager.Rules.TaskSupervisor` to application supervision tree
     - Add `{Task.Supervisor, name: ConfigManager.Rules.TaskSupervisor}` to the application children list
     - _Requirements: 4.6_
 
-- [ ] 13. Checkpoint — Ensure all tests pass
+- [x] 13. Checkpoint — Ensure all tests pass
   - Run `mix test` and verify all tests pass
   - Ask the user if questions arise
 
-- [ ] 14. Write integration tests
-  - [ ]* 14.1 Write LiveView integration tests for Rule Store page
+- [x] 14. Write integration tests
+  - [x]* 14.1 Write LiveView integration tests for Rule Store page
     - Create `test/config_manager_web/live/rules_live/store_live_test.exs`
     - Test page renders with rules sorted by SID
     - Test search filters rules by SID prefix and message substring
@@ -387,14 +387,14 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Test empty state messages
     - **Validates: Requirements 1.1-1.8, 2.1-2.5, 11.5**
 
-  - [ ]* 14.2 Write LiveView integration tests for Categories page
+  - [x]* 14.2 Write LiveView integration tests for Categories page
     - Create `test/config_manager_web/live/rules_live/categories_live_test.exs`
     - Test page renders categories with correct counts
     - Test category toggle updates all rules in category
     - Test RBAC: toggle hidden for users without `rules:manage`
     - **Validates: Requirements 3.1-3.6**
 
-  - [ ]* 14.3 Write LiveView integration tests for Repositories page
+  - [x]* 14.3 Write LiveView integration tests for Repositories page
     - Create `test/config_manager_web/live/rules_live/repositories_live_test.exs`
     - Test page renders repositories
     - Test add repository form validation
@@ -403,7 +403,7 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Test RBAC: management actions hidden for users without `rules:manage`
     - **Validates: Requirements 4.1-4.10**
 
-  - [ ]* 14.4 Write LiveView integration tests for Rulesets pages
+  - [x]* 14.4 Write LiveView integration tests for Rulesets pages
     - Create `test/config_manager_web/live/rules_live/rulesets_live_test.exs`
     - Test rulesets list page renders with effective counts
     - Test create ruleset form validation
@@ -414,20 +414,20 @@ This plan implements the full Suricata Rule Store for the RavenWire Config Manag
     - Test RBAC: deploy button hidden for users without `rules:deploy`
     - **Validates: Requirements 6.1-6.8, 7.1-7.6, 8.5, 8.6**
 
-  - [ ]* 14.5 Write end-to-end integration test for full rule lifecycle
+  - [x]* 14.5 Write end-to-end integration test for full rule lifecycle
     - Create `test/config_manager/rules/integration_test.exs`
     - Test full lifecycle: add repository → update (mock HTTP) → browse rules → create ruleset → assign to pool → deploy (mock SensorAgentClient) → verify deployed version → verify sync status
     - Verify audit entries at each step
     - **Validates: Requirements 4.6, 5.1-5.6, 6.1-6.8, 7.1-7.6, 8.1-8.6, 9.1-9.4, 10.1-10.5, 12.1-12.4**
 
-  - [ ]* 14.6 Write property test for audit entry completeness (PropCheck)
+  - [x]* 14.6 Write property test for audit entry completeness (PropCheck)
     - **Property 12: Every rule store mutation produces an audit entry**
     - Create `test/config_manager/rules/audit_prop_test.exs`
     - Generate random rule store mutations (toggle, category toggle, repo add/delete, ruleset create/update/delete, assign, deploy)
     - Verify each mutation produces at least one audit entry with correct action name and non-empty detail
     - **Validates: Requirements 12.1, 12.2, 12.3**
 
-- [ ] 15. Final checkpoint — Ensure all tests pass
+- [x] 15. Final checkpoint — Ensure all tests pass
   - Run `mix test` and verify all property and unit tests pass
   - Ask the user if questions arise
 

@@ -34,6 +34,9 @@ defmodule ConfigManager.Application do
       # can return promptly while per-sensor push results stream in.
       {Task.Supervisor, name: ConfigManager.Deployments.TaskSupervisor},
 
+      # Rule repository updates fetch and parse archives outside request processes.
+      {Task.Supervisor, name: ConfigManager.Rules.TaskSupervisor},
+
       # Intermediate CA — generates or loads keypair from persistent volume
       ConfigManager.CA.IntermediateCA,
 

@@ -179,11 +179,13 @@ defmodule ConfigManager.SensorPod do
       :last_deployed_config_version,
       :last_deployed_forwarding_version,
       :last_deployed_bpf_version,
+      :last_deployed_rule_version,
       :last_deployed_at,
       :last_deployment_id
     ])
     |> validate_number(:last_deployed_config_version, greater_than: 0)
     |> validate_number(:last_deployed_forwarding_version, greater_than_or_equal_to: 0)
     |> validate_number(:last_deployed_bpf_version, greater_than: 0)
+    |> validate_number(:last_deployed_rule_version, greater_than: 0)
   end
 end

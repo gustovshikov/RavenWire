@@ -1,18 +1,39 @@
 <header class="border-b border-gray-200 bg-white">
   <nav class="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
+    <% current_user = assigns[:current_user] %>
     <a href="/" class="flex items-center gap-2 font-semibold text-gray-900">
       <img class="h-9 w-9 shrink-0" src="/images/logos/small-logo-transparent.png" alt="" />
       <span>RavenWire Manager</span>
     </a>
     <div class="flex items-center gap-4 text-sm">
-      <a href="/" class="text-blue-600 hover:underline">Dashboard</a>
-      <a href="/enrollment" class="text-blue-600 hover:underline">Enrollment</a>
-      <a href="/pools" class="text-blue-600 hover:underline">Pools</a>
-      <a href="/deployments" class="text-blue-600 hover:underline">Deployments</a>
-      <a href="/pcap-config" class="text-blue-600 hover:underline">PCAP Config</a>
-      <a href="/rules" class="text-blue-600 hover:underline">Rules</a>
-      <a href="/support-bundle" class="text-blue-600 hover:underline">Support Bundles</a>
-      <a href="/audit" class="text-blue-600 hover:underline">Audit</a>
+      <%= if nav_allowed?(current_user, "dashboard:view") do %>
+        <a href="/" class="text-blue-600 hover:underline">Dashboard</a>
+      <% end %>
+      <%= if nav_allowed?(current_user, "enrollment:manage") do %>
+        <a href="/enrollment" class="text-blue-600 hover:underline">Enrollment</a>
+      <% end %>
+      <%= if nav_allowed?(current_user, "sensors:view") do %>
+        <a href="/pools" class="text-blue-600 hover:underline">Pools</a>
+        <a href="/deployments" class="text-blue-600 hover:underline">Deployments</a>
+        <a href="/pcap-config" class="text-blue-600 hover:underline">PCAP Config</a>
+        <div class="group relative">
+          <a href="/rules/store" class="text-blue-600 hover:underline">Rules</a>
+          <div class="absolute right-0 z-20 hidden w-44 rounded border border-gray-200 bg-white py-2 shadow-lg group-hover:block">
+            <a href="/rules/store" class="block px-3 py-1.5 text-gray-700 hover:bg-gray-50">Rule Store</a>
+            <a href="/rules/categories" class="block px-3 py-1.5 text-gray-700 hover:bg-gray-50">Categories</a>
+            <a href="/rules/repositories" class="block px-3 py-1.5 text-gray-700 hover:bg-gray-50">Repositories</a>
+            <a href="/rules/rulesets" class="block px-3 py-1.5 text-gray-700 hover:bg-gray-50">Rulesets</a>
+            <a href="/rules/deployments" class="block px-3 py-1.5 text-gray-700 hover:bg-gray-50">Deployments</a>
+            <%= if nav_allowed?(current_user, "rules:deploy") do %>
+              <a href="/rules" class="block px-3 py-1.5 text-gray-700 hover:bg-gray-50">Quick Deploy</a>
+            <% end %>
+          </div>
+        </div>
+        <a href="/support-bundle" class="text-blue-600 hover:underline">Support Bundles</a>
+      <% end %>
+      <%= if nav_allowed?(current_user, "audit:view") do %>
+        <a href="/audit" class="text-blue-600 hover:underline">Audit</a>
+      <% end %>
       <form action="/logout" method="post">
         <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
         <button type="submit" class="text-gray-600 hover:underline">Logout</button>
