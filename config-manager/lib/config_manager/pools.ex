@@ -4,6 +4,7 @@ defmodule ConfigManager.Pools do
   import Ecto.Query
 
   alias ConfigManager.{Audit, AuditEntry, Repo, SensorPod, SensorPool}
+  alias ConfigManager.Forwarding.{ForwardingSink, SinkSecret}
   alias Ecto.Multi
 
   @deployment_actions ~w(rule_deployed pool_config_deployed deployment_created deployment_completed deployment_failed)
@@ -102,10 +103,19 @@ defmodule ConfigManager.Pools do
 
   def delete_pool(%SensorPool{} = pool, actor) do
     affected_sensor_count = member_count(pool.id)
+    pool_sink_ids = from(s in ForwardingSink, where: s.pool_id == ^pool.id, select: s.id)
 
     Multi.new()
     |> Multi.update_all(:nilify_sensors, from(p in SensorPod, where: p.pool_id == ^pool.id),
       set: [pool_id: nil]
+    )
+    |> Multi.delete_all(
+      :delete_forwarding_secrets,
+      from(s in SinkSecret, where: s.forwarding_sink_id in subquery(pool_sink_ids))
+    )
+    |> Multi.delete_all(
+      :delete_forwarding_sinks,
+      from(s in ForwardingSink, where: s.pool_id == ^pool.id)
     )
     |> Multi.delete(:pool, pool)
     |> Audit.append_multi(fn _changes ->

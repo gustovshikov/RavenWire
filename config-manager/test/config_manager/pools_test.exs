@@ -1,8 +1,9 @@
 defmodule ConfigManager.PoolsTest do
   use ConfigManager.DataCase, async: false
 
-  alias ConfigManager.{Pools, Repo, SensorPod, SensorPool}
+  alias ConfigManager.{Forwarding, Pools, Repo, SensorPod, SensorPool}
   alias ConfigManager.AuditEntry
+  alias ConfigManager.Forwarding.ForwardingSink
 
   test "creates pools with normalized names, defaults, and audit entry" do
     assert {:ok, pool} =
@@ -141,6 +142,25 @@ defmodule ConfigManager.PoolsTest do
     assert {:ok, %SensorPool{}} = Pools.delete_pool(pool, "tester")
     assert Repo.get!(SensorPod, sensor.id).pool_id == nil
     assert Repo.get_by!(AuditEntry, action: "pool_deleted", target_id: pool.id)
+  end
+
+  test "deletes forwarding sinks when deleting pools" do
+    {:ok, pool} = Pools.create_pool(%{"name" => "delete-forwarding-pool"}, "tester")
+
+    {:ok, sink} =
+      Forwarding.create_sink(
+        pool.id,
+        %{
+          "name" => "delete-forwarding-sink",
+          "sink_type" => "file",
+          "path_template" => "/var/sensor/logs/vector/delete-forwarding.ndjson",
+          "encoding" => "ndjson"
+        },
+        "tester"
+      )
+
+    assert {:ok, %SensorPool{}} = Pools.delete_pool(pool, "tester")
+    assert Repo.get(ForwardingSink, sink.id) == nil
   end
 
   defp insert_sensor!(name, pool_id \\ nil) do

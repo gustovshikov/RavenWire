@@ -158,7 +158,7 @@ export async function cleanupPoolByDatabase(env: E2EEnv, poolName: string) {
     throw new Error(`Refusing to delete non-E2E pool: ${poolName}`)
   }
 
-  const query = `delete from sensor_pools where name = ${sqlString(poolName)} and name like 'e2e-%';`
+  const query = `pragma foreign_keys = on; delete from sensor_pools where name = ${sqlString(poolName)} and name like 'e2e-%';`
   await runSsh(env, `sudo sqlite3 ${shellQuote(env.managerDbPath)} ${shellQuote(query)}`)
 }
 
