@@ -35,6 +35,7 @@ export E2E_ADMIN_USER=<admin username>
 export E2E_ADMIN_PASSWORD=<admin password>
 export E2E_SSH_USER=eric
 export E2E_SSH_HOST=172.16.10.38
+export E2E_SENSOR_NAME=sensor-01
 ```
 
 For the default shared test server, verify SSH before running the suite:
@@ -88,7 +89,7 @@ Preflight verifies that:
 - `/login` is reachable.
 - `/assets/app.js`, `/assets/phoenix.min.js`, and `/assets/phoenix_live_view.min.js` are served.
 - Required systemd services are active on the test server.
-- The expected built-in sensor is enrolled and has a recent `last_seen_at`.
+- The expected built-in sensor, defaulting to `sensor-01`, is enrolled and has a recent `last_seen_at`.
 
 Set `E2E_SKIP_SSH_PREFLIGHT=true` only when intentionally running browser-only HTTP smoke checks. The full suite should use SSH preflight.
 

@@ -74,7 +74,7 @@ E2E_SSH_USER=eric
 E2E_SSH_HOST=172.16.10.38
 E2E_PROFILE=smoke|full
 E2E_ALLOW_DB_CLEANUP=false
-E2E_SENSOR_NAME=ravenwire-test
+E2E_SENSOR_NAME=sensor-01
 ```
 
 Secrets are never committed. A local `.env.e2e.example` may document variable names with placeholder values only.

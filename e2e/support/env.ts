@@ -63,7 +63,7 @@ export function loadE2EEnv(options: LoadOptions = {}): E2EEnv {
     sshUser: process.env.E2E_SSH_USER ?? "eric",
     sshHost: process.env.E2E_SSH_HOST ?? "172.16.10.38",
     profile: parseProfile(process.env.E2E_PROFILE ?? "smoke"),
-    sensorName: process.env.E2E_SENSOR_NAME ?? "ravenwire-test",
+    sensorName: process.env.E2E_SENSOR_NAME ?? "sensor-01",
     sensorMaxAgeSeconds: parsePositiveInt(process.env.E2E_SENSOR_MAX_AGE_SECONDS, 600),
     requiredServices: parseList(process.env.E2E_REQUIRED_SERVICES, defaultServices),
     managerDbPath: process.env.E2E_MANAGER_DB_PATH ?? "/data/config_manager/config_manager.db",
