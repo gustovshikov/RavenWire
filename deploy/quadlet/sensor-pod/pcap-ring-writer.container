@@ -26,6 +26,7 @@ Environment=CONTROL_SOCK=/var/run/sensor/pcap_ring.sock
 Environment=SENSOR_SVC_UID=${SENSOR_SVC_UID}
 
 [Service]
+EnvironmentFile=-/etc/ravenwire/sensor.env
 Restart=on-failure
 RestartSec=5
 

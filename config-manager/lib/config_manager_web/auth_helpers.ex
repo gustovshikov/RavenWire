@@ -6,6 +6,7 @@ defmodule ConfigManagerWeb.AuthHelpers do
 
   alias ConfigManager.Auth
   alias ConfigManager.Auth.Policy
+  alias ConfigManager.Audit
 
   def on_mount(:require_auth, _params, session, socket) do
     case Auth.validate_session(session["session_token"]) do
@@ -24,12 +25,28 @@ defmodule ConfigManagerWeb.AuthHelpers do
     end
   end
 
-  def authorize(socket, permission) do
+  def authorize(socket, permission, action \\ nil) do
     user = socket.assigns[:current_user]
 
     if user && Policy.has_permission?(user.role, permission) do
       :ok
     else
+      if action do
+        Audit.log(%{
+          actor: (user && user.username) || "anonymous",
+          actor_type: if(user, do: "user", else: "anonymous"),
+          action: "permission_denied",
+          target_type: "live_event",
+          target_id: to_string(action),
+          result: "failure",
+          detail: %{
+            required_permission: permission,
+            action: to_string(action),
+            event_or_route: to_string(action)
+          }
+        })
+      end
+
       {:error, :forbidden}
     end
   end

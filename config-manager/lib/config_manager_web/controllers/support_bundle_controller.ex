@@ -12,6 +12,7 @@ defmodule ConfigManagerWeb.SupportBundleController do
 
   import Ecto.Query
 
+  alias ConfigManager.Audit
   alias ConfigManager.Repo
   alias ConfigManager.SensorPod
   alias ConfigManager.SensorAgentClient
@@ -23,7 +24,7 @@ defmodule ConfigManagerWeb.SupportBundleController do
   Query params: `path` — the bundle path returned by the generate action
   """
   def download(conn, %{"pod_id" => pod_id, "path" => bundle_path}) do
-    case Repo.one(from p in SensorPod, where: p.id == ^pod_id and p.status == "enrolled") do
+    case Repo.one(from(p in SensorPod, where: p.id == ^pod_id and p.status == "enrolled")) do
       nil ->
         conn
         |> put_status(:not_found)
@@ -35,12 +36,16 @@ defmodule ConfigManagerWeb.SupportBundleController do
             timestamp = DateTime.utc_now() |> Calendar.strftime("%Y%m%d-%H%M%S")
             filename = "support-bundle-#{pod.name}-#{timestamp}.tar.gz"
 
+            log_download(conn, pod, bundle_path, "success")
+
             conn
             |> put_resp_content_type("application/gzip")
             |> put_resp_header("content-disposition", ~s(attachment; filename="#{filename}"))
             |> send_resp(200, data)
 
           {:error, reason} ->
+            log_download(conn, pod, bundle_path, "failure", %{reason: format_error(reason)})
+
             conn
             |> put_status(:bad_gateway)
             |> json(%{error: "Failed to download support bundle: #{format_error(reason)}"})
@@ -57,4 +62,22 @@ defmodule ConfigManagerWeb.SupportBundleController do
   defp format_error({:http_error, status, body}), do: "HTTP #{status}: #{body}"
   defp format_error(:no_control_api_host), do: "Pod has no control API host configured"
   defp format_error(reason), do: inspect(reason)
+
+  defp log_download(conn, pod, bundle_path, result, detail \\ %{}) do
+    user = conn.assigns[:current_user]
+
+    Audit.log(%{
+      actor: (user && user.username) || "anonymous",
+      actor_type: if(user, do: "user", else: "anonymous"),
+      action: "support_bundle_downloaded",
+      target_type: "sensor_pod",
+      target_id: pod.id,
+      result: result,
+      detail:
+        Map.merge(detail, %{
+          bundle_path: bundle_path,
+          required_permission: "bundle:download"
+        })
+    })
+  end
 end

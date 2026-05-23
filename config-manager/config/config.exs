@@ -1,7 +1,8 @@
 import Config
 
 config :config_manager,
-  ecto_repos: [ConfigManager.Repo]
+  ecto_repos: [ConfigManager.Repo],
+  secure_session_cookie: true
 
 config :config_manager, ConfigManager.Repo,
   database: System.get_env("SENSOR_DB_PATH", "/data/config_manager.db"),

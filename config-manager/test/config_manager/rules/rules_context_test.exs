@@ -76,6 +76,53 @@ defmodule ConfigManager.Rules.RulesContextTest do
     assert Rules.get_rule_by_sid(rule.sid).id == rule.id
   end
 
+  test "create_rule parses raw manual rules, audits, and broadcasts" do
+    Phoenix.PubSub.subscribe(ConfigManager.PubSub, "rules")
+
+    raw_text =
+      ~s|alert tcp any any -> any any (msg:"Manual API Rule"; classtype:policy-violation; sid:315001; rev:2;)|
+
+    assert {:ok, rule} =
+             Rules.create_rule(
+               %{"raw_text" => raw_text, "category" => "manual-api", "severity" => 1},
+               "tester"
+             )
+
+    assert rule.sid == 315_001
+    assert rule.message == "Manual API Rule"
+    assert rule.category == "manual-api"
+    assert rule.classtype == "policy-violation"
+    assert rule.revision == 2
+    assert rule.severity == 1
+    assert rule.enabled
+
+    audit = Repo.get_by!(AuditEntry, action: "rule_created", target_id: rule.id)
+    assert audit.actor == "tester"
+    assert audit.actor_type == "user"
+    assert audit.target_type == "suricata_rule"
+    assert Jason.decode!(audit.detail)["source"] == "manual"
+    assert_received {:rule_created, rule_id}
+    assert rule_id == rule.id
+  end
+
+  test "create_rule formats field-based rules and rejects invalid input" do
+    assert {:ok, rule} =
+             Rules.create_rule(
+               %{"sid" => "315002", "message" => "Field Rule", "enabled" => "false"},
+               "tester"
+             )
+
+    assert rule.sid == 315_002
+    assert rule.message == "Field Rule"
+    assert rule.category == "manual"
+    assert rule.raw_text =~ ~s(msg:"Field Rule";)
+    assert rule.raw_text =~ "sid:315002;"
+    refute rule.enabled
+
+    assert {:error, :invalid_rule} =
+             Rules.create_rule(%{"message" => "Missing SID"}, "tester")
+  end
+
   test "toggle_rule flips enabled state, audits, and broadcasts" do
     Phoenix.PubSub.subscribe(ConfigManager.PubSub, "rules")
     rule = insert_rule!(%{sid: 320_001, enabled: true})

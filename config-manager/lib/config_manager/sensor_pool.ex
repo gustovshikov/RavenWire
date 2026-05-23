@@ -12,6 +12,7 @@ defmodule ConfigManager.SensorPool do
   @foreign_key_type :binary_id
 
   @valid_capture_modes ~w(alert_driven full_pcap)
+  @valid_schema_modes ~w(raw ecs ocsf splunk_cim)
   @name_format ~r/^[a-zA-Z0-9._-]+$/
   @config_fields [
     :capture_mode,
@@ -32,6 +33,12 @@ defmodule ConfigManager.SensorPool do
     field(:pre_alert_window_sec, :integer, default: 60)
     field(:post_alert_window_sec, :integer, default: 30)
     field(:alert_severity_threshold, :integer, default: 2)
+    field(:schema_mode, :string, default: "raw")
+    field(:forwarding_config_version, :integer, default: 0)
+    field(:forwarding_config_updated_at, :utc_datetime_usec)
+    field(:forwarding_config_updated_by, :string)
+
+    has_many(:forwarding_sinks, ConfigManager.Forwarding.ForwardingSink, foreign_key: :pool_id)
 
     timestamps()
   end
@@ -92,6 +99,26 @@ defmodule ConfigManager.SensorPool do
     |> maybe_version_and_metadata(actor)
   end
 
+  def schema_mode_changeset(pool, attrs, actor \\ "system") do
+    pool
+    |> cast(attrs, [:schema_mode], empty_values: [])
+    |> validate_required([:schema_mode])
+    |> validate_inclusion(:schema_mode, @valid_schema_modes)
+    |> maybe_forwarding_version_and_metadata(actor)
+  end
+
+  def increment_forwarding_version_changeset(pool, actor \\ "system") do
+    current = pool.forwarding_config_version || 0
+
+    change(pool,
+      forwarding_config_version: current + 1,
+      forwarding_config_updated_at: now_usec(),
+      forwarding_config_updated_by: actor
+    )
+  end
+
+  def valid_schema_modes, do: @valid_schema_modes
+
   defp normalize_name(changeset) do
     update_change(changeset, :name, fn name -> String.trim(to_string(name)) end)
   end
@@ -117,5 +144,19 @@ defmodule ConfigManager.SensorPool do
     end
   end
 
+  defp maybe_forwarding_version_and_metadata(changeset, actor) do
+    if Map.has_key?(changeset.changes, :schema_mode) do
+      current = get_field(changeset, :forwarding_config_version) || 0
+
+      changeset
+      |> put_change(:forwarding_config_version, current + 1)
+      |> put_change(:forwarding_config_updated_at, now_usec())
+      |> put_change(:forwarding_config_updated_by, actor)
+    else
+      changeset
+    end
+  end
+
   defp now_utc, do: DateTime.utc_now() |> DateTime.truncate(:second)
+  defp now_usec, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 end

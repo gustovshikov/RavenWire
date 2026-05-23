@@ -1,0 +1,14 @@
+{
+  "name": "ravenwire-e2e",
+  "private": true,
+  "scripts": {
+    "install:browsers": "playwright install chromium",
+    "test": "playwright test",
+    "test:smoke": "E2E_PROFILE=smoke playwright test",
+    "test:full": "E2E_PROFILE=full playwright test",
+    "preflight": "playwright test tests/preflight.spec.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}

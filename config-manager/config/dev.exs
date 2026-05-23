@@ -13,4 +13,6 @@ config :logger, :console, format: "[$level] $message\n"
 config :phoenix, :stacktrace_depth, 20
 config :phoenix, :plug_init_mode, :runtime
 
-config :config_manager, allow_plain_cert_rotation: true
+config :config_manager,
+  allow_plain_cert_rotation: true,
+  secure_session_cookie: false

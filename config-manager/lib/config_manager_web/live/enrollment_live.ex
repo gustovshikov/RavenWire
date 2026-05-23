@@ -8,7 +8,8 @@ defmodule ConfigManagerWeb.EnrollmentLive do
 
   use ConfigManagerWeb, :live_view
 
-  alias ConfigManager.Enrollment
+  alias ConfigManager.{Audit, Enrollment}
+  alias ConfigManagerWeb.AuthHelpers
 
   # ── Mount ────────────────────────────────────────────────────────────────────
 
@@ -29,29 +30,41 @@ defmodule ConfigManagerWeb.EnrollmentLive do
 
   @impl true
   def handle_event("approve", %{"id" => id}, socket) do
-    case Enrollment.approve_enrollment(id) do
-      {:ok, _cert_bundle} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Enrollment approved and certificate issued.")
-         |> assign(:pending, Enrollment.list_pending_enrollments())
-         |> assign(:enrolled, Enrollment.list_enrolled_pods())}
+    with :ok <- AuthHelpers.authorize(socket, "enrollment:manage", "enrollment:approve"),
+         {:ok, _cert_bundle} <- Enrollment.approve_enrollment(id) do
+      log_enrollment(socket, "enrollment_approved", id, "success")
+
+      {:noreply,
+       socket
+       |> put_flash(:info, "Enrollment approved and certificate issued.")
+       |> assign(:pending, Enrollment.list_pending_enrollments())
+       |> assign(:enrolled, Enrollment.list_enrolled_pods())}
+    else
+      {:error, :forbidden} ->
+        {:noreply, put_flash(socket, :error, "Insufficient permissions.")}
 
       {:error, reason} ->
+        log_enrollment(socket, "enrollment_approved", id, "failure", %{reason: inspect(reason)})
         {:noreply, put_flash(socket, :error, "Approval failed: #{inspect(reason)}")}
     end
   end
 
   def handle_event("deny", %{"id" => id}, socket) do
-    case Enrollment.deny_enrollment(id) do
-      {:ok, _} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Enrollment request denied.")
-         |> assign(:pending, Enrollment.list_pending_enrollments())
-         |> assign(:enrolled, Enrollment.list_enrolled_pods())}
+    with :ok <- AuthHelpers.authorize(socket, "enrollment:manage", "enrollment:deny"),
+         {:ok, _} <- Enrollment.deny_enrollment(id) do
+      log_enrollment(socket, "enrollment_denied", id, "success")
+
+      {:noreply,
+       socket
+       |> put_flash(:info, "Enrollment request denied.")
+       |> assign(:pending, Enrollment.list_pending_enrollments())
+       |> assign(:enrolled, Enrollment.list_enrolled_pods())}
+    else
+      {:error, :forbidden} ->
+        {:noreply, put_flash(socket, :error, "Insufficient permissions.")}
 
       {:error, reason} ->
+        log_enrollment(socket, "enrollment_denied", id, "failure", %{reason: inspect(reason)})
         {:noreply, put_flash(socket, :error, "Denial failed: #{inspect(reason)}")}
     end
   end
@@ -74,6 +87,18 @@ defmodule ConfigManagerWeb.EnrollmentLive do
   def handle_info({:pod_degraded, _pod_id, _reason, _detail}, socket), do: {:noreply, socket}
 
   # ── Helpers ──────────────────────────────────────────────────────────────────
+
+  defp log_enrollment(socket, action, id, result, detail \\ %{}) do
+    Audit.log(%{
+      actor: socket.assigns.current_user.username,
+      actor_type: "user",
+      action: action,
+      target_type: "sensor_pod",
+      target_id: id,
+      result: result,
+      detail: Map.put(detail, :required_permission, "enrollment:manage")
+    })
+  end
 
   defp format_datetime(nil), do: "—"
 

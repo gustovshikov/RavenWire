@@ -48,6 +48,7 @@ Environment=BPF_FILTER_PATH=/etc/sensor/bpf_filters.conf
 Environment=ENROLLMENT_PORT=9093
 
 [Service]
+EnvironmentFile=-/etc/ravenwire/sensor.env
 Restart=on-failure
 RestartSec=5
 

@@ -44,6 +44,12 @@ func TestPrepareHostInstallsJournaldLimits(t *testing.T) {
 	if !strings.Contains(commands, "/var/sensor/support-bundles") {
 		t.Fatal("prepareHost must create the support bundle directory")
 	}
+	if !strings.Contains(commands, "deploy/systemd/tmpfiles.d/ravenwire.conf") {
+		t.Fatal("prepareHost must install the RavenWire tmpfiles rule")
+	}
+	if !strings.Contains(commands, "systemd-tmpfiles --create /etc/tmpfiles.d/ravenwire.conf") {
+		t.Fatal("prepareHost must create tmpfiles-managed runtime directories")
+	}
 }
 
 func TestJournaldDropInBoundsJournalStorage(t *testing.T) {
@@ -232,6 +238,50 @@ func TestSensorAgentQuadletReceivesControlAPIHost(t *testing.T) {
 
 	if !strings.Contains(text, "Environment=CONTROL_API_HOST=${CONTROL_API_HOST}") {
 		t.Fatal("sensor-agent quadlet must pass CONTROL_API_HOST into the container")
+	}
+}
+
+func TestSensorPodQuadletsLoadPersistentEnvironmentFile(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{
+		"sensor-agent.container",
+		"pcap-ring-writer.container",
+		"zeek.container",
+		"suricata.container",
+		"vector.container",
+	} {
+		content, err := os.ReadFile(filepath.Join(root, "deploy", "quadlet", "sensor-pod", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(content), "EnvironmentFile=-/etc/ravenwire/sensor.env") {
+			t.Fatalf("%s must load the persistent sensor environment file", name)
+		}
+	}
+}
+
+func TestSensorEnvironmentFileCommandWritesStableRootOnlyFile(t *testing.T) {
+	command := sensorEnvironmentFileCommand(map[string]string{
+		"SENSOR_POD_NAME":    "ravenwire-test",
+		"CONFIG_MANAGER_URL": "http://127.0.0.1:4000/api/v1",
+		"EMPTY":              "",
+	})
+
+	for _, want := range []string{
+		"sudo mkdir -p '/etc/ravenwire'",
+		"'CONFIG_MANAGER_URL=http://127.0.0.1:4000/api/v1'",
+		"'EMPTY='",
+		"'SENSOR_POD_NAME=ravenwire-test'",
+		"sudo tee '/etc/ravenwire/sensor.env' >/dev/null",
+		"sudo chmod 0600 '/etc/ravenwire/sensor.env'",
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("sensor env file command missing %q in %q", want, command)
+		}
 	}
 }
 

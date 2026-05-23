@@ -1,0 +1,73 @@
+name: RavenWire E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "E2E profile to run"
+        required: true
+        default: "smoke"
+        type: choice
+        options:
+          - smoke
+          - full
+  workflow_call:
+    inputs:
+      profile:
+        description: "E2E profile to run"
+        required: false
+        default: "smoke"
+        type: string
+
+jobs:
+  browser-e2e:
+    name: Browser E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      E2E_BASE_URL: ${{ vars.E2E_BASE_URL || 'http://172.16.10.38:4000' }}
+      E2E_ADMIN_USER: ${{ secrets.E2E_ADMIN_USER }}
+      E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+      E2E_SSH_USER: ${{ vars.E2E_SSH_USER || 'eric' }}
+      E2E_SSH_HOST: ${{ vars.E2E_SSH_HOST || '172.16.10.38' }}
+      E2E_PROFILE: ${{ inputs.profile || 'smoke' }}
+      E2E_SENSOR_NAME: ${{ vars.E2E_SENSOR_NAME || 'ravenwire-test' }}
+      E2E_ALLOW_DB_CLEANUP: ${{ vars.E2E_ALLOW_DB_CLEANUP || 'false' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          test -n "$E2E_ADMIN_USER"
+          test -n "$E2E_ADMIN_PASSWORD"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install E2E dependencies
+        working-directory: e2e
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E profile
+        working-directory: e2e
+        run: npm test
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ravenwire-e2e-${{ env.E2E_PROFILE }}
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+          if-no-files-found: ignore

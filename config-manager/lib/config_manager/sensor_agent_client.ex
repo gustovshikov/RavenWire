@@ -239,6 +239,124 @@ defmodule ConfigManager.SensorAgentClient do
     end
   end
 
+  @doc """
+  Dispatches a PCAP carve request to `POST /control/pcap/carve`.
+
+  The payload includes the manager-generated request ID and normalized search
+  parameters so the Sensor Agent can correlate status and download calls.
+  """
+  @spec request_pcap_carve(map(), map()) :: {:ok, map()} | {:error, term()}
+  def request_pcap_carve(%{control_api_host: nil}, _payload), do: {:error, :no_control_api_host}
+  def request_pcap_carve(%{control_api_host: ""}, _payload), do: {:error, :no_control_api_host}
+
+  def request_pcap_carve(pod, payload) when is_map(payload) do
+    url = "https://#{pod.control_api_host}:#{@control_port}/control/pcap/carve"
+    headers = [{"content-type", "application/json"}]
+    request = Finch.build(:post, url, headers, Jason.encode!(payload))
+
+    case Finch.request(request, ConfigManager.Finch,
+           receive_timeout: @timeout_ms,
+           connect_options: mtls_opts()
+         ) do
+      {:ok, %Finch.Response{status: status, body: resp_body}} when status in 200..299 ->
+        Logger.info("request_pcap_carve succeeded for pod #{pod.name} (HTTP #{status})")
+        {:ok, decode_body(resp_body)}
+
+      {:ok, %Finch.Response{status: 422, body: resp_body}} ->
+        Logger.warning("request_pcap_carve validation error for pod #{pod.name}: #{resp_body}")
+        {:error, {:validation_error, decode_body(resp_body)}}
+
+      {:ok, %Finch.Response{status: status, body: resp_body}} ->
+        Logger.warning(
+          "request_pcap_carve failed for pod #{pod.name}: HTTP #{status} — #{resp_body}"
+        )
+
+        {:error, {:http_error, status, resp_body}}
+
+      {:error, reason} ->
+        Logger.warning("request_pcap_carve request error for pod #{pod.name}: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  @doc "Fetches Sensor Agent status for a PCAP carve request."
+  @spec get_pcap_carve_status(map(), String.t()) :: {:ok, map()} | {:error, term()}
+  def get_pcap_carve_status(%{control_api_host: nil}, _request_id),
+    do: {:error, :no_control_api_host}
+
+  def get_pcap_carve_status(%{control_api_host: ""}, _request_id),
+    do: {:error, :no_control_api_host}
+
+  def get_pcap_carve_status(pod, request_id) do
+    url = "https://#{pod.control_api_host}:#{@control_port}/control/pcap/carve/#{request_id}"
+    request = Finch.build(:get, url, [], nil)
+
+    case Finch.request(request, ConfigManager.Finch,
+           receive_timeout: @timeout_ms,
+           connect_options: mtls_opts()
+         ) do
+      {:ok, %Finch.Response{status: status, body: resp_body}} when status in 200..299 ->
+        Logger.info("get_pcap_carve_status succeeded for pod #{pod.name} (HTTP #{status})")
+        {:ok, decode_body(resp_body)}
+
+      {:ok, %Finch.Response{status: status, body: resp_body}} ->
+        Logger.warning(
+          "get_pcap_carve_status failed for pod #{pod.name}: HTTP #{status} — #{resp_body}"
+        )
+
+        {:error, {:http_error, status, resp_body}}
+
+      {:error, reason} ->
+        Logger.warning(
+          "get_pcap_carve_status request error for pod #{pod.name}: #{inspect(reason)}"
+        )
+
+        {:error, reason}
+    end
+  end
+
+  @pcap_download_timeout_ms 120_000
+
+  @doc "Downloads a completed PCAP carve from `GET /control/pcap/download/:request_id`."
+  @spec download_pcap_carve(map(), String.t()) :: {:ok, map()} | {:error, term()}
+  def download_pcap_carve(%{control_api_host: nil}, _request_id),
+    do: {:error, :no_control_api_host}
+
+  def download_pcap_carve(%{control_api_host: ""}, _request_id),
+    do: {:error, :no_control_api_host}
+
+  def download_pcap_carve(pod, request_id) do
+    url = "https://#{pod.control_api_host}:#{@control_port}/control/pcap/download/#{request_id}"
+    request = Finch.build(:get, url, [], nil)
+
+    case Finch.request(request, ConfigManager.Finch,
+           receive_timeout: @pcap_download_timeout_ms,
+           connect_options: mtls_opts()
+         ) do
+      {:ok, %Finch.Response{status: status, headers: headers, body: body}}
+      when status in 200..299 ->
+        Logger.info(
+          "download_pcap_carve succeeded for pod #{pod.name} (#{byte_size(body)} bytes)"
+        )
+
+        {:ok, %{body: body, content_type: response_content_type(headers)}}
+
+      {:ok, %Finch.Response{status: status, body: resp_body}} ->
+        Logger.warning(
+          "download_pcap_carve failed for pod #{pod.name}: HTTP #{status} — #{resp_body}"
+        )
+
+        {:error, {:http_error, status, resp_body}}
+
+      {:error, reason} ->
+        Logger.warning(
+          "download_pcap_carve request error for pod #{pod.name}: #{inspect(reason)}"
+        )
+
+        {:error, reason}
+    end
+  end
+
   # ── Private ──────────────────────────────────────────────────────────────────
 
   defp post_control(%{control_api_host: nil}, _path, _action), do: {:error, :no_control_api_host}
@@ -298,6 +416,17 @@ defmodule ConfigManager.SensorAgentClient do
     case Jason.decode(body) do
       {:ok, decoded} -> decoded
       {:error, _} -> %{raw: body}
+    end
+  end
+
+  defp response_content_type(headers) do
+    headers
+    |> Enum.find_value(fn {key, value} ->
+      if String.downcase(key) == "content-type", do: value
+    end)
+    |> case do
+      nil -> "application/vnd.tcpdump.pcap"
+      content_type -> content_type
     end
   end
 end

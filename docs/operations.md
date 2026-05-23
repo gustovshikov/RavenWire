@@ -130,6 +130,18 @@ sensorctl test
 
 This runs the `sensorctl` Go checks, Sensor Agent Go checks, and the Linux build check for `pcap_ring_writer`.
 
+For browser-visible manager workflows, also run the Playwright E2E suite against the configured test server:
+
+```bash
+cd e2e
+npm install
+npm run install:browsers
+npm run test:smoke
+npm run test:full
+```
+
+Set `E2E_BASE_URL`, `E2E_ADMIN_USER`, and `E2E_ADMIN_PASSWORD` before running authenticated browser tests. The E2E suite performs HTTP/static asset preflight, SSH service and built-in sensor health checks, LiveView connectivity checks, pool workflows, BPF editor workflows, ruleset/repository workflows, and support/deployment page checks.
+
 ## Fresh Reset
 
 ```bash
@@ -141,4 +153,8 @@ sensorctl start
 
 ## Current Boundaries
 
-The current implementation does not yet include production authentication/RBAC, fleet pool management, deployment tracking, public API token management, or multi-manager HA. Those features are specified under `.kiro/specs/` and summarized in [Implementation Roadmap](implementation-roadmap.md).
+The professional MVP target includes the implemented fleet pool management, sensor detail pages, deployment/drift views, rule store, BPF editor, support bundles, browser E2E regression path, and browser-surface auth/RBAC/audit hardening. Admin user management, API token management UI, audit filtering/export, route/event permission checks, and role-aware controls are part of the current browser MVP surface.
+
+Token-authenticated Public API controllers are explicitly deferred unless pulled into the MVP. Keep that future bearer-token API separate from the existing Sensor Agent mTLS API in operations docs, tests, and route design.
+
+The current implementation does not yet include Vector forwarding sink management, PCAP search/retrieval UI, platform alerting, historical metrics, health baselines, public API documentation, offline update bundles, canary deployments, or multi-manager HA. Those features are specified under `.kiro/specs/` and summarized in [Implementation Roadmap](implementation-roadmap.md).

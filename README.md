@@ -79,6 +79,26 @@ Run local project checks:
 sensorctl test
 ```
 
+Run browser end-to-end checks against the deployed test server:
+
+```bash
+cd e2e
+npm install
+npm run install:browsers
+export E2E_BASE_URL=http://172.16.10.38:4000
+export E2E_ADMIN_USER=<admin username>
+export E2E_ADMIN_PASSWORD=<admin password>
+npm run test:smoke
+```
+
+The browser suite performs server preflight, verifies LiveView assets and socket connectivity, checks that the built-in sensor is visible on the dashboard, and exercises pool creation in a real browser. See [e2e/README.md](e2e/README.md) for full-suite and cleanup options.
+
+Run the full regression gate for browser-visible feature work after the required E2E environment variables are set:
+
+```bash
+sensorctl test && (cd e2e && npm run test:full)
+```
+
 ## Repository Layout
 
 ```text
@@ -127,17 +147,31 @@ The goal is that local testing, production-ish testing, and deployment all exerc
 
 ## Roadmap Boundaries
 
-The mainline MVP is intentionally narrow: manager enrollment, sensor health, Zeek, Suricata, Vector, Sensor Agent, and alert-driven PCAP.
+The professional MVP is the smallest RavenWire release that is credible to share with operators: a deployable sensor/manager stack with authenticated manager access, sensor enrollment and health, sensor detail pages, pools, desired-state deployment tracking, rule and BPF management, support bundles, alert-driven PCAP plumbing, and real-browser regression coverage against a deployed test server.
+
+The MVP release gate is not just "containers start." It requires:
+
+- `sensorctl` install/start/status/logs/uninstall/test on the supported Quadlet path.
+- First-run manager enrollment and authenticated UI access.
+- A live built-in sensor visible on the dashboard and sensor detail page.
+- Pool creation, sensor assignment, config editing, deployment/drift views, rule store workflows, and BPF profile editing.
+- Admin user management, API token management UI, audit filtering/export, audited state-changing manager actions, and role-aware browser route protection for the MVP surface.
+- Passing local checks plus the browser E2E smoke/full profile for changed browser workflows.
 
 These remain roadmap or optional extensions, not required for the clean operating path:
 
 - Full PCAP mode with netsniff-ng
+- Vector forwarding sink management UI
+- PCAP search/retrieval and public download workflow
+- Platform alert center and historical observability
 - Strelka
 - Arkime
 - AF_XDP / DPDK / PF_RING
 - 25Gbps benchmark profiles
 - Tier 2 remote PCAP replication
 - Advanced flow/session indexing
+- Public API documentation site and OpenAPI generation
+- Multi-manager HA and offline update bundles
 
 ## License
 

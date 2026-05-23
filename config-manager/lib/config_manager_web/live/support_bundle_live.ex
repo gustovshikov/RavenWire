@@ -13,15 +13,18 @@ defmodule ConfigManagerWeb.SupportBundleLive do
 
   import Ecto.Query
 
+  alias ConfigManager.Audit
+  alias ConfigManager.Auth.Policy
   alias ConfigManager.Repo
   alias ConfigManager.SensorPod
   alias ConfigManager.SensorAgentClient
+  alias ConfigManagerWeb.AuthHelpers
 
   # ── Mount ────────────────────────────────────────────────────────────────────
 
   @impl true
   def mount(_params, _session, socket) do
-    pods = Repo.all(from p in SensorPod, where: p.status == "enrolled", order_by: p.name)
+    pods = Repo.all(from(p in SensorPod, where: p.status == "enrolled", order_by: p.name))
 
     pod_states =
       Map.new(pods, fn pod ->
@@ -35,17 +38,26 @@ defmodule ConfigManagerWeb.SupportBundleLive do
 
   @impl true
   def handle_event("generate", %{"pod-id" => pod_id}, socket) do
-    pod = Enum.find(socket.assigns.pods, &(&1.id == pod_id))
+    with :ok <- AuthHelpers.authorize(socket, "bundle:download", "support_bundle:generate"),
+         %SensorPod{} = pod <- Enum.find(socket.assigns.pods, &(&1.id == pod_id)) do
+      pod_states =
+        put_in(socket.assigns.pod_states, [pod_id], %{
+          status: :generating,
+          bundle_path: nil,
+          error: nil
+        })
 
-    if pod do
-      pod_states = put_in(socket.assigns.pod_states, [pod_id], %{status: :generating, bundle_path: nil, error: nil})
       socket = assign(socket, pod_states: pod_states)
 
       Task.async(fn -> {pod_id, SensorAgentClient.request_support_bundle(pod)} end)
 
       {:noreply, socket}
     else
-      {:noreply, socket}
+      {:error, :forbidden} ->
+        {:noreply, put_flash(socket, :error, "Insufficient permissions.")}
+
+      nil ->
+        {:noreply, put_flash(socket, :error, "Sensor pod not found.")}
     end
   end
 
@@ -58,9 +70,19 @@ defmodule ConfigManagerWeb.SupportBundleLive do
     pod_states =
       case result do
         {:ok, %{"bundle_path" => path}} ->
-          put_in(socket.assigns.pod_states, [pod_id], %{status: :ready, bundle_path: path, error: nil})
+          log_bundle(socket, pod_id, "support_bundle_requested", "success", %{bundle_path: path})
+
+          put_in(socket.assigns.pod_states, [pod_id], %{
+            status: :ready,
+            bundle_path: path,
+            error: nil
+          })
 
         {:ok, _other} ->
+          log_bundle(socket, pod_id, "support_bundle_requested", "failure", %{
+            reason: "unexpected_response"
+          })
+
           put_in(socket.assigns.pod_states, [pod_id], %{
             status: :error,
             bundle_path: nil,
@@ -68,6 +90,10 @@ defmodule ConfigManagerWeb.SupportBundleLive do
           })
 
         {:error, reason} ->
+          log_bundle(socket, pod_id, "support_bundle_requested", "failure", %{
+            reason: format_error(reason)
+          })
+
           put_in(socket.assigns.pod_states, [pod_id], %{
             status: :error,
             bundle_path: nil,
@@ -98,6 +124,18 @@ defmodule ConfigManagerWeb.SupportBundleLive do
     end
   end
 
+  defp log_bundle(socket, pod_id, action, result, detail) do
+    Audit.log(%{
+      actor: socket.assigns.current_user.username,
+      actor_type: "user",
+      action: action,
+      target_type: "sensor_pod",
+      target_id: pod_id,
+      result: result,
+      detail: Map.put(detail, :required_permission, "bundle:download")
+    })
+  end
+
   defp format_error({:http_error, status, body}), do: "HTTP #{status}: #{body}"
   defp format_error(:no_control_api_host), do: "Pod has no control API host configured"
   defp format_error(reason), do: inspect(reason)
@@ -113,6 +151,9 @@ defmodule ConfigManagerWeb.SupportBundleLive do
   end
 
   defp format_last_seen(_), do: "—"
+
+  defp can_download_bundle?(nil), do: false
+  defp can_download_bundle?(user), do: Policy.has_permission?(user.role, "bundle:download")
 
   # ── Render ───────────────────────────────────────────────────────────────────
 
@@ -165,26 +206,30 @@ defmodule ConfigManagerWeb.SupportBundleLive do
                   <td class="px-5 py-3 text-gray-600"><%= format_last_seen(pod.last_seen_at) %></td>
                   <td class="px-5 py-3">
                     <div class="flex items-center gap-3">
-                      <button
-                        phx-click="generate"
-                        phx-value-pod-id={pod.id}
-                        disabled={state.status == :generating}
-                        class="px-3 py-1.5 text-sm font-medium rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                      >
-                        <%= if state.status == :generating do %>
-                          Generating…
-                        <% else %>
-                          Generate Support Bundle
-                        <% end %>
-                      </button>
-
-                      <%= if state.status == :ready && state.bundle_path do %>
-                        <a
-                          href={download_url(pod.id, state.bundle_path)}
-                          class="px-3 py-1.5 text-sm font-medium rounded bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
+                      <%= if can_download_bundle?(@current_user) do %>
+                        <button
+                          phx-click="generate"
+                          phx-value-pod-id={pod.id}
+                          disabled={state.status == :generating}
+                          class="px-3 py-1.5 text-sm font-medium rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
                         >
-                          Download
-                        </a>
+                          <%= if state.status == :generating do %>
+                            Generating…
+                          <% else %>
+                            Generate Support Bundle
+                          <% end %>
+                        </button>
+
+                        <%= if state.status == :ready && state.bundle_path do %>
+                          <a
+                            href={download_url(pod.id, state.bundle_path)}
+                            class="px-3 py-1.5 text-sm font-medium rounded bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
+                          >
+                            Download
+                          </a>
+                        <% end %>
+                      <% else %>
+                        <span class="text-sm text-gray-500">No bundle permission</span>
                       <% end %>
 
                       <%= if state.status == :error do %>

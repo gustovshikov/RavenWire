@@ -6,6 +6,7 @@ defmodule ConfigManager.Rules do
   alias ConfigManager.Rules.{
     Compiler,
     Fetcher,
+    Parser,
     PoolRulesetAssignment,
     RuleRepository,
     Ruleset,
@@ -68,6 +69,44 @@ defmodule ConfigManager.Rules do
   @doc "Gets a single rule by SID."
   def get_rule_by_sid(sid), do: Repo.get_by(SuricataRule, sid: to_int(sid))
 
+  @doc "Creates a manually managed Suricata rule and records an audit entry."
+  def create_rule(attrs, actor) when is_map(attrs) do
+    with {:ok, rule_attrs} <- normalize_manual_rule_attrs(attrs) do
+      Multi.new()
+      |> Multi.insert(:rule, SuricataRule.changeset(%SuricataRule{}, rule_attrs))
+      |> Audit.append_multi(fn %{rule: rule} ->
+        %{
+          actor: actor_name(actor),
+          actor_type: actor_type(actor),
+          action: "rule_created",
+          target_type: "suricata_rule",
+          target_id: rule.id,
+          result: "success",
+          detail: %{
+            sid: rule.sid,
+            category: rule.category,
+            repository_name: rule.repository_name,
+            source: "manual"
+          }
+        }
+      end)
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{rule: rule}} ->
+          broadcast_rules({:rule_created, rule.id})
+          {:ok, rule}
+
+        {:error, :rule, changeset, _changes} ->
+          {:error, changeset}
+
+        {:error, _step, reason, _changes} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  def create_rule(_attrs, _actor), do: {:error, :invalid_rule}
+
   @doc "Toggles a rule's enabled status and records an audit entry."
   def toggle_rule(%SuricataRule{} = rule, actor) do
     previous_state = rule.enabled
@@ -78,7 +117,7 @@ defmodule ConfigManager.Rules do
     |> Audit.append_multi(fn %{rule: updated} ->
       %{
         actor: actor_name(actor),
-        actor_type: "user",
+        actor_type: actor_type(actor),
         action: "rule_toggled",
         target_type: "suricata_rule",
         target_id: updated.id,
@@ -124,7 +163,7 @@ defmodule ConfigManager.Rules do
     |> Audit.append_multi(fn %{rules: rules, updated_rules: {count, _rows}} ->
       %{
         actor: actor_name(actor),
-        actor_type: "user",
+        actor_type: actor_type(actor),
         action: "bulk_rules_toggled",
         target_type: "rule_store",
         target_id: "bulk",
@@ -183,7 +222,7 @@ defmodule ConfigManager.Rules do
     |> Audit.append_multi(fn %{updated_rules: {count, _rows}} ->
       %{
         actor: actor_name(actor),
-        actor_type: "user",
+        actor_type: actor_type(actor),
         action: "category_toggled",
         target_type: "rule_category",
         target_id: category,
@@ -217,7 +256,7 @@ defmodule ConfigManager.Rules do
     |> Audit.append_multi(fn %{repository: repository} ->
       %{
         actor: actor_name(actor),
-        actor_type: "user",
+        actor_type: actor_type(actor),
         action: "repository_added",
         target_type: "rule_repository",
         target_id: repository.id,
@@ -252,7 +291,7 @@ defmodule ConfigManager.Rules do
     |> Audit.append_multi(fn _changes ->
       %{
         actor: actor_name(actor),
-        actor_type: "user",
+        actor_type: actor_type(actor),
         action: "repository_deleted",
         target_type: "rule_repository",
         target_id: repository.id,
@@ -325,7 +364,7 @@ defmodule ConfigManager.Rules do
       |> Audit.append_multi(fn %{upsert_counts: counts} ->
         %{
           actor: actor_name(actor),
-          actor_type: "user",
+          actor_type: actor_type(actor),
           action: "repository_updated",
           target_type: "rule_repository",
           target_id: repository.id,
@@ -398,7 +437,7 @@ defmodule ConfigManager.Rules do
     |> Audit.append_multi(fn %{ruleset: ruleset} ->
       %{
         actor: actor_name(actor),
-        actor_type: "user",
+        actor_type: actor_type(actor),
         action: "ruleset_created",
         target_type: "ruleset",
         target_id: ruleset.id,
@@ -431,7 +470,7 @@ defmodule ConfigManager.Rules do
     |> Audit.append_multi(fn %{ruleset: updated} ->
       %{
         actor: actor_name(actor),
-        actor_type: "user",
+        actor_type: actor_type(actor),
         action: "ruleset_updated",
         target_type: "ruleset",
         target_id: updated.id,
@@ -464,7 +503,7 @@ defmodule ConfigManager.Rules do
     |> Audit.append_multi(fn _changes ->
       %{
         actor: actor_name(actor),
-        actor_type: "user",
+        actor_type: actor_type(actor),
         action: "ruleset_deleted",
         target_type: "ruleset",
         target_id: ruleset.id,
@@ -513,7 +552,7 @@ defmodule ConfigManager.Rules do
         |> Audit.append_multi(fn %{ruleset: updated} ->
           %{
             actor: actor_name(actor),
-            actor_type: "user",
+            actor_type: actor_type(actor),
             action: "ruleset_updated",
             target_type: "ruleset",
             target_id: updated.id,
@@ -599,7 +638,7 @@ defmodule ConfigManager.Rules do
     |> Audit.append_multi(fn %{assignment: assignment} ->
       %{
         actor: actor_name(actor),
-        actor_type: "user",
+        actor_type: actor_type(actor),
         action: "ruleset_assigned_to_pool",
         target_type: "pool",
         target_id: pool.id,
@@ -644,7 +683,7 @@ defmodule ConfigManager.Rules do
         |> Audit.append_multi(fn _changes ->
           %{
             actor: actor_name(actor),
-            actor_type: "user",
+            actor_type: actor_type(actor),
             action: "ruleset_unassigned_from_pool",
             target_type: "pool",
             target_id: pool.id,
@@ -821,6 +860,51 @@ defmodule ConfigManager.Rules do
 
   defp maybe_filter_pool_deployment(query, pool_id) do
     where(query, [a], a.target_type == "pool" and a.target_id == ^pool_id)
+  end
+
+  defp normalize_manual_rule_attrs(attrs) do
+    with {:ok, parsed} <- parse_manual_rule(attrs) do
+      category = attrs |> opt(:category, "manual") |> normalize_required_text("manual")
+      severity = attrs |> opt(:severity, Map.get(parsed, :severity) || 2) |> to_int()
+      enabled = attrs |> opt(:enabled, true) |> to_bool(true)
+      repository_name = attrs |> opt(:repository_name) |> normalize_optional_text()
+      repository_id = attrs |> opt(:repository_id) |> normalize_optional_text()
+
+      {:ok,
+       parsed
+       |> Map.put(:category, category)
+       |> Map.put(:severity, severity)
+       |> Map.put(:enabled, enabled)
+       |> Map.put(:repository_name, repository_name)
+       |> Map.put(:repository_id, repository_id)}
+    end
+  end
+
+  defp parse_manual_rule(attrs) do
+    case attrs
+         |> opt(:raw_text)
+         |> fallback_text(opt(attrs, :rule_text))
+         |> fallback_text(opt(attrs, :rule)) do
+      nil -> manual_rule_from_fields(attrs)
+      raw_text -> Parser.parse_rule(raw_text)
+    end
+  end
+
+  defp manual_rule_from_fields(attrs) do
+    sid = attrs |> opt(:sid) |> to_int()
+
+    message =
+      attrs |> opt(:message) |> fallback_text(opt(attrs, :msg)) |> normalize_optional_text()
+
+    revision = attrs |> opt(:revision, opt(attrs, :rev, 1)) |> to_int() |> max(1)
+    classtype = attrs |> opt(:classtype) |> normalize_optional_text()
+
+    if sid > 0 and present?(message) do
+      rule = %{sid: sid, message: message, revision: revision, classtype: classtype}
+      {:ok, Map.put(rule, :raw_text, Parser.format_rule(rule))}
+    else
+      {:error, :invalid_rule}
+    end
   end
 
   defp apply_sort(query, sort_by, sort_dir) do
@@ -1048,7 +1132,7 @@ defmodule ConfigManager.Rules do
   defp ruleset_override_audit(%Ruleset{} = ruleset, %RulesetRule{} = override, actor, change) do
     %{
       actor: actor_name(actor),
-      actor_type: "user",
+      actor_type: actor_type(actor),
       action: "ruleset_updated",
       target_type: "ruleset",
       target_id: ruleset.id,
@@ -1099,7 +1183,7 @@ defmodule ConfigManager.Rules do
     |> Audit.append_multi(fn _changes ->
       %{
         actor: actor_name(actor),
-        actor_type: "user",
+        actor_type: actor_type(actor),
         action: "rules_deployed",
         target_type: "pool",
         target_id: pool_id,
@@ -1163,12 +1247,51 @@ defmodule ConfigManager.Rules do
     Repo.aggregate(from(r in SuricataRule, where: r.repository_id == ^repository_id), :count, :id)
   end
 
+  defp fallback_text(nil, fallback), do: fallback
+  defp fallback_text("", fallback), do: fallback
+  defp fallback_text(value, _fallback), do: value
+
+  defp normalize_required_text(value, default) do
+    case normalize_optional_text(value) do
+      nil -> default
+      text -> text
+    end
+  end
+
+  defp normalize_optional_text(nil), do: nil
+
+  defp normalize_optional_text(value) do
+    value = value |> to_string() |> String.trim()
+    if value == "", do: nil, else: value
+  end
+
+  defp present?(value) when is_binary(value), do: String.trim(value) != ""
+  defp present?(_value), do: false
+
+  defp to_bool(value, _default) when is_boolean(value), do: value
+
+  defp to_bool(value, default) when is_binary(value) do
+    case value |> String.trim() |> String.downcase() do
+      value when value in ["true", "1", "yes", "on"] -> true
+      value when value in ["false", "0", "no", "off"] -> false
+      _value -> default
+    end
+  end
+
+  defp to_bool(_value, default), do: default
+
   defp total_pages(0, _page_size), do: 0
   defp total_pages(total_count, page_size), do: div(total_count + page_size - 1, page_size)
 
+  defp actor_name(%ConfigManager.Auth.ApiToken{name: name}), do: name
   defp actor_name(%{username: username}), do: username
   defp actor_name(actor) when is_binary(actor), do: actor
   defp actor_name(_actor), do: "system"
+
+  defp actor_type(%ConfigManager.Auth.ApiToken{}), do: "api_token"
+  defp actor_type(%{username: _username}), do: "user"
+  defp actor_type("system"), do: "system"
+  defp actor_type(_actor), do: "user"
 
   defp broadcast_rules(message),
     do: Phoenix.PubSub.broadcast(ConfigManager.PubSub, "rules", message)

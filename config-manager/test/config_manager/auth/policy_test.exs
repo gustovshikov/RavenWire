@@ -94,6 +94,21 @@ defmodule ConfigManager.Auth.PolicyTest do
     end
   end
 
+  test "forwarding management is canonical and limited to operator roles" do
+    assert "forwarding:manage" in Policy.canonical_permissions()
+
+    assert MapSet.new(Policy.permissions_for("platform-admin")) ==
+             MapSet.new(Policy.canonical_permissions())
+
+    for role <- ["sensor-operator", "rule-manager", "platform-admin"] do
+      assert Policy.has_permission?(role, "forwarding:manage")
+    end
+
+    for role <- ["viewer", "analyst", "auditor"] do
+      refute Policy.has_permission?(role, "forwarding:manage")
+    end
+  end
+
   test "auditor is read-only for audit and sensors" do
     assert Policy.has_permission?("auditor", "dashboard:view")
     assert Policy.has_permission?("auditor", "sensors:view")

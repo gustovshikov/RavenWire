@@ -27,7 +27,11 @@ defmodule ConfigManagerWeb.OperationalLiveRouteTest do
           {"/deployments", "Fleet-wide desired-state deployment history"},
           {"/rules", "Quick Deploy"},
           {"/support-bundle", "Support Bundles"},
-          {"/audit", "Audit Log"}
+          {"/audit", "Audit Log"},
+          {"/audit/export", "Audit Export"},
+          {"/admin/users", "User Administration"},
+          {"/admin/roles", "Role Reference"},
+          {"/admin/api-tokens", "API Tokens"}
         ] do
       conn = logged_in |> recycle() |> get(path)
       assert html_response(conn, 200) =~ expected

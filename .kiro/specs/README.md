@@ -47,10 +47,25 @@ Public API routes are versioned under `/api/v1`. New public automation endpoints
 2. `sensor-detail-page` and `sensor-pool-management` — navigation spine for later fleet features.
 3. `deployment-tracking` — desired-state snapshots, deployments, rollback, and drift.
 4. `rule-store-management`, `bpf-filter-editor`, and `vector-forwarding-mgmt` — configurable content and forwarding state.
-5. `pcap-search-retrieval`, `platform-alert-center`, `historical-metrics`, `health-baselines`, and `live-data-flow-viz` — operator workflows and observability.
-6. `canary-deploys`, `detection-content-lifecycle`, `offline-update-bundle`, `public-api-docs`, and `multi-manager-ha` — advanced rollout, air-gap, integration, and production operations.
+5. `e2e-browser-test-suite` — real-browser regression coverage against the deployed test server before expanding additional browser workflows.
+6. `pcap-search-retrieval`, `platform-alert-center`, `historical-metrics`, `health-baselines`, and `live-data-flow-viz` — operator workflows and observability.
+7. `canary-deploys`, `detection-content-lifecycle`, `offline-update-bundle`, `public-api-docs`, and `multi-manager-ha` — advanced rollout, air-gap, integration, and production operations.
 
 The existing `network-sensor-stack` and `sensor-stack-production-hardening` specs define lower-level Sensor Agent and capture-plane behavior. UI and management-plane specs should reference those contracts rather than redefining capture semantics.
+
+## Professional MVP Gate
+
+The MVP release target is a professional sensor/manager product slice, not only a running capture stack. The MVP includes the completed lower-level sensor stack plus authenticated manager workflows for dashboard health, sensor detail, pool management, desired-state deployments and drift, rule store management, BPF profile editing, support bundles, audit visibility, and real-browser E2E coverage.
+
+Before treating the MVP as release-ready:
+
+- Keep the MVP hardening subset of `auth-rbac-audit` covered: browser route/event permission checks, role-aware UI visibility, admin user/token management, audit filters/pagination/detail/export, and audit coverage for state-changing workflows are implemented for the browser MVP surface.
+- Defer token-authenticated Public API controllers explicitly unless they are pulled into the MVP; do not blur those future bearer-token APIs with the existing Sensor Agent mTLS API.
+- Keep `sensorctl test` and the relevant browser E2E profile passing against the configured Test_Server.
+- Add or update E2E coverage for every completed browser-visible workflow.
+- Document any feature that is intentionally deferred in its owning spec rather than leaving it implied.
+
+Post-MVP roadmap work includes Vector forwarding sink management, PCAP search/retrieval UI and download flow, platform alerts, historical metrics, health baselines, live data-flow visualization, canary deploys, detection-content lifecycle, offline update bundles, public API docs, and multi-manager HA.
 
 ## Documentation Rules
 
@@ -65,3 +80,5 @@ The existing `network-sensor-stack` and `sensor-stack-production-hardening` spec
 
 - Every behavior change must include or update unit tests for the changed module or workflow unless the implementation notes document why a unit test is not practical.
 - Broaden coverage with integration or property tests when a change crosses route guards, parsers, validators, LiveView workflows, API contracts, or deployment validation paths.
+- Browser-visible workflow changes must include or update end-to-end browser coverage from `e2e-browser-test-suite` and pass against the configured Test_Server unless an explicit exception is documented in the feature notes.
+- The full regression suite must include unit tests, integration tests, property tests, and the real-browser smoke or full E2E profile appropriate to the changed workflow.

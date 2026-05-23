@@ -1,6 +1,9 @@
 defmodule ConfigManager.Deployments.Snapshot do
   @moduledoc "Captures a secret-safe desired-state snapshot for a sensor pool."
 
+  import Ecto.Query
+
+  alias ConfigManager.Forwarding.ForwardingSink
   alias ConfigManager.{Repo, SensorPool}
 
   @secret_keys ~w(token password secret api_key default_token private_key cert_pem ca_chain_pem)
@@ -28,8 +31,9 @@ defmodule ConfigManager.Deployments.Snapshot do
         "rules" => []
       },
       "forwarding" => %{
-        "version" => 0,
-        "sinks" => []
+        "version" => pool.forwarding_config_version || 0,
+        "schema_mode" => pool.schema_mode || "raw",
+        "sinks" => forwarding_sinks(pool.id)
       },
       "rules" => %{
         "version" => 0,
@@ -94,4 +98,29 @@ defmodule ConfigManager.Deployments.Snapshot do
   defp present?(nil), do: false
   defp present?(""), do: false
   defp present?(_value), do: true
+
+  defp forwarding_sinks(pool_id) do
+    Repo.all(
+      from(s in ForwardingSink,
+        where: s.pool_id == ^pool_id,
+        order_by: [asc: s.normalized_name],
+        select: %{
+          "name" => s.name,
+          "sink_type" => s.sink_type,
+          "enabled" => s.enabled,
+          "config" => s.config
+        }
+      )
+    )
+    |> Enum.map(fn sink ->
+      Map.update!(sink, "config", &decode_config/1)
+    end)
+  end
+
+  defp decode_config(config) do
+    case Jason.decode(config || "{}") do
+      {:ok, decoded} -> decoded
+      _error -> %{}
+    end
+  end
 end

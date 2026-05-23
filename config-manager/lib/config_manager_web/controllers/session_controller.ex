@@ -16,7 +16,8 @@ defmodule ConfigManagerWeb.SessionController do
           action: "login",
           target_type: "user",
           target_id: user.id,
-          result: "success"
+          result: "success",
+          detail: %{ip: format_ip(conn.remote_ip)}
         })
 
         conn
@@ -31,7 +32,8 @@ defmodule ConfigManagerWeb.SessionController do
           action: "login_failed",
           target_type: "user",
           target_id: username || "unknown",
-          result: "failure"
+          result: "failure",
+          detail: %{reason: "invalid_credentials", ip: format_ip(conn.remote_ip)}
         })
 
         conn
@@ -58,7 +60,8 @@ defmodule ConfigManagerWeb.SessionController do
         action: "logout",
         target_type: "user",
         target_id: user.id,
-        result: "success"
+        result: "success",
+        detail: %{ip: format_ip(conn.remote_ip)}
       })
     end
 
@@ -69,6 +72,10 @@ defmodule ConfigManagerWeb.SessionController do
 
   defp post_login_path(%{must_change_password: true}), do: "/password/change"
   defp post_login_path(_user), do: "/"
+
+  defp format_ip(nil), do: nil
+  defp format_ip(ip) when is_tuple(ip), do: ip |> Tuple.to_list() |> Enum.join(".")
+  defp format_ip(ip), do: to_string(ip)
 
   defp render_login(conn), do: html(conn, login_html(conn))
 

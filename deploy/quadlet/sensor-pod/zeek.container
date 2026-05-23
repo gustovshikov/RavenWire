@@ -23,6 +23,7 @@ Environment=ZEEK_FANOUT_GROUP=1
 Exec=zeek -i af_packet::${CAPTURE_IFACE} -C /usr/local/zeek/share/zeek/site/local.zeek
 
 [Service]
+EnvironmentFile=-/etc/ravenwire/sensor.env
 Restart=on-failure
 RestartSec=5
 

@@ -11,7 +11,7 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
   import ConfigManagerWeb.RulesLive.Helpers,
     only: [can_deploy_rules?: 1, sync_status_class: 1, sync_status_label: 1]
 
-  alias ConfigManager.{Deployments, Pools, Rules}
+  alias ConfigManager.{Bpf, Deployments, Pools, Rules}
   alias ConfigManagerWeb.Formatters
 
   @impl true
@@ -35,6 +35,7 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
            active_deployment?: Deployments.has_active_deployment?(pool.id),
            rule_assignment: Rules.pool_assignment(pool.id),
            rule_out_of_sync_count: Rules.out_of_sync_count(pool.id),
+           bpf_summary: Bpf.bpf_summary(pool.id),
            confirm_delete: false
          )}
     end
@@ -127,7 +128,8 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
       last_deployment: Deployments.last_deployment(pool.id),
       active_deployment?: Deployments.has_active_deployment?(pool.id),
       rule_assignment: Rules.pool_assignment(pool.id),
-      rule_out_of_sync_count: Rules.out_of_sync_count(pool.id)
+      rule_out_of_sync_count: Rules.out_of_sync_count(pool.id),
+      bpf_summary: Bpf.bpf_summary(pool.id)
     )
   end
 
@@ -196,6 +198,16 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
           </div>
           <.field label="Out-of-sync Sensors" value={if @rule_assignment, do: @rule_out_of_sync_count, else: nil} />
           <div>
+            <dt class="text-xs font-medium uppercase text-gray-500">BPF Profile</dt>
+            <dd class="mt-1">
+              <a href={"/pools/#{@pool.id}/bpf"} class="text-blue-700 hover:underline">
+                <%= bpf_profile_label(@bpf_summary) %>
+              </a>
+            </dd>
+          </div>
+          <.field label="BPF Version" value={@bpf_summary.version} />
+          <.field label="BPF Enabled Rules" value={if @bpf_summary.has_profile, do: @bpf_summary.enabled_rule_count, else: nil} />
+          <div>
             <dt class="text-xs font-medium uppercase text-gray-500">Drift</dt>
             <dd class="mt-1">
               <a href={"/pools/#{@pool.id}/drift"} class={"inline-flex rounded px-2 py-0.5 text-xs font-medium #{status_class(drift_summary_status(@drift_summary))}"}>
@@ -252,4 +264,10 @@ defmodule ConfigManagerWeb.PoolLive.ShowLive do
   defp rule_sync_label(nil, _count), do: sync_status_label(:no_ruleset_assigned)
   defp rule_sync_label(_assignment, 0), do: sync_status_label(:in_sync)
   defp rule_sync_label(_assignment, count), do: "#{count} Out of Sync"
+
+  defp bpf_profile_label(%{has_profile: false}), do: "Not configured"
+  defp bpf_profile_label(%{pending_deployment: true}), do: "Pending deployment"
+  defp bpf_profile_label(%{has_raw_expression: true}), do: "Configured with raw expression"
+  defp bpf_profile_label(%{total_rule_count: count}) when count > 0, do: "#{count} rule(s)"
+  defp bpf_profile_label(_summary), do: "No filter"
 end

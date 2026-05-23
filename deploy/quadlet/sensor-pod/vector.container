@@ -28,6 +28,7 @@ Environment=SENSOR_AGENT_ALERT_URL=http://127.0.0.1:9092/alerts
 Exec=--config /etc/vector/vector.toml
 
 [Service]
+EnvironmentFile=-/etc/ravenwire/sensor.env
 Restart=on-failure
 RestartSec=5
 

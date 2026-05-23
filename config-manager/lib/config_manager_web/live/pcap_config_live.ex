@@ -13,7 +13,9 @@ defmodule ConfigManagerWeb.PcapConfigLive do
 
   use ConfigManagerWeb, :live_view
 
-  alias ConfigManager.{Repo, SensorPod, SensorAgentClient}
+  alias ConfigManager.{Audit, Repo, SensorPod, SensorAgentClient}
+  alias ConfigManager.Auth.Policy
+  alias ConfigManagerWeb.AuthHelpers
   import Ecto.Query, only: [from: 2]
 
   # ── Mount ────────────────────────────────────────────────────────────────────
@@ -31,6 +33,34 @@ defmodule ConfigManagerWeb.PcapConfigLive do
 
   @impl true
   def handle_event("save_pcap_config", %{"pod_id" => pod_id} = params, socket) do
+    case AuthHelpers.authorize(socket, "pcap:configure", "pcap_config:save") do
+      :ok ->
+        save_pcap_config(socket, pod_id, params)
+
+      {:error, :forbidden} ->
+        pod_results =
+          Map.put(socket.assigns.pod_results, pod_id, {:error, "Insufficient permissions."})
+
+        {:noreply, assign(socket, pod_results: pod_results)}
+    end
+  end
+
+  # ── PubSub handlers ──────────────────────────────────────────────────────────
+
+  @impl true
+  def handle_info({:pod_updated, _pod_id}, socket) do
+    {:noreply, assign(socket, pods: list_enrolled_pods())}
+  end
+
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
+  # ── Helpers ──────────────────────────────────────────────────────────────────
+
+  defp list_enrolled_pods do
+    Repo.all(from(p in SensorPod, where: p.status == "enrolled", order_by: p.name))
+  end
+
+  defp save_pcap_config(socket, pod_id, params) do
     config = %{
       pcap_ring_size_mb: parse_int(params["pcap_ring_size_mb"]),
       pre_alert_window_sec: parse_int(params["pre_alert_window_sec"]),
@@ -55,11 +85,17 @@ defmodule ConfigManagerWeb.PcapConfigLive do
               {:error, "Saved to DB, but dispatch failed: #{format_error(reason)}"}
           end
 
+        log_pcap_config(socket, updated_pod, "success", %{
+          config: config,
+          dispatch_result: result |> elem(0) |> Atom.to_string()
+        })
+
         pod_results = Map.put(socket.assigns.pod_results, pod_id, result)
         {:noreply, assign(socket, pods: list_enrolled_pods(), pod_results: pod_results)}
 
       {:error, changeset} ->
         errors = format_changeset_errors(changeset)
+        log_pcap_config(socket, pod, "failure", %{config: config, errors: errors})
 
         pod_results =
           Map.put(socket.assigns.pod_results, pod_id, {:error, "Validation failed: #{errors}"})
@@ -68,19 +104,16 @@ defmodule ConfigManagerWeb.PcapConfigLive do
     end
   end
 
-  # ── PubSub handlers ──────────────────────────────────────────────────────────
-
-  @impl true
-  def handle_info({:pod_updated, _pod_id}, socket) do
-    {:noreply, assign(socket, pods: list_enrolled_pods())}
-  end
-
-  def handle_info(_msg, socket), do: {:noreply, socket}
-
-  # ── Helpers ──────────────────────────────────────────────────────────────────
-
-  defp list_enrolled_pods do
-    Repo.all(from(p in SensorPod, where: p.status == "enrolled", order_by: p.name))
+  defp log_pcap_config(socket, pod, result, detail) do
+    Audit.log(%{
+      actor: socket.assigns.current_user.username,
+      actor_type: "user",
+      action: "pcap_config_changed",
+      target_type: "sensor_pod",
+      target_id: pod.id,
+      result: result,
+      detail: Map.put(detail, :required_permission, "pcap:configure")
+    })
   end
 
   defp parse_int(nil), do: nil
@@ -117,6 +150,9 @@ defmodule ConfigManagerWeb.PcapConfigLive do
   defp result_class({:error, _}), do: "bg-red-50 border-red-200 text-red-800"
 
   defp result_message({_, msg}), do: msg
+
+  defp can_configure_pcap?(nil), do: false
+  defp can_configure_pcap?(user), do: Policy.has_permission?(user.role, "pcap:configure")
 
   # ── Render ───────────────────────────────────────────────────────────────────
 
@@ -181,6 +217,7 @@ defmodule ConfigManagerWeb.PcapConfigLive do
                       value={pod.pcap_ring_size_mb || 4096}
                       min="1"
                       required
+                      disabled={!can_configure_pcap?(@current_user)}
                       class="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <p class="mt-1 text-xs text-gray-400">Default: 4096 MB (4 GB)</p>
@@ -193,6 +230,7 @@ defmodule ConfigManagerWeb.PcapConfigLive do
                     </label>
                     <select
                       name="alert_severity_threshold"
+                      disabled={!can_configure_pcap?(@current_user)}
                       class="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <%= for {val, label} <- [{1, "Low"}, {2, "Medium"}, {3, "High"}] do %>
@@ -217,6 +255,7 @@ defmodule ConfigManagerWeb.PcapConfigLive do
                       value={pod.pre_alert_window_sec || 60}
                       min="0"
                       required
+                      disabled={!can_configure_pcap?(@current_user)}
                       class="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <p class="mt-1 text-xs text-gray-400">Packets preserved before alert fires. Default: 60s</p>
@@ -233,20 +272,25 @@ defmodule ConfigManagerWeb.PcapConfigLive do
                       value={pod.post_alert_window_sec || 30}
                       min="0"
                       required
+                      disabled={!can_configure_pcap?(@current_user)}
                       class="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <p class="mt-1 text-xs text-gray-400">Packets captured after alert fires. Default: 30s</p>
                   </div>
                 </div>
 
-                <div class="mt-4 flex justify-end">
-                  <button
-                    type="submit"
-                    class="inline-flex items-center px-4 py-2 rounded text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    Apply Configuration
-                  </button>
-                </div>
+                <%= if can_configure_pcap?(@current_user) do %>
+                  <div class="mt-4 flex justify-end">
+                    <button
+                      type="submit"
+                      class="inline-flex items-center px-4 py-2 rounded text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      Apply Configuration
+                    </button>
+                  </div>
+                <% else %>
+                  <p class="mt-4 text-sm text-gray-500">You do not have permission to change PCAP settings.</p>
+                <% end %>
               </form>
             </div>
           <% end %>

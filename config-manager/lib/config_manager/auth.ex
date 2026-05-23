@@ -371,7 +371,13 @@ defmodule ConfigManager.Auth do
 
   def prune_expired_sessions do
     now = DateTime.utc_now()
-    Repo.delete_all(from(s in Session, where: s.expires_at <= ^now))
+    inactive_before = DateTime.add(now, -inactivity_timeout_seconds(), :second)
+
+    Repo.delete_all(
+      from(s in Session,
+        where: s.expires_at <= ^now or s.last_active_at < ^inactive_before
+      )
+    )
   end
 
   def token_hash(raw_token) when is_binary(raw_token) do

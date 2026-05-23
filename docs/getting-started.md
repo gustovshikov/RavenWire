@@ -2,7 +2,7 @@
 
 RavenWire has one supported operating path: Podman containers managed by systemd Quadlet and operated with `sensorctl`.
 
-The current project state is an MVP sensor/manager stack with local install, automatic first-run enrollment, health reporting, support bundles, rule/config screens, and alert-driven PCAP plumbing. Fleet UX, RBAC, deployment tracking, pool management, public API docs, and advanced observability are specified under `.kiro/specs/` and should be implemented in that order.
+The current project state is a professional MVP candidate: local install, automatic first-run enrollment, authenticated manager access, health reporting, sensor detail pages, pool management, deployment/drift views, rule and BPF management, support bundles, browser E2E coverage, and alert-driven PCAP plumbing. Remaining MVP hardening is tracked in [Implementation Roadmap](implementation-roadmap.md); advanced forwarding, PCAP search/retrieval, alerting, historical observability, public API docs, and HA remain roadmap work under `.kiro/specs/`.
 
 ## Prerequisites
 
@@ -50,7 +50,7 @@ sensorctl logs
 
 On a fresh install, `sensorctl start` starts Config Manager, creates a one-time enrollment token, then starts the sensor pod so it auto-enrolls.
 
-The manager UI is available from Config Manager once the management pod is running. The current browser routes are `/`, `/enrollment`, `/pcap-config`, `/rules`, and `/support-bundle`.
+The manager UI is available from Config Manager once the management pod is running. The current browser routes include `/login`, `/`, `/sensors/:id`, `/enrollment`, `/pools`, `/deployments`, `/pcap-config`, `/rules/store`, `/rules/rulesets`, `/support-bundle`, `/audit`, `/audit/export`, `/admin/users`, `/admin/roles`, and `/admin/api-tokens`.
 
 ## Validate
 

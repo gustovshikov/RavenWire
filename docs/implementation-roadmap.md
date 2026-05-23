@@ -10,7 +10,26 @@ This document connects the current codebase to the specs that should guide imple
 
 When these disagree, update the spec first if the behavior is planned, then update `docs/` once the implementation is real enough for operators or contributors to rely on it.
 
-## Current Foundation
+## Professional MVP Target
+
+RavenWire's professional MVP is the smallest release that is useful to another operator without hand-holding. It is broader than the original capture-plane MVP, but still bounded to one supported deployment path and one manager/sensor operating model.
+
+The professional MVP includes:
+
+- A single supported install/run/validate path: `sensorctl` plus rootful Podman Quadlet units.
+- Automatic first-run enrollment for the local manager/sensor path and manual enrollment for split deployments.
+- Authenticated Config Manager access, password-change support, route guards, role policy checks, and an audit trail for manager mutations.
+- Fleet dashboard, sensor detail pages, stale/offline handling, and support bundle generation/download.
+- Sensor pools with sensor assignment/removal, desired pool configuration, deployment history, and drift views.
+- Desired-state deployment tracking, rollback entry points, drift detection, and real-time update plumbing.
+- Rule repository, rule store, ruleset, pool assignment, and rule deployment entry points.
+- Pool-level BPF filter editor with validation, versioning, reset, and restart-required surfacing.
+- Alert-driven PCAP plumbing in the sensor stack and manager PCAP configuration screen.
+- Browser E2E smoke/full profiles that run against a real test server and gate browser-visible workflows.
+
+The professional MVP does not include every future operator feature. Vector forwarding sink management, PCAP search/retrieval UI, platform alerting, historical metrics, health baselines, live data-flow visualization, public API documentation, canary rollouts, detection-content lifecycle, offline update bundles, and multi-manager HA are post-MVP roadmap work unless explicitly pulled forward.
+
+## Current Implementation
 
 The repo currently supports:
 
@@ -23,22 +42,28 @@ The repo currently supports:
 - Health collection, drop counters, support bundles, CRL loading, and request IDs.
 - Zeek, Suricata, Vector, and `pcap_ring_writer` baseline config.
 - Alert-driven PCAP ingestion, indexing, carving, and custody metadata foundations.
-- Early manager UI routes for dashboard, enrollment, PCAP config, rules, and support bundles.
+- Authenticated manager UI routes for dashboard, enrollment, sensor detail, pools, deployments, PCAP config, rules, BPF, support bundles, and audit browsing.
+- Sensor pool management, desired-state deployment tracking, rule store management, BPF profile editing, and real-browser E2E coverage.
 
-The supported validation path is `sensorctl test`. There is no Compose, Vagrant, or separate capture harness to maintain.
+The supported local validation path is `sensorctl test`. Browser-visible manager workflows are validated with the Playwright E2E suite in `e2e/` against the configured test server. There is no Compose, Vagrant, or separate capture harness to maintain.
 
-## Not Yet Productized
+## MVP Release Gates
+
+Before calling the professional MVP release-ready, close these gates:
+
+- Keep the completed MVP subset of `auth-rbac-audit` covered: admin user management, API token management UI, audit filters/pagination/detail/export, browser route permission checks, role-based UI visibility, and audit coverage for state-changing workflows are now implemented for the browser MVP surface.
+- Explicitly defer token-authenticated Public API controllers from the MVP unless they are pulled forward; the Sensor Agent mTLS API remains separate from future bearer-token automation APIs.
+- Keep the full browser E2E suite passing against the test server and add E2E coverage for any newly completed browser workflow.
+- Run the full regression gate: `sensorctl test && (cd e2e && npm run test:full)`.
+- Keep the test server clean after E2E runs: no lingering `e2e-` pools, rulesets, repositories, or other tracked records.
+- Update user-facing docs when a route or workflow becomes supported enough for operators.
+
+## Post-MVP Roadmap
 
 These areas are specified but should not be assumed complete in the current app:
 
-- Production authentication, sessions, RBAC, API tokens, and audit log.
-- Sensor detail pages and fleet navigation beyond the early dashboard.
-- Sensor pool management.
-- Desired-state deployment tracking, rollback, and drift detection.
-- Rule store lifecycle and approval workflow.
-- BPF filter editor.
 - Vector forwarding sink management.
-- PCAP search/retrieval UI and public download flow.
+- PCAP search/retrieval UI, chain-of-custody manifest UI, and public download flow.
 - Platform alert center.
 - Historical metrics, health baselines, and live data-flow visualization.
 - Canary deployments and detection content lifecycle management.
@@ -48,14 +73,16 @@ These areas are specified but should not be assumed complete in the current app:
 
 ## Implementation Order
 
-| Order | Spec | Why it comes here |
-|---:|---|---|
-| 1 | `auth-rbac-audit` | Establishes users, sessions, roles, permission checks, API tokens, and audit events before broadening the app surface. |
-| 2 | `sensor-detail-page`, `sensor-pool-management` | Creates the fleet navigation spine and grouping model used by later workflows. |
-| 3 | `deployment-tracking` | Adds desired-state snapshots, rollout state, rollback, and drift detection. |
-| 4 | `rule-store-management`, `bpf-filter-editor`, `vector-forwarding-mgmt` | Adds the main configurable content and forwarding controls. |
-| 5 | `pcap-search-retrieval`, `platform-alert-center`, `historical-metrics`, `health-baselines`, `live-data-flow-viz` | Adds operator investigation and observability workflows. |
-| 6 | `canary-deploys`, `detection-content-lifecycle`, `offline-update-bundle`, `public-api-docs`, `multi-manager-ha` | Adds advanced rollout, air-gap, integration, documentation, and production operations. |
+| Order | Spec | Status | Why it comes here |
+|---:|---|---|---|
+| 1 | `auth-rbac-audit` | Browser MVP implemented; token-authenticated Public API controllers deferred unless pulled forward. | Establishes users, sessions, roles, permission checks, API token scopes, and audit events. |
+| 2 | `sensor-detail-page`, `sensor-pool-management` | Implemented for MVP; optional/deeper tests remain. | Creates the fleet navigation spine and grouping model used by later workflows. |
+| 3 | `deployment-tracking` | Implemented for MVP. | Adds desired-state snapshots, rollout state, rollback, and drift detection. |
+| 4 | `rule-store-management`, `bpf-filter-editor` | Implemented for MVP. | Adds the main configurable detection and capture controls. |
+| 5 | `e2e-browser-test-suite` | Implemented and required for browser-visible workflow completion. | Provides real-browser regression coverage against the deployed test server. |
+| 6 | `vector-forwarding-mgmt` | Backend foundation in progress; migrations, schemas, encryption, type validation, CRUD context, snapshot metadata, and foundation tests are implemented. UI, async connection testing, RBAC event wiring, telemetry placeholders, and full E2E coverage remain. | Adds operator-managed forwarding sinks beyond the baseline Vector config. |
+| 7 | `pcap-search-retrieval`, `platform-alert-center`, `historical-metrics`, `health-baselines`, `live-data-flow-viz` | Not started; post-MVP. | Adds operator investigation and observability workflows. |
+| 8 | `canary-deploys`, `detection-content-lifecycle`, `offline-update-bundle`, `public-api-docs`, `multi-manager-ha` | Not started; post-MVP. | Adds advanced rollout, air-gap, integration, documentation, and production operations. |
 
 The lower-level `network-sensor-stack`, `network-sensor-stack/interface-switching`, and `sensor-stack-production-hardening` specs define capture-plane behavior that higher-level UI and management-plane specs should reference rather than redefine.
 

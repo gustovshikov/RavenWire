@@ -45,6 +45,16 @@ defmodule ConfigManagerWeb.RuleDeploymentLive do
 
     cond do
       not can_deploy_rules?(socket.assigns.current_user) ->
+        Audit.log(%{
+          actor: socket.assigns.current_user.username,
+          actor_type: "user",
+          action: "permission_denied",
+          target_type: "live_event",
+          target_id: "rules:deploy",
+          result: "failure",
+          detail: %{required_permission: "rules:deploy", action: "rules:deploy"}
+        })
+
         {:noreply, put_flash(socket, :error, "Insufficient permissions.")}
 
       rules_content == "" ->

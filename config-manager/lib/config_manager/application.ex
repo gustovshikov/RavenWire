@@ -17,6 +17,9 @@ defmodule ConfigManager.Application do
       # Login attempt rate limiting
       ConfigManager.Auth.RateLimiter,
 
+      # Periodic cleanup for expired browser sessions
+      ConfigManager.Auth.SessionPruner,
+
       # Bootstrap local admin account when the users table is empty
       ConfigManager.Auth.AdminSeeder,
 
@@ -36,6 +39,12 @@ defmodule ConfigManager.Application do
 
       # Rule repository updates fetch and parse archives outside request processes.
       {Task.Supervisor, name: ConfigManager.Rules.TaskSupervisor},
+
+      # BPF validation shells out to tcpdump under an isolated async supervisor.
+      {Task.Supervisor, name: ConfigManager.Bpf.TaskSupervisor},
+
+      # Forwarding sink connection checks run outside LiveView/request processes.
+      {Task.Supervisor, name: ConfigManager.Forwarding.TaskSupervisor},
 
       # Intermediate CA — generates or loads keypair from persistent volume
       ConfigManager.CA.IntermediateCA,

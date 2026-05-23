@@ -34,6 +34,25 @@
       <%= if nav_allowed?(current_user, "audit:view") do %>
         <a href="/audit" class="text-blue-600 hover:underline">Audit</a>
       <% end %>
+      <%= if nav_allowed?(current_user, "audit:export") do %>
+        <a href="/audit/export" class="text-blue-600 hover:underline">Audit Export</a>
+      <% end %>
+      <%= if nav_allowed?(current_user, "users:manage") || nav_allowed?(current_user, "roles:view") || nav_allowed?(current_user, "tokens:manage") do %>
+        <div class="group relative">
+          <a href="/admin/users" class="text-blue-600 hover:underline">Admin</a>
+          <div class="absolute right-0 z-20 hidden w-44 rounded border border-gray-200 bg-white py-2 shadow-lg group-hover:block">
+            <%= if nav_allowed?(current_user, "users:manage") do %>
+              <a href="/admin/users" class="block px-3 py-1.5 text-gray-700 hover:bg-gray-50">Users</a>
+            <% end %>
+            <%= if nav_allowed?(current_user, "roles:view") do %>
+              <a href="/admin/roles" class="block px-3 py-1.5 text-gray-700 hover:bg-gray-50">Roles</a>
+            <% end %>
+            <%= if nav_allowed?(current_user, "tokens:manage") do %>
+              <a href="/admin/api-tokens" class="block px-3 py-1.5 text-gray-700 hover:bg-gray-50">API Tokens</a>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
       <form action="/logout" method="post">
         <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
         <button type="submit" class="text-gray-600 hover:underline">Logout</button>

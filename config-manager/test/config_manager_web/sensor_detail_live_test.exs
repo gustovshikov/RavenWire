@@ -1,7 +1,7 @@
 defmodule ConfigManagerWeb.SensorDetailLiveTest do
   use ConfigManagerWeb.ConnCase, async: false
 
-  alias ConfigManager.{Auth, Repo, SensorPod}
+  alias ConfigManager.{Auth, Forwarding, Pools, Repo, SensorPod}
   alias ConfigManager.AuditEntry
   alias ConfigManager.Health.Registry
 
@@ -94,6 +94,8 @@ defmodule ConfigManagerWeb.SensorDetailLiveTest do
     assert response =~ "Pending enrollment"
     assert response =~ "This sensor is not currently reporting health data"
     assert response =~ "No container data is available"
+    assert response =~ "No pool assigned"
+    assert response =~ "Forwarding telemetry is not yet available"
     refute response =~ "public-key"
   end
 
@@ -179,6 +181,38 @@ defmodule ConfigManagerWeb.SensorDetailLiveTest do
     assert response =~ "Management Plane"
     assert response =~ "Max Drop"
     refute response =~ "Capture Consumers"
+  end
+
+  test "renders forwarding pool configuration for assigned sensors", %{conn: conn} do
+    {:ok, pool} = Pools.create_pool(%{"name" => "sensor-forwarding-pool"}, "tester")
+
+    {:ok, _sink} =
+      Forwarding.create_sink(
+        pool.id,
+        %{
+          "name" => "sensor-file-sink",
+          "sink_type" => "file",
+          "path_template" => "/var/log/ravenwire/events.ndjson",
+          "encoding" => "ndjson"
+        },
+        "tester"
+      )
+
+    pod = insert_pod(%{status: "enrolled", pool_id: pool.id})
+
+    conn =
+      conn
+      |> login()
+      |> recycle()
+      |> get("/sensors/#{pod.id}")
+
+    response = html_response(conn, 200)
+    assert response =~ "sensor-forwarding-pool"
+    assert response =~ "Schema mode: Raw"
+    assert response =~ "1/1 sinks enabled"
+    assert response =~ "sensor-file-sink"
+    assert response =~ "File"
+    assert response =~ "Forwarding telemetry is not yet available"
   end
 
   test "sensor actions run asynchronously and write sanitized audit success" do

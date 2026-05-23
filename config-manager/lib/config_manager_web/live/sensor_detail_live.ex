@@ -5,7 +5,7 @@ defmodule ConfigManagerWeb.SensorDetailLive do
 
   import ConfigManagerWeb.Formatters
 
-  alias ConfigManager.{Audit, Deployments, Pools, Repo, SensorAgentClient, SensorPod}
+  alias ConfigManager.{Audit, Deployments, Forwarding, Pools, Repo, SensorAgentClient, SensorPod}
   alias ConfigManager.Auth.Policy
   alias ConfigManager.Health.Registry
 
@@ -61,8 +61,10 @@ defmodule ConfigManagerWeb.SensorDetailLive do
         if connected?(socket) do
           Phoenix.PubSub.subscribe(ConfigManager.PubSub, Registry.pod_topic(health_key))
 
-          if pod.pool_id,
-            do: Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pool:#{pod.pool_id}:drift")
+          if pod.pool_id do
+            Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pool:#{pod.pool_id}:drift")
+            Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pool:#{pod.pool_id}:forwarding")
+          end
         end
 
         {:ok,
@@ -71,6 +73,7 @@ defmodule ConfigManagerWeb.SensorDetailLive do
          |> assign(:not_found, false)
          |> assign(:pod, pod)
          |> assign(:pool_name, Pools.pool_name(pod.pool_id))
+         |> assign(:forwarding, forwarding_state(pod))
          |> assign(:sensor_drift, Deployments.sensor_drift(pod))
          |> assign(:health_key, health_key)
          |> assign(:health, Registry.get(health_key))
@@ -117,10 +120,14 @@ defmodule ConfigManagerWeb.SensorDetailLive do
     if pod.pool_id,
       do: Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pool:#{pod.pool_id}:drift")
 
+    if pod.pool_id,
+      do: Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pool:#{pod.pool_id}:forwarding")
+
     {:noreply,
      assign(socket,
        pod: pod,
        pool_name: Pools.pool_name(pod.pool_id),
+       forwarding: forwarding_state(pod),
        sensor_drift: Deployments.sensor_drift(pod)
      )}
   end
@@ -128,6 +135,23 @@ defmodule ConfigManagerWeb.SensorDetailLive do
   def handle_info({:drift_updated, pool_id}, %{assigns: %{pod: %{pool_id: pool_id}}} = socket) do
     pod = Repo.get!(SensorPod, socket.assigns.pod.id)
     {:noreply, assign(socket, pod: pod, sensor_drift: Deployments.sensor_drift(pod))}
+  end
+
+  def handle_info({event, _payload}, socket)
+      when event in [
+             :sink_created,
+             :sink_updated,
+             :sink_deleted,
+             :sink_toggled,
+             :schema_mode_changed
+           ] do
+    pod = Repo.get!(SensorPod, socket.assigns.pod.id)
+    {:noreply, assign(socket, pod: pod, forwarding: forwarding_state(pod))}
+  end
+
+  def handle_info({:connection_test_complete, _sink_id, _result}, socket) do
+    pod = Repo.get!(SensorPod, socket.assigns.pod.id)
+    {:noreply, assign(socket, pod: pod, forwarding: forwarding_state(pod))}
   end
 
   def handle_info({:sensor_action_timeout, action, ref}, socket) do
@@ -268,7 +292,7 @@ defmodule ConfigManagerWeb.SensorDetailLive do
       <.capture_section health={@health} />
       <.storage_section pod={@pod} health={@health} />
       <.clock_section health={@health} degradation_reasons={@degradation_reasons} />
-      <.forwarding_section />
+      <.forwarding_section pod={@pod} forwarding={@forwarding} />
       <.actions_section
         pod={@pod}
         current_user={@current_user}
@@ -603,11 +627,59 @@ defmodule ConfigManagerWeb.SensorDetailLive do
     """
   end
 
+  attr(:pod, :map, required: true)
+  attr(:forwarding, :map, required: true)
+
   def forwarding_section(assigns) do
     ~H"""
     <section aria-label="Forwarding" class="mb-4 rounded border border-gray-200 bg-white p-4">
       <h2 class="mb-3 text-lg font-semibold text-gray-900">Forwarding</h2>
-      <p class="text-sm text-gray-600">Forwarding data is not yet available from the Sensor Agent.</p>
+      <%= case @forwarding.status do %>
+        <% :no_pool -> %>
+          <p class="text-sm text-gray-600">No pool assigned.</p>
+          <a href="/pools" class="mt-2 inline-block text-sm text-blue-700 hover:underline">View pools</a>
+        <% :no_sinks -> %>
+          <p class="text-sm text-gray-600">No forwarding sinks configured.</p>
+          <a href={"/pools/#{@pod.pool_id}/forwarding"} class="mt-2 inline-block text-sm text-blue-700 hover:underline">Configure forwarding</a>
+        <% :configured -> %>
+          <div class="mb-3 flex flex-col gap-2 text-sm md:flex-row md:items-center md:justify-between">
+            <div>
+              <p class="font-medium text-gray-900">
+                Pool:
+                <a href={"/pools/#{@pod.pool_id}/forwarding"} class="text-blue-700 hover:underline"><%= display(@forwarding.pool_name) %></a>
+              </p>
+              <p class="text-gray-600">Schema mode: <%= schema_mode_label(@forwarding.schema_mode) %></p>
+            </div>
+            <span class="w-fit rounded bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800">
+              <%= @forwarding.enabled_count %>/<%= @forwarding.sink_count %> sinks enabled
+            </span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+              <thead class="bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
+                <tr>
+                  <th class="px-3 py-2">Sink</th>
+                  <th class="px-3 py-2">Type</th>
+                  <th class="px-3 py-2">State</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100">
+                <%= for sink <- @forwarding.sinks do %>
+                  <tr>
+                    <td class="px-3 py-2 font-medium text-gray-900"><%= sink.name %></td>
+                    <td class="px-3 py-2 text-gray-700"><%= sink_type_label(sink.sink_type) %></td>
+                    <td class="px-3 py-2">
+                      <span class={if sink.enabled, do: "rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800", else: "rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700"}>
+                        <%= if sink.enabled, do: "Enabled", else: "Disabled" %>
+                      </span>
+                    </td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+      <% end %>
+      <p class="mt-3 text-sm text-gray-600">Forwarding telemetry is not yet available. It requires a future HealthReport protobuf extension.</p>
     </section>
     """
   end
@@ -981,6 +1053,42 @@ defmodule ConfigManagerWeb.SensorDetailLive do
   defp drift_domain_label(:forwarding), do: "Forwarding"
   defp drift_domain_label(:bpf), do: "BPF"
   defp drift_domain_label(domain), do: to_string(domain)
+
+  defp forwarding_state(%SensorPod{pool_id: nil}), do: %{status: :no_pool}
+
+  defp forwarding_state(%SensorPod{pool_id: pool_id}) do
+    case Pools.get_pool(pool_id) do
+      nil ->
+        %{status: :no_pool}
+
+      pool ->
+        summary = Forwarding.forwarding_summary(pool.id)
+        sinks = Forwarding.list_sinks(pool.id)
+
+        %{
+          status: if(sinks == [], do: :no_sinks, else: :configured),
+          pool_name: pool.name,
+          schema_mode: summary.schema_mode,
+          sink_count: summary.sink_count,
+          enabled_count: summary.enabled_count,
+          sinks: sinks
+        }
+    end
+  end
+
+  defp schema_mode_label("raw"), do: "Raw"
+  defp schema_mode_label("ecs"), do: "Elastic Common Schema"
+  defp schema_mode_label("ocsf"), do: "OCSF"
+  defp schema_mode_label("splunk_cim"), do: "Splunk CIM"
+  defp schema_mode_label(value), do: display(value)
+
+  defp sink_type_label("splunk_hec"), do: "Splunk HEC"
+  defp sink_type_label("http"), do: "HTTP"
+  defp sink_type_label("syslog"), do: "Syslog"
+  defp sink_type_label("kafka"), do: "Kafka"
+  defp sink_type_label("s3"), do: "S3"
+  defp sink_type_label("file"), do: "File"
+  defp sink_type_label(value), do: display(value)
 
   defp short_id(nil), do: nil
   defp short_id(id), do: String.slice(id, 0, 8)

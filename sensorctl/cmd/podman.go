@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,6 +26,7 @@ const (
 	analysisTarget       = "analysis-pipeline.target"
 	defaultManagerURL    = "http://127.0.0.1:4000/api/v1"
 	defaultManagerHealth = "http://127.0.0.1:4000/"
+	sensorEnvFile        = "/etc/ravenwire/sensor.env"
 )
 
 type installOptions struct {
@@ -228,6 +230,8 @@ func prepareHostCommands() []string {
 		"sudo systemctl restart systemd-journald.service",
 		"sudo journalctl --rotate",
 		"sudo journalctl --vacuum-size=512M --vacuum-time=7d",
+		"sudo install -D -m 0644 deploy/systemd/tmpfiles.d/ravenwire.conf /etc/tmpfiles.d/ravenwire.conf",
+		"sudo systemd-tmpfiles --create /etc/tmpfiles.d/ravenwire.conf",
 		"sudo install -D -m 0644 deploy/systemd/logrotate.d/ravenwire /etc/logrotate.d/ravenwire",
 		"sudo install -D -m 0755 deploy/systemd/libexec/ravenwire-prune-logs /usr/local/libexec/ravenwire-prune-logs",
 		"sudo install -D -m 0644 deploy/systemd/system/ravenwire-log-prune.service /etc/systemd/system/ravenwire-log-prune.service",
@@ -322,6 +326,9 @@ func configureEnvironment(opts installOptions) error {
 		assignments = append(assignments, shellQuote(key+"="+value))
 	}
 
+	if err := writeSensorEnvironmentFile(env); err != nil {
+		return err
+	}
 	if err := runShell("", "sudo systemctl set-environment "+strings.Join(assignments, " ")); err != nil {
 		return err
 	}
@@ -334,6 +341,31 @@ func configureEnvironment(opts installOptions) error {
 		fmt.Printf("Configured Control API host %q for automatic enrollment\n", controlAPIHost)
 	}
 	return nil
+}
+
+func writeSensorEnvironmentFile(env map[string]string) error {
+	return runShell("", sensorEnvironmentFileCommand(env))
+}
+
+func sensorEnvironmentFileCommand(env map[string]string) string {
+	keys := make([]string, 0, len(env))
+	for key := range env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	lines := make([]string, 0, len(keys))
+	for _, key := range keys {
+		lines = append(lines, shellQuote(key+"="+env[key]))
+	}
+
+	return fmt.Sprintf(
+		"sudo mkdir -p %s && printf '%%s\\n' %s | sudo tee %s >/dev/null && sudo chmod 0600 %s",
+		shellQuote(filepath.Dir(sensorEnvFile)),
+		strings.Join(lines, " "),
+		shellQuote(sensorEnvFile),
+		shellQuote(sensorEnvFile),
+	)
 }
 
 func detectControlAPIHost(managerURL string) string {

@@ -28,7 +28,11 @@ defmodule ConfigManagerWeb.Plugs.RequirePermission do
           target_type: "route",
           target_id: conn.request_path,
           result: "failure",
-          detail: %{required_permission: permission, route: conn.request_path}
+          detail: %{
+            required_permission: permission,
+            route: conn.request_path,
+            event_or_route: conn.request_path
+          }
         })
 
         forbidden(conn)

@@ -24,6 +24,7 @@ Environment=SURICATA_FANOUT_GROUP=2
 Exec=-c /etc/suricata/suricata.yaml --af-packet=${CAPTURE_IFACE} -l /logs/suricata
 
 [Service]
+EnvironmentFile=-/etc/ravenwire/sensor.env
 Restart=on-failure
 RestartSec=5
 

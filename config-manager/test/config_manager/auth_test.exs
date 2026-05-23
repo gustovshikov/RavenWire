@@ -4,7 +4,7 @@ defmodule ConfigManager.AuthTest do
   import Ecto.Query
 
   alias ConfigManager.{AuditEntry, Auth}
-  alias ConfigManager.Auth.{ApiToken, RateLimiter, Session, User}
+  alias ConfigManager.Auth.{ApiToken, RateLimiter, Session, SessionPruner, User}
   alias ConfigManager.Repo
 
   setup do
@@ -136,6 +136,8 @@ defmodule ConfigManager.AuthTest do
     {:ok, user_b} = create_user!("session-b")
     {:ok, _user, token_a} = Auth.create_session(user_a)
     {:ok, _user, token_b} = Auth.create_session(user_b)
+    {:ok, _user, token_c} = Auth.create_session(user_b)
+    {:ok, _user, token_d} = Auth.create_session(user_b)
 
     assert :ok = Auth.invalidate_user_sessions(user_a.id)
     refute Repo.get_by(Session, token_hash: Auth.token_hash(token_a))
@@ -145,8 +147,32 @@ defmodule ConfigManager.AuthTest do
     |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), -1, :second))
     |> Repo.update!()
 
-    assert {1, nil} = Auth.prune_expired_sessions()
-    assert Repo.aggregate(from(s in Session), :count) == 0
+    Repo.get_by!(Session, token_hash: Auth.token_hash(token_c))
+    |> Ecto.Changeset.change(last_active_at: DateTime.add(DateTime.utc_now(), -31 * 60, :second))
+    |> Repo.update!()
+
+    assert {2, nil} = Auth.prune_expired_sessions()
+    refute Repo.get_by(Session, token_hash: Auth.token_hash(token_b))
+    refute Repo.get_by(Session, token_hash: Auth.token_hash(token_c))
+    assert Repo.get_by(Session, token_hash: Auth.token_hash(token_d))
+  end
+
+  test "session pruner runs expired session cleanup on schedule" do
+    {:ok, user} = create_user!("session-pruner")
+    {:ok, _user, token} = Auth.create_session(user)
+
+    Repo.get_by!(Session, token_hash: Auth.token_hash(token))
+    |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), -1, :second))
+    |> Repo.update!()
+
+    start_supervised!({
+      SessionPruner,
+      interval_ms: 10, name: :"session_pruner_#{System.unique_integer([:positive])}"
+    })
+
+    wait_until(fn ->
+      Repo.get_by(Session, token_hash: Auth.token_hash(token)) == nil
+    end)
   end
 
   test "update_user records role changes without exposing password data" do
@@ -312,4 +338,17 @@ defmodule ConfigManager.AuthTest do
 
   defp restore_env(key, nil), do: System.delete_env(key)
   defp restore_env(key, value), do: System.put_env(key, value)
+
+  defp wait_until(fun, attempts_left \\ 20)
+
+  defp wait_until(fun, attempts_left) when attempts_left > 0 do
+    if fun.() do
+      :ok
+    else
+      Process.sleep(25)
+      wait_until(fun, attempts_left - 1)
+    end
+  end
+
+  defp wait_until(_fun, 0), do: flunk("condition was not met before timeout")
 end
