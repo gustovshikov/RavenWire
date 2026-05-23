@@ -2,7 +2,7 @@ defmodule ConfigManager.Pcap.ContextTest do
   use ConfigManager.DataCase, async: false
 
   alias ConfigManager.Pcap
-  alias ConfigManager.Pcap.CustodyEvent
+  alias ConfigManager.Pcap.{CommunityId, CustodyEvent}
   alias ConfigManager.{AuditEntry, Auth, Repo, SensorPod}
 
   defmodule MockClient do
@@ -22,7 +22,7 @@ defmodule ConfigManager.Pcap.ContextTest do
                %{
                  "pod_id" => pod.id,
                  "search_type" => "community_id",
-                 "community_id" => "1:abcdef0123456789="
+                 "community_id" => community_id()
                },
                actor,
                MockClient
@@ -56,6 +56,29 @@ defmodule ConfigManager.Pcap.ContextTest do
     assert request.status == "failed"
     assert request.error_reason == "sensor_unreachable"
     assert Repo.get_by!(AuditEntry, action: "pcap_carve_failed", target_id: request.id)
+  end
+
+  test "submit_search creates one request per selected sensor" do
+    actor = insert_user!("pcap-multi-user")
+    pod_a = insert_sensor!("pcap-multi-a", control_api_host: "127.0.0.1")
+    pod_b = insert_sensor!("pcap-multi-b", control_api_host: "127.0.0.1")
+
+    assert {:ok, requests} =
+             Pcap.submit_search(
+               %{
+                 "sensor_pod_ids" => [pod_a.id, pod_b.id],
+                 "search_type" => "time_range",
+                 "start_time" =>
+                   DateTime.utc_now() |> DateTime.add(-60, :second) |> DateTime.to_iso8601(),
+                 "end_time" => DateTime.utc_now() |> DateTime.to_iso8601()
+               },
+               actor,
+               MockClient
+             )
+
+    assert length(requests) == 2
+    assert Enum.all?(requests, &(&1.status == "dispatched"))
+    assert Enum.sort(Enum.map(requests, & &1.sensor_pod_id)) == Enum.sort([pod_a.id, pod_b.id])
   end
 
   test "completed requests create custody manifests and can be downloaded" do
@@ -160,5 +183,15 @@ defmodule ConfigManager.Pcap.ContextTest do
       cert_expires_at: DateTime.add(now, 24 * 60 * 60, :second)
     })
     |> Repo.update!()
+  end
+
+  defp community_id do
+    CommunityId.compute!(%{
+      src_ip: "192.0.2.10",
+      dst_ip: "198.51.100.10",
+      src_port: 12345,
+      dst_port: 443,
+      protocol: "tcp"
+    })
   end
 end

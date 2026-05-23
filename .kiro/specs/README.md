@@ -48,14 +48,15 @@ Public API routes are versioned under `/api/v1`. New public automation endpoints
 3. `deployment-tracking` — desired-state snapshots, deployments, rollback, and drift.
 4. `rule-store-management`, `bpf-filter-editor`, and `vector-forwarding-mgmt` — configurable content and forwarding state.
 5. `e2e-browser-test-suite` — real-browser regression coverage against the deployed test server before expanding additional browser workflows.
-6. `pcap-search-retrieval`, `platform-alert-center`, `historical-metrics`, `health-baselines`, and `live-data-flow-viz` — operator workflows and observability.
-7. `canary-deploys`, `detection-content-lifecycle`, `offline-update-bundle`, `public-api-docs`, and `multi-manager-ha` — advanced rollout, air-gap, integration, and production operations.
+6. `pcap-search-retrieval` — first post-MVP operator investigation workflow; backend PCAP request/custody/API plumbing and browser search/retrieval are implemented locally, pending test-server E2E verification.
+7. `platform-alert-center`, `historical-metrics`, `health-baselines`, and `live-data-flow-viz` — platform observability workflows after PCAP retrieval.
+8. `canary-deploys`, `detection-content-lifecycle`, `offline-update-bundle`, `public-api-docs`, and `multi-manager-ha` — advanced rollout, air-gap, integration, and production operations.
 
 The existing `network-sensor-stack` and `sensor-stack-production-hardening` specs define lower-level Sensor Agent and capture-plane behavior. UI and management-plane specs should reference those contracts rather than redefining capture semantics.
 
 ## Professional MVP Gate
 
-The MVP release target is a professional sensor/manager product slice, not only a running capture stack. The MVP includes the completed lower-level sensor stack plus authenticated manager workflows for dashboard health, sensor detail, pool management, desired-state deployments and drift, rule store management, BPF profile editing, support bundles, audit visibility, and real-browser E2E coverage.
+The MVP release target is a professional sensor/manager product slice, not only a running capture stack. The MVP includes the completed lower-level sensor stack plus authenticated manager workflows for dashboard health, sensor detail, pool management, desired-state deployments and drift, rule store management, BPF profile editing, Vector forwarding sink management, support bundles, audit visibility, and real-browser E2E coverage.
 
 Before treating the MVP as release-ready:
 
@@ -65,7 +66,7 @@ Before treating the MVP as release-ready:
 - Add or update E2E coverage for every completed browser-visible workflow.
 - Document any feature that is intentionally deferred in its owning spec rather than leaving it implied.
 
-Post-MVP roadmap work includes Vector forwarding sink management, PCAP search/retrieval UI and download flow, platform alerts, historical metrics, health baselines, live data-flow visualization, canary deploys, detection-content lifecycle, offline update bundles, public API docs, and multi-manager HA.
+Post-MVP roadmap work includes forwarding telemetry from HealthReport, PCAP browser search/retrieval test-server verification, platform alerts, historical metrics, health baselines, live data-flow visualization, canary deploys, detection-content lifecycle, offline update bundles, public API docs, and multi-manager HA. PCAP backend request/custody/API plumbing and browser workflow are implemented locally; the remaining gap is full-profile real-browser validation against the deployed test server.
 
 ## Documentation Rules
 

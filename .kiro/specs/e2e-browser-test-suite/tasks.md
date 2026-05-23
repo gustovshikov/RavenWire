@@ -119,22 +119,26 @@ This plan adds a real-browser end-to-end regression suite for RavenWire. The imp
     - Reset or clean up the test profile
     - _Requirements: 4.4, 5.3_
 
-- [x] 8. Add rule store, deployment, and sensor workflow tests
-  - [x] 8.1 Add rule store workflow tests when implemented
+- [x] 8. Add forwarding, rule store, deployment, and sensor workflow tests
+  - [x] 8.1 Add Vector forwarding workflow tests when implemented
+    - Cover schema mode update, file sink CRUD, toggle, delete, audit events, sensor detail forwarding summary, and read-only role behavior
+    - _Requirements: 4.5, 5.1, 5.3_
+
+  - [x] 8.2 Add rule store workflow tests when implemented
     - Cover create, edit, validate, and deployment entry points
-    - _Requirements: 4.5, 4.8_
+    - _Requirements: 4.6, 4.9_
 
-  - [x] 8.2 Add deployment tracking and drift workflow tests when implemented
+  - [x] 8.3 Add deployment tracking and drift workflow tests when implemented
     - Cover deployment list/detail and drift status pages
-    - _Requirements: 4.6, 4.8_
+    - _Requirements: 4.7, 4.9_
 
-  - [x] 8.3 Add sensor detail, PCAP, and support bundle tests when implemented
+  - [x] 8.4 Add sensor detail, PCAP, and support bundle tests when implemented
     - Cover sensor detail navigation, PCAP search/retrieval, and support bundle entry points
-    - _Requirements: 4.7, 4.8_
+    - _Requirements: 4.8, 4.9_
 
-  - [x] 8.4 Add admin and audit hardening workflow tests when implemented
+  - [x] 8.5 Add admin and audit hardening workflow tests when implemented
     - Cover admin users, roles, API token management, audit filters/detail, and audit export entry points
-    - _Requirements: 4.8, 6.1_
+    - _Requirements: 4.9, 6.1_
 
 - [x] 9. Add commands and documentation
   - [x] 9.1 Document E2E-only command

@@ -4,6 +4,7 @@ import type { E2EEnv } from "./env"
 import { expectLiveViewConnected } from "./live-view"
 import { cleanupRepositoryByUi, type CreatedRepository } from "./repositories"
 import { runSsh, shellQuote } from "./ssh"
+import { deleteUserByUi, type CreatedUser } from "./users"
 
 type PoolRecord = {
   name: string
@@ -19,6 +20,7 @@ export class CleanupRegistry {
   private pools: PoolRecord[] = []
   private rulesets: RulesetRecord[] = []
   private repositories: CreatedRepository[] = []
+  private users: CreatedUser[] = []
 
   trackPool(pool: PoolRecord) {
     this.pools.push(pool)
@@ -30,6 +32,10 @@ export class CleanupRegistry {
 
   trackRepository(repository: CreatedRepository) {
     this.repositories.push(repository)
+  }
+
+  trackUser(user: CreatedUser) {
+    this.users.push(user)
   }
 
   async cleanup(page: Page, testInfo: TestInfo, env: E2EEnv) {
@@ -80,6 +86,16 @@ export class CleanupRegistry {
             )
           }
         }
+      }
+    }
+
+    for (const user of [...this.users].reverse()) {
+      try {
+        await deleteUserByUi(page, user.username)
+      } catch (error) {
+        failures.push(
+          `UI cleanup failed for user ${user.username}: ${error instanceof Error ? error.message : String(error)}`
+        )
       }
     }
 

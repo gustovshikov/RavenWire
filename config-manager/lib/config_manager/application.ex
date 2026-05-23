@@ -46,6 +46,9 @@ defmodule ConfigManager.Application do
       # Forwarding sink connection checks run outside LiveView/request processes.
       {Task.Supervisor, name: ConfigManager.Forwarding.TaskSupervisor},
 
+      # PCAP carve status polling runs outside LiveView/request processes.
+      {Task.Supervisor, name: ConfigManager.Pcap.TaskSupervisor},
+
       # Intermediate CA — generates or loads keypair from persistent volume
       ConfigManager.CA.IntermediateCA,
 

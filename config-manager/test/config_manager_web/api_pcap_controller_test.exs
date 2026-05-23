@@ -1,7 +1,7 @@
 defmodule ConfigManagerWeb.ApiPcapControllerTest do
   use ConfigManagerWeb.ConnCase, async: false
 
-  alias ConfigManager.Pcap.CarveRequest
+  alias ConfigManager.Pcap.{CarveRequest, CommunityId}
   alias ConfigManager.{AuditEntry, Auth, Repo, SensorPod}
 
   test "PCAP carve API persists a failed request when the sensor is unreachable" do
@@ -14,7 +14,7 @@ defmodule ConfigManagerWeb.ApiPcapControllerTest do
       |> post("/api/v1/pcap/carve", %{
         "pod_id" => pod.id,
         "search_type" => "community_id",
-        "community_id" => "1:abcdef0123456789="
+        "community_id" => community_id()
       })
 
     body = json_response(conn, 503)
@@ -148,5 +148,15 @@ defmodule ConfigManagerWeb.ApiPcapControllerTest do
       cert_expires_at: DateTime.add(now, 24 * 60 * 60, :second)
     })
     |> Repo.update!()
+  end
+
+  defp community_id do
+    CommunityId.compute!(%{
+      src_ip: "192.0.2.10",
+      dst_ip: "198.51.100.10",
+      src_port: 12345,
+      dst_port: 443,
+      protocol: "tcp"
+    })
   end
 end

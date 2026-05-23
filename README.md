@@ -147,22 +147,21 @@ The goal is that local testing, production-ish testing, and deployment all exerc
 
 ## Roadmap Boundaries
 
-The professional MVP is the smallest RavenWire release that is credible to share with operators: a deployable sensor/manager stack with authenticated manager access, sensor enrollment and health, sensor detail pages, pools, desired-state deployment tracking, rule and BPF management, support bundles, alert-driven PCAP plumbing, and real-browser regression coverage against a deployed test server.
+The professional MVP is the smallest RavenWire release that is credible to share with operators: a deployable sensor/manager stack with authenticated manager access, sensor enrollment and health, sensor detail pages, pools, desired-state deployment tracking, rule and BPF management, Vector forwarding sink management, support bundles, alert-driven PCAP plumbing plus browser PCAP search/retrieval, and real-browser regression coverage against a deployed test server.
 
 The MVP release gate is not just "containers start." It requires:
 
 - `sensorctl` install/start/status/logs/uninstall/test on the supported Quadlet path.
 - First-run manager enrollment and authenticated UI access.
 - A live built-in sensor visible on the dashboard and sensor detail page.
-- Pool creation, sensor assignment, config editing, deployment/drift views, rule store workflows, and BPF profile editing.
+- Pool creation, sensor assignment, config editing, forwarding sink management, deployment/drift views, rule store workflows, and BPF profile editing.
 - Admin user management, API token management UI, audit filtering/export, audited state-changing manager actions, and role-aware browser route protection for the MVP surface.
 - Passing local checks plus the browser E2E smoke/full profile for changed browser workflows.
 
 These remain roadmap or optional extensions, not required for the clean operating path:
 
 - Full PCAP mode with netsniff-ng
-- Vector forwarding sink management UI
-- PCAP search/retrieval and public download workflow
+- Forwarding runtime telemetry beyond the current placeholder UI
 - Platform alert center and historical observability
 - Strelka
 - Arkime

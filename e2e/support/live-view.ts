@@ -13,11 +13,29 @@ export async function expectLiveViewConnected(page: Page) {
     .toBe(true)
 }
 
+export async function waitForLiveViewIdle(page: Page) {
+  await expect
+    .poll(
+      async () =>
+        page
+          .evaluate(
+            () =>
+              document.querySelectorAll(
+                ".phx-click-loading, .phx-change-loading, .phx-submit-loading"
+              ).length
+          )
+          .catch(() => 0),
+      { message: "LiveView should finish processing client events" }
+    )
+    .toBe(0)
+}
+
 export async function expectNoPlainPostNavigation(page: Page, action: () => Promise<void>) {
   const before = new URL(page.url())
 
   await action()
   await page.waitForLoadState("domcontentloaded").catch(() => undefined)
+  await waitForLiveViewIdle(page).catch(() => undefined)
 
   const after = new URL(page.url())
   expect(

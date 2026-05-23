@@ -200,6 +200,27 @@ defmodule ConfigManagerWeb.Router do
   end
 
   scope "/", ConfigManagerWeb do
+    pipe_through([:browser, :require_auth, :require_password_change, :pcap_search])
+
+    live_session :pcap,
+      on_mount: [{ConfigManagerWeb.AuthHelpers, :require_auth}] do
+      live("/pcap", PcapLive.SearchLive, :index)
+      live("/pcap/search", PcapLive.SearchLive, :search)
+      live("/pcap/requests", PcapLive.RequestsLive, :index)
+      live("/pcap/requests/:id", PcapLive.RequestDetailLive, :show)
+      live("/pcap/requests/:id/manifest", PcapLive.ManifestLive, :show)
+    end
+
+    get("/pcap/requests/:id/manifest/export", PcapDownloadController, :export_manifest)
+  end
+
+  scope "/", ConfigManagerWeb do
+    pipe_through([:browser, :require_auth, :require_password_change, :pcap_download])
+
+    get("/pcap/requests/:id/download", PcapDownloadController, :download)
+  end
+
+  scope "/", ConfigManagerWeb do
     pipe_through([:browser, :require_auth, :require_password_change, :forwarding_manage])
 
     live_session :forwarding_management,

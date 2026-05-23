@@ -4,7 +4,7 @@
 
 Recent RavenWire work exposed failures that unit and LiveView tests did not catch, including a production-like browser submitting a LiveView form as a plain HTTP POST because the JavaScript assets were not present in the deployed Config Manager. The system also depends on a real sensor stack reporting health to the manager, which means some operator workflows can only be trusted after they run against a deployed environment.
 
-This feature adds a browser-based end-to-end test suite that runs against the real RavenWire test server. The suite verifies that the Config Manager UI, Phoenix LiveView client, static assets, authentication, pool workflows, sensor health reporting, BPF management, rule management, and deployment-facing pages work together in a real browser against a real deployed stack.
+This feature adds a browser-based end-to-end test suite that runs against the real RavenWire test server. The suite verifies that the Config Manager UI, Phoenix LiveView client, static assets, authentication, pool workflows, sensor health reporting, Vector forwarding sink management, BPF management, rule management, and deployment-facing pages work together in a real browser against a real deployed stack.
 
 The first required test target is the existing test server at `http://172.16.10.38:4000`, reachable over SSH as `eric@172.16.10.38`. The suite must be configurable so future test servers can be substituted without changing test code.
 
@@ -67,12 +67,13 @@ The first required test target is the existing test server at `http://172.16.10.
 
 1. THE E2E_Test_Suite SHALL verify that the dashboard displays the Built_In_Sensor and does not incorrectly show the "No sensor pods connected" empty state while a sensor is reporting health.
 2. THE E2E_Test_Suite SHALL verify the pool workflow: create a pool, view the pool detail page, edit pool settings when implemented, assign or inspect sensors when available, and delete or clean up the test pool.
-3. THE E2E_Test_Suite SHALL verify navigation from pool detail pages to pool configuration, pool sensors, deployments, and BPF filters when those routes are implemented.
+3. THE E2E_Test_Suite SHALL verify navigation from pool detail pages to pool configuration, pool sensors, deployments, forwarding, and BPF filters when those routes are implemented.
 4. THE E2E_Test_Suite SHALL verify the BPF workflow: create or open a BPF profile, add structured rules, validate the generated expression, save changes, verify pending deployment state, reset or clean up the profile.
-5. THE E2E_Test_Suite SHALL verify rule store and ruleset workflows after the rule-store-management feature is implemented, including create, edit, validate, and deployment entry points.
-6. THE E2E_Test_Suite SHALL verify deployment and drift pages after the deployment-tracking feature is implemented.
-7. THE E2E_Test_Suite SHALL verify PCAP search, support bundle, and sensor detail workflows after those features are implemented.
-8. THE E2E_Test_Suite SHALL skip not-yet-implemented workflow tests with explicit pending markers rather than silently omitting planned coverage.
+5. THE E2E_Test_Suite SHALL verify the Vector forwarding workflow: schema mode update, file sink create/edit/toggle/delete, audit events, sensor detail forwarding summary, and read-only role behavior.
+6. THE E2E_Test_Suite SHALL verify rule store and ruleset workflows after the rule-store-management feature is implemented, including create, edit, validate, and deployment entry points.
+7. THE E2E_Test_Suite SHALL verify deployment and drift pages after the deployment-tracking feature is implemented.
+8. THE E2E_Test_Suite SHALL verify PCAP search, support bundle, and sensor detail workflows after those features are implemented.
+9. THE E2E_Test_Suite SHALL skip not-yet-implemented workflow tests with explicit pending markers rather than silently omitting planned coverage.
 
 ### Requirement 5: Data Isolation and Cleanup
 

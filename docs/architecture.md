@@ -2,7 +2,7 @@
 
 RavenWire is organized around one deployable model: Podman containers supervised by systemd through Quadlet.
 
-The current codebase is a professional MVP candidate. It can install a local dual-pod stack, enroll the first sensor, authenticate manager users, collect health, show fleet and sensor detail views, manage pools, track desired-state deployments and drift, manage rule and BPF configuration, proxy support bundles, and run alert-driven packet capture. The specs under `.kiro/specs/` define both the remaining MVP hardening work and the post-MVP product roadmap.
+The current codebase is a professional MVP candidate. It can install a local dual-pod stack, enroll the first sensor, authenticate manager users, collect health, show fleet and sensor detail views, manage pools, track desired-state deployments and drift, manage rule, BPF, and Vector forwarding configuration, proxy support bundles, and run alert-driven packet capture. The specs under `.kiro/specs/` define both the remaining MVP hardening work and the post-MVP product roadmap.
 
 The Config Manager web UI follows the Orbital Plasma design system documented in [Design](design.md).
 
@@ -45,7 +45,7 @@ Manager-side responsibilities currently include:
 - Enrollment token creation, approval, denial, and certificate issuance.
 - Sensor registry and health registry.
 - Health gRPC endpoint.
-- Sensor detail, pool management, deployment/drift, rule store, BPF editor, and audit views.
+- Sensor detail, pool management, deployment/drift, rule store, BPF editor, forwarding, and audit views.
 - Sensor support bundle proxying.
 
 ## Packet Path
@@ -69,19 +69,26 @@ Config Manager browser routes:
 | `/login` | Manager login. |
 | `/password/change` | Required/self-service password change. |
 | `/` | Health dashboard. |
-| `/sensors/:id` | Sensor detail, health, readiness, capture, storage, forwarding placeholder, and sensor actions. |
+| `/sensors/:id` | Sensor detail, health, readiness, capture, storage, forwarding summary, and sensor actions. |
 | `/enrollment` | Enrollment queue and approval workflow. |
 | `/pools` | Pool list. |
 | `/pools/new` | Pool creation. |
 | `/pools/:id` | Pool overview, deployment entry points, rule/BPF state, and delete confirmation. |
 | `/pools/:id/sensors` | Pool sensor assignment/removal. |
 | `/pools/:id/config` | Pool desired configuration. |
+| `/pools/:id/forwarding` | Pool Vector forwarding sink overview and schema mode controls. |
+| `/pools/:id/forwarding/sinks/new` | Forwarding sink creation form. |
+| `/pools/:id/forwarding/sinks/:sink_id/edit` | Forwarding sink edit form. |
 | `/pools/:id/bpf` | Pool BPF filter editor. |
 | `/pools/:id/deployments` | Pool deployment history. |
 | `/pools/:id/drift` | Pool drift summary. |
 | `/deployments` | Desired-state deployment list. |
 | `/deployments/:id` | Deployment detail, cancel, and rollback entry points. |
 | `/pcap-config` | Current PCAP configuration screen. |
+| `/pcap` and `/pcap/search` | Browser PCAP search and carve submission. |
+| `/pcap/requests` | PCAP request history. |
+| `/pcap/requests/:id` | PCAP request detail, status, and download entry point. |
+| `/pcap/requests/:id/manifest` | Chain-of-custody manifest view. |
 | `/rules/store` | Rule store browsing and rule enablement controls. |
 | `/rules/categories` | Rule category controls. |
 | `/rules/repositories` | Rule repository management. |
@@ -134,6 +141,6 @@ Sensor-internal routes:
 
 ## Forward Architecture
 
-Implementation should follow the spec order in `.kiro/specs/README.md`. The professional MVP release gate is now the implemented sensor stack plus authenticated manager workflows for fleet health, sensor detail, pools, deployments, rules, BPF, support bundles, and audit visibility. Remaining auth/RBAC hardening should be finished before treating the MVP as release-ready.
+Implementation should follow the spec order in `.kiro/specs/README.md`. The professional MVP release gate is now the implemented sensor stack plus authenticated manager workflows for fleet health, sensor detail, pools, deployments, rules, BPF, forwarding, support bundles, and audit visibility. Forwarding telemetry remains placeholder-only until HealthReport includes sink runtime metrics.
 
 New public automation endpoints should use `/api/v1`. Internal Sensor Agent routes can stay separate, but public docs must distinguish bearer-token Public API routes from mTLS/internal control routes.

@@ -142,11 +142,12 @@ The full profile includes the smoke profile plus all implemented workflows:
 
 1. Pool list, create, detail, edit, assignment views, and cleanup.
 2. Sensor dashboard and sensor detail pages.
-3. BPF editor create/open, rule add, validate, save, pending deployment indicator, reset, and cleanup.
-4. Rule store workflows once implemented.
-5. Deployment tracking and drift workflows once implemented.
-6. PCAP search/retrieval and support bundle workflows once implemented.
-7. RBAC checks for read-only and write-capable users when test users exist.
+3. Vector forwarding schema mode, file sink CRUD/toggle/delete, audit events, sensor detail summary, and read-only role behavior.
+4. BPF editor create/open, rule add, validate, save, pending deployment indicator, reset, and cleanup.
+5. Rule store workflows once implemented.
+6. Deployment tracking and drift workflows once implemented.
+7. PCAP search/retrieval and support bundle workflows once implemented.
+8. RBAC checks for read-only and write-capable users when test users exist.
 
 Not-yet-implemented workflow tests are committed as skipped tests with clear references to the owning spec requirement.
 

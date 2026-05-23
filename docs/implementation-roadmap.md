@@ -24,10 +24,11 @@ The professional MVP includes:
 - Desired-state deployment tracking, rollback entry points, drift detection, and real-time update plumbing.
 - Rule repository, rule store, ruleset, pool assignment, and rule deployment entry points.
 - Pool-level BPF filter editor with validation, versioning, reset, and restart-required surfacing.
+- Pool-level Vector forwarding sink management with encrypted secrets, schema mode selection, RBAC/audit coverage, and explicit deployment semantics.
 - Alert-driven PCAP plumbing in the sensor stack and manager PCAP configuration screen.
 - Browser E2E smoke/full profiles that run against a real test server and gate browser-visible workflows.
 
-The professional MVP does not include every future operator feature. Vector forwarding sink management, PCAP search/retrieval UI, platform alerting, historical metrics, health baselines, live data-flow visualization, public API documentation, canary rollouts, detection-content lifecycle, offline update bundles, and multi-manager HA are post-MVP roadmap work unless explicitly pulled forward.
+The professional MVP does not include every future operator feature. Forwarding telemetry from HealthReport is still placeholder-only. PCAP search/retrieval is now the first pulled-forward post-MVP target: backend PCAP request/custody/API plumbing exists, but the operator browser search, history, manifest, and download workflow is still in progress. Platform alerting, historical metrics, health baselines, live data-flow visualization, public API documentation, canary rollouts, detection-content lifecycle, offline update bundles, and multi-manager HA remain post-MVP roadmap work until explicitly pulled forward.
 
 ## Current Implementation
 
@@ -42,8 +43,8 @@ The repo currently supports:
 - Health collection, drop counters, support bundles, CRL loading, and request IDs.
 - Zeek, Suricata, Vector, and `pcap_ring_writer` baseline config.
 - Alert-driven PCAP ingestion, indexing, carving, and custody metadata foundations.
-- Authenticated manager UI routes for dashboard, enrollment, sensor detail, pools, deployments, PCAP config, rules, BPF, support bundles, and audit browsing.
-- Sensor pool management, desired-state deployment tracking, rule store management, BPF profile editing, and real-browser E2E coverage.
+- Authenticated manager UI routes for dashboard, enrollment, sensor detail, pools, deployments, PCAP config, PCAP search/retrieval, rules, BPF, support bundles, and audit browsing.
+- Sensor pool management, desired-state deployment tracking, rule store management, BPF profile editing, Vector forwarding sink management, and real-browser E2E coverage.
 
 The supported local validation path is `sensorctl test`. Browser-visible manager workflows are validated with the Playwright E2E suite in `e2e/` against the configured test server. There is no Compose, Vagrant, or separate capture harness to maintain.
 
@@ -62,8 +63,8 @@ Before calling the professional MVP release-ready, close these gates:
 
 These areas are specified but should not be assumed complete in the current app:
 
-- Vector forwarding sink management.
-- PCAP search/retrieval UI, chain-of-custody manifest UI, and public download flow.
+- Forwarding telemetry from HealthReport and sink-runtime delivery health beyond the current placeholder UI.
+- PCAP search/retrieval test-server verification and any follow-up hardening from the first full E2E run.
 - Platform alert center.
 - Historical metrics, health baselines, and live data-flow visualization.
 - Canary deployments and detection content lifecycle management.
@@ -80,9 +81,10 @@ These areas are specified but should not be assumed complete in the current app:
 | 3 | `deployment-tracking` | Implemented for MVP. | Adds desired-state snapshots, rollout state, rollback, and drift detection. |
 | 4 | `rule-store-management`, `bpf-filter-editor` | Implemented for MVP. | Adds the main configurable detection and capture controls. |
 | 5 | `e2e-browser-test-suite` | Implemented and required for browser-visible workflow completion. | Provides real-browser regression coverage against the deployed test server. |
-| 6 | `vector-forwarding-mgmt` | Backend foundation in progress; migrations, schemas, encryption, type validation, CRUD context, snapshot metadata, and foundation tests are implemented. UI, async connection testing, RBAC event wiring, telemetry placeholders, and full E2E coverage remain. | Adds operator-managed forwarding sinks beyond the baseline Vector config. |
-| 7 | `pcap-search-retrieval`, `platform-alert-center`, `historical-metrics`, `health-baselines`, `live-data-flow-viz` | Not started; post-MVP. | Adds operator investigation and observability workflows. |
-| 8 | `canary-deploys`, `detection-content-lifecycle`, `offline-update-bundle`, `public-api-docs`, `multi-manager-ha` | Not started; post-MVP. | Adds advanced rollout, air-gap, integration, documentation, and production operations. |
+| 6 | `vector-forwarding-mgmt` | Implemented for the browser MVP surface with pool-level sink CRUD, encrypted secrets, schema mode selection, connection test dispatch, RBAC/audit integration, sensor detail summary, telemetry placeholder, and full-profile E2E coverage. | Adds operator-managed forwarding sinks beyond the baseline Vector config. |
+| 7 | `pcap-search-retrieval` | Browser workflow implemented locally; pending deployment and full-profile E2E verification. | Completes the operator investigation loop using existing sensor PCAP plumbing. |
+| 8 | `platform-alert-center`, `historical-metrics`, `health-baselines`, `live-data-flow-viz` | Not started; post-MVP. | Adds platform-native alerting and observability workflows after PCAP retrieval lands. |
+| 9 | `canary-deploys`, `detection-content-lifecycle`, `offline-update-bundle`, `public-api-docs`, `multi-manager-ha` | Not started; post-MVP. | Adds advanced rollout, air-gap, integration, documentation, and production operations. |
 
 The lower-level `network-sensor-stack`, `network-sensor-stack/interface-switching`, and `sensor-stack-production-hardening` specs define capture-plane behavior that higher-level UI and management-plane specs should reference rather than redefine.
 

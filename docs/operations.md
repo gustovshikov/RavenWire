@@ -140,7 +140,7 @@ npm run test:smoke
 npm run test:full
 ```
 
-Set `E2E_BASE_URL`, `E2E_ADMIN_USER`, and `E2E_ADMIN_PASSWORD` before running authenticated browser tests. The E2E suite performs HTTP/static asset preflight, SSH service and built-in sensor health checks, LiveView connectivity checks, pool workflows, BPF editor workflows, ruleset/repository workflows, and support/deployment page checks.
+Set `E2E_BASE_URL`, `E2E_ADMIN_USER`, and `E2E_ADMIN_PASSWORD` before running authenticated browser tests. The E2E suite performs HTTP/static asset preflight, SSH service and built-in sensor health checks, LiveView connectivity checks, pool workflows, forwarding workflows, BPF editor workflows, ruleset/repository workflows, and support/deployment page checks.
 
 ## Fresh Reset
 
@@ -153,8 +153,8 @@ sensorctl start
 
 ## Current Boundaries
 
-The professional MVP target includes the implemented fleet pool management, sensor detail pages, deployment/drift views, rule store, BPF editor, support bundles, browser E2E regression path, and browser-surface auth/RBAC/audit hardening. Admin user management, API token management UI, audit filtering/export, route/event permission checks, and role-aware controls are part of the current browser MVP surface.
+The professional MVP target includes the implemented fleet pool management, sensor detail pages, deployment/drift views, rule store, BPF editor, Vector forwarding sink management, support bundles, browser E2E regression path, and browser-surface auth/RBAC/audit hardening. Admin user management, API token management UI, audit filtering/export, route/event permission checks, and role-aware controls are part of the current browser MVP surface.
 
 Token-authenticated Public API controllers are explicitly deferred unless pulled into the MVP. Keep that future bearer-token API separate from the existing Sensor Agent mTLS API in operations docs, tests, and route design.
 
-The current implementation does not yet include Vector forwarding sink management, PCAP search/retrieval UI, platform alerting, historical metrics, health baselines, public API documentation, offline update bundles, canary deployments, or multi-manager HA. Those features are specified under `.kiro/specs/` and summarized in [Implementation Roadmap](implementation-roadmap.md).
+The current implementation does not yet include forwarding telemetry from HealthReport, platform alerting, historical metrics, health baselines, public API documentation, offline update bundles, canary deployments, or multi-manager HA. Browser PCAP search/retrieval is implemented and should be validated with the full E2E profile after deployment. The remaining features are specified under `.kiro/specs/` and summarized in [Implementation Roadmap](implementation-roadmap.md).

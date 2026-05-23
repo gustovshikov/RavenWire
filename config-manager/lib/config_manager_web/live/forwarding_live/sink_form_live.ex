@@ -81,13 +81,13 @@ defmodule ConfigManagerWeb.ForwardingLive.SinkFormLive do
   end
 
   def handle_event("validate", %{"sink" => params}, socket) do
-    params = merge_defaults(params)
+    params = merge_current_params(socket, params)
     {:noreply, assign(socket, params: params, errors: validate_params(params, socket))}
   end
 
   def handle_event("save", %{"sink" => params}, socket) do
     with :ok <- AuthHelpers.authorize(socket, "forwarding:manage", "forwarding:save_sink") do
-      save_sink(socket, merge_defaults(params))
+      save_sink(socket, merge_current_params(socket, params))
     else
       {:error, :forbidden} -> {:noreply, put_flash(socket, :error, "Insufficient permissions.")}
     end
@@ -424,6 +424,12 @@ defmodule ConfigManagerWeb.ForwardingLive.SinkFormLive do
   defp merge_defaults(params) do
     sink_type = Map.get(params, "sink_type", "file")
     Map.merge(default_params(sink_type), params)
+  end
+
+  defp merge_current_params(socket, params) do
+    socket.assigns.params
+    |> Map.merge(params)
+    |> merge_defaults()
   end
 
   defp preserve_name(params, previous), do: Map.put(params, "name", Map.get(previous, "name", ""))

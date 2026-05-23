@@ -4,19 +4,36 @@ defmodule ConfigManager.Pcap do
   import Ecto.Query
 
   alias ConfigManager.Auth.ApiToken
-  alias ConfigManager.Pcap.{CarveRequest, CustodyEvent}
+  alias ConfigManager.Health.Registry, as: HealthRegistry
+  alias ConfigManager.Pcap.{CarveRequest, CustodyEvent, SearchParams}
   alias ConfigManager.{Audit, Repo, SensorAgentClient, SensorPod}
   alias Ecto.Multi
 
-  @max_range_seconds 24 * 60 * 60
   @retention_hours 72
 
   def submit_carve(params, actor, client \\ SensorAgentClient) do
     with {:ok, pod} <- fetch_pod(params),
-         {:ok, search_type, search_params} <- normalize_search(params),
-         {:ok, request} <- create_request(pod, search_type, search_params, actor) do
+         {:ok, %SearchParams{} = search} <- validate_search(params),
+         {:ok, request} <-
+           create_request(pod, search.search_type, request_search_params(search), actor) do
       log_search(request)
       dispatch_carve(request, client)
+    end
+  end
+
+  def submit_search(params, actor, client \\ SensorAgentClient) do
+    with {:ok, %SearchParams{} = search} <- validate_search(params),
+         {:ok, pods} <- resolve_target_pods(search.sensor_pod_ids) do
+      requests =
+        Enum.map(pods, fn pod ->
+          {:ok, request} =
+            create_request(pod, search.search_type, request_search_params(search), actor)
+
+          log_search(request)
+          dispatch_for_search(request, client)
+        end)
+
+      {:ok, requests}
     end
   end
 
@@ -69,32 +86,30 @@ defmodule ConfigManager.Pcap do
   end
 
   def list_requests(params \\ %{}) do
-    page = max(int_param(params, "page", 1), 1)
-    page_size = max(int_param(params, "page_size", 25), 1)
+    CarveRequest
+    |> request_filters(params)
+    |> paginate_requests(params)
+  end
 
-    query =
-      CarveRequest
-      |> maybe_filter(:status, param(params, "status"))
-      |> maybe_filter(:sensor_pod_id, param(params, "sensor_pod_id"))
-      |> maybe_filter(:search_type, param(params, "search_type"))
+  def list_requests_for_actor(actor, params \\ %{}) do
+    actor
+    |> scoped_request_query()
+    |> request_filters(params)
+    |> paginate_requests(params)
+  end
 
-    total_count = Repo.aggregate(query, :count, :id)
+  def active_request_count(actor) do
+    actor
+    |> scoped_request_query()
+    |> where([r], r.status not in ^CarveRequest.terminal_statuses())
+    |> Repo.aggregate(:count, :id)
+  end
 
-    entries =
-      query
-      |> order_by([r], desc: r.inserted_at)
-      |> limit(^page_size)
-      |> offset(^((page - 1) * page_size))
-      |> preload([:sensor_pod])
-      |> Repo.all()
-
-    %{
-      entries: entries,
-      page: page,
-      page_size: page_size,
-      total_count: total_count,
-      total_pages: total_pages(total_count, page_size)
-    }
+  def get_request_for_actor(id, actor) do
+    actor
+    |> scoped_request_query()
+    |> preload([:sensor_pod, :custody_events])
+    |> Repo.get(id)
   end
 
   def get_request(id) do
@@ -221,6 +236,21 @@ defmodule ConfigManager.Pcap do
     DateTime.compare(expires_at, DateTime.utc_now()) != :gt
   end
 
+  def sensor_options do
+    SensorPod
+    |> where([p], p.status == "enrolled")
+    |> order_by([p], asc: p.name)
+    |> Repo.all()
+    |> Enum.map(fn pod ->
+      %{
+        id: pod.id,
+        name: pod.name,
+        control_api_host: pod.control_api_host,
+        online: online?(pod)
+      }
+    end)
+  end
+
   defp fetch_pod(params) do
     case param(params, "pod_id") || param(params, "sensor_pod_id") do
       nil ->
@@ -234,21 +264,10 @@ defmodule ConfigManager.Pcap do
     end
   end
 
-  defp normalize_search(params) do
-    search_type = params |> param("search_type") |> infer_search_type(params)
-
-    cond do
-      search_type not in CarveRequest.search_types() ->
-        {:error, {:validation, %{search_type: ["is invalid"]}}}
-
-      true ->
-        params = normalize_param_map(params)
-        search_params = Map.drop(params, ["pod_id", "sensor_pod_id"])
-
-        case validate_search_params(search_type, search_params) do
-          :ok -> {:ok, search_type, search_params}
-          {:error, errors} -> {:error, {:validation, errors}}
-        end
+  defp validate_search(params) do
+    case SearchParams.validate(params) do
+      {:ok, search} -> {:ok, search}
+      {:error, errors} -> {:error, {:validation, errors}}
     end
   end
 
@@ -269,142 +288,53 @@ defmodule ConfigManager.Pcap do
     |> Repo.insert()
   end
 
-  defp validate_search_params("time_range", params) do
-    %{}
-    |> require_fields(params, ["start_time", "end_time"])
-    |> validate_time_range(params)
-    |> validation_result()
+  defp request_search_params(%SearchParams{} = search) do
+    Map.delete(search.search_params || %{}, "search_type")
   end
 
-  defp validate_search_params("community_id", params) do
-    %{}
-    |> require_fields(params, ["community_id"])
-    |> validate_community_id(params)
-    |> validate_time_range(params)
-    |> validation_result()
+  defp dispatch_for_search(%CarveRequest{} = request, client) do
+    case dispatch_carve(request, client) do
+      {:ok, updated} ->
+        updated
+
+      {:error, {_code, %CarveRequest{} = failed}} ->
+        failed
+
+      {:error, _reason} ->
+        request
+    end
   end
 
-  defp validate_search_params("five_tuple", params) do
-    %{}
-    |> require_fields(params, ["src_ip", "dst_ip", "src_port", "dst_port", "protocol"])
-    |> validate_ip(params, "src_ip")
-    |> validate_ip(params, "dst_ip")
-    |> validate_port(params, "src_port")
-    |> validate_port(params, "dst_port")
-    |> validate_time_range(params)
-    |> validation_result()
-  end
+  defp resolve_target_pods([]) do
+    pods =
+      SensorPod
+      |> where([p], p.status == "enrolled")
+      |> Repo.all()
+      |> Enum.filter(&online?/1)
 
-  defp validate_search_params("alert_id", params) do
-    %{}
-    |> require_one(params, ["alert_id", "sid"])
-    |> validate_time_range(params)
-    |> validation_result()
-  end
-
-  defp validate_search_params("zeek_uid", params) do
-    %{}
-    |> require_fields(params, ["zeek_uid"])
-    |> validate_time_range(params)
-    |> validation_result()
-  end
-
-  defp require_fields(errors, params, fields) do
-    Enum.reduce(fields, errors, fn field, acc ->
-      if present?(Map.get(params, field)), do: acc, else: add_error(acc, field, "is required")
-    end)
-  end
-
-  defp require_one(errors, params, fields) do
-    if Enum.any?(fields, &present?(Map.get(params, &1))) do
-      errors
+    if pods == [] do
+      {:error, {:validation, %{sensor_pod_ids: ["select at least one online sensor"]}}}
     else
-      add_error(errors, hd(fields), "one of #{Enum.join(fields, ", ")} is required")
+      {:ok, pods}
     end
   end
 
-  defp validate_community_id(errors, params) do
-    community_id = Map.get(params, "community_id")
+  defp resolve_target_pods(sensor_pod_ids) when is_list(sensor_pod_ids) do
+    pods =
+      SensorPod
+      |> where([p], p.id in ^sensor_pod_ids and p.status == "enrolled")
+      |> Repo.all()
 
-    if present?(community_id) and not Regex.match?(~r/^1:[A-Za-z0-9+\/_-]+=*$/, community_id) do
-      add_error(errors, "community_id", "has invalid format")
+    if length(pods) == length(Enum.uniq(sensor_pod_ids)) do
+      {:ok, pods}
     else
-      errors
+      {:error, {:validation, %{sensor_pod_ids: ["contains unknown or unenrolled sensor"]}}}
     end
   end
-
-  defp validate_ip(errors, params, field) do
-    value = Map.get(params, field)
-
-    if present?(value) do
-      case value |> to_charlist() |> :inet.parse_address() do
-        {:ok, _ip} -> errors
-        {:error, _reason} -> add_error(errors, field, "is invalid")
-      end
-    else
-      errors
-    end
-  end
-
-  defp validate_port(errors, params, field) do
-    value = int_value(Map.get(params, field))
-
-    if is_integer(value) and value in 0..65_535 do
-      errors
-    else
-      add_error(errors, field, "must be between 0 and 65535")
-    end
-  end
-
-  defp validate_time_range(errors, params) do
-    start_time = Map.get(params, "start_time")
-    end_time = Map.get(params, "end_time")
-
-    cond do
-      not present?(start_time) and not present?(end_time) ->
-        errors
-
-      not present?(start_time) or not present?(end_time) ->
-        errors
-        |> maybe_add_missing_time("start_time", start_time)
-        |> maybe_add_missing_time("end_time", end_time)
-
-      true ->
-        with {:ok, start_dt} <- parse_datetime(start_time),
-             {:ok, end_dt} <- parse_datetime(end_time) do
-          duration = DateTime.diff(end_dt, start_dt, :second)
-
-          cond do
-            duration <= 0 ->
-              add_error(errors, "end_time", "must be after start_time")
-
-            duration > @max_range_seconds ->
-              add_error(errors, "end_time", "range exceeds 24 hours")
-
-            true ->
-              errors
-          end
-        else
-          {:error, field} -> add_error(errors, field, "is invalid")
-        end
-    end
-  end
-
-  defp maybe_add_missing_time(errors, field, value) do
-    if present?(value), do: errors, else: add_error(errors, field, "is required")
-  end
-
-  defp validation_result(errors) when errors == %{}, do: :ok
-  defp validation_result(errors), do: {:error, errors}
 
   defp carve_payload(%CarveRequest{} = request) do
-    %{
-      request_id: request.id,
-      search_type: request.search_type,
-      params: request.search_params,
-      start_time: Map.get(request.search_params || %{}, "start_time"),
-      end_time: Map.get(request.search_params || %{}, "end_time")
-    }
+    %SearchParams{search_type: request.search_type, search_params: request.search_params || %{}}
+    |> SearchParams.to_carve_payload(request.id)
   end
 
   defp normalize_status_attrs("completed", attrs) do
@@ -593,6 +523,49 @@ defmodule ConfigManager.Pcap do
     })
   end
 
+  defp scoped_request_query(%{role: "platform-admin"}), do: CarveRequest
+  defp scoped_request_query(%ApiToken{}), do: CarveRequest
+
+  defp scoped_request_query(%{id: user_id}) do
+    where(CarveRequest, [r], r.user_id == ^user_id)
+  end
+
+  defp scoped_request_query(_actor), do: where(CarveRequest, [r], false)
+
+  defp request_filters(query, params) do
+    query
+    |> maybe_filter(:status, param(params, "status"))
+    |> maybe_filter(:sensor_pod_id, param(params, "sensor_pod_id"))
+    |> maybe_filter(:sensor_name, param(params, "sensor_name"))
+    |> maybe_filter(:search_type, param(params, "search_type"))
+  end
+
+  defp paginate_requests(query, params) do
+    page = max(int_param(params, "page", 1), 1)
+    page_size = max(int_param(params, "page_size", 25), 1)
+    total_count = Repo.aggregate(query, :count, :id)
+
+    entries =
+      query
+      |> order_by([r], desc: r.inserted_at)
+      |> limit(^page_size)
+      |> offset(^((page - 1) * page_size))
+      |> preload([:sensor_pod])
+      |> Repo.all()
+
+    %{
+      entries: entries,
+      page: page,
+      page_size: page_size,
+      total_count: total_count,
+      total_pages: total_pages(total_count, page_size)
+    }
+  end
+
+  defp online?(%SensorPod{} = pod) do
+    not is_nil(HealthRegistry.get_pod(pod.id)) or not is_nil(HealthRegistry.get_pod(pod.name))
+  end
+
   defp maybe_filter(query, _field, nil), do: query
   defp maybe_filter(query, _field, ""), do: query
 
@@ -646,18 +619,6 @@ defmodule ConfigManager.Pcap do
     Map.get(params, key) || Map.get(params, String.to_atom(key))
   end
 
-  defp infer_search_type(nil, params) do
-    cond do
-      present?(param(params, "community_id")) -> "community_id"
-      present?(param(params, "src_ip")) -> "five_tuple"
-      present?(param(params, "alert_id")) or present?(param(params, "sid")) -> "alert_id"
-      present?(param(params, "zeek_uid")) -> "zeek_uid"
-      true -> "time_range"
-    end
-  end
-
-  defp infer_search_type(search_type, _params), do: to_string(search_type)
-
   defp normalize_param_map(params) when is_map(params) do
     Map.new(params, fn {key, value} -> {to_string(key), normalize_value(value)} end)
   end
@@ -668,21 +629,6 @@ defmodule ConfigManager.Pcap do
   defp normalize_value(value) when is_map(value), do: normalize_param_map(value)
   defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
   defp normalize_value(value), do: value
-
-  defp add_error(errors, field, message),
-    do: Map.update(errors, field, [message], &[message | &1])
-
-  defp present?(nil), do: false
-  defp present?(""), do: false
-  defp present?(value) when is_binary(value), do: String.trim(value) != ""
-  defp present?(_value), do: true
-
-  defp parse_datetime(value) do
-    case parse_datetime_value(value) do
-      %DateTime{} = datetime -> {:ok, datetime}
-      nil -> {:error, "start_time"}
-    end
-  end
 
   defp parse_datetime_value(%DateTime{} = value), do: DateTime.truncate(value, :microsecond)
 
