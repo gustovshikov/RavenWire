@@ -2,7 +2,7 @@
 
 ## Overview
 
-This design adds a versioned, documented REST/JSON Public API for external automation. The API is served under `/api/v1`, authenticated by bearer API tokens from `auth-rbac-audit`, and documented through an OpenAPI 3.0 JSON document plus a local Swagger UI page at `/api/docs`.
+This design adds a versioned, documented REST/JSON Public API for external automation. The API is served under `/api/v1`, authenticated by bearer API tokens from `auth-rbac-audit`, and documented through an OpenAPI 3.0 JSON document plus a local no-CDN documentation page at `/api/docs`.
 
 The feature does not make LiveView events public API. Public API controllers delegate to the same context modules as the UI, use the same RBAC permission strings, and return consistent JSON envelopes.
 
@@ -12,7 +12,7 @@ The feature does not make LiveView events public API. Public API controllers del
 2. **OpenAPI generated from code-adjacent definitions**: Endpoint specs live beside controllers to avoid stale hand-written API docs.
 3. **Bearer token auth only**: Public API requests use API tokens, not browser sessions.
 4. **Same permissions as UI**: API token scopes are the canonical permissions from `auth-rbac-audit`.
-5. **Air-gap compatible docs**: Swagger UI assets are bundled locally and never loaded from a CDN.
+5. **Air-gap compatible docs**: The documentation UI is served locally and never loads assets from a CDN.
 6. **Document only implemented contexts**: The OpenAPI spec omits deferred endpoints until their backing context exists.
 
 ## Architecture
@@ -20,7 +20,7 @@ The feature does not make LiveView events public API. Public API controllers del
 ```mermaid
 flowchart LR
     Client[External Client]
-    Docs[Swagger UI /api/docs]
+    Docs[Local API docs /api/docs]
     Spec[OpenAPI JSON /api/v1/openapi.json]
     Router[Phoenix Router /api/v1]
     Auth[ApiTokenAuth + RBAC]
@@ -48,22 +48,26 @@ Public API examples and generated OpenAPI paths must use `/api/v1/...`. New unve
 ```text
 lib/config_manager_web/controllers/api/
 ├── open_api_controller.ex
-├── sensors_controller.ex
-├── pools_controller.ex
+├── enrollment_controller.ex
+├── pcap_controller.ex
 ├── deployments_controller.ex
+├── bundle_controller.ex
 ├── rules_controller.ex
 ├── rulesets_controller.ex
 ├── repositories_controller.ex
+├── users_controller.ex
+├── tokens_controller.ex
+├── not_found_controller.ex
 └── audit_controller.ex
+
+lib/config_manager_web/controllers/
+└── api_docs_controller.ex
 
 lib/config_manager_web/api/
 ├── spec.ex
 ├── schemas.ex
 ├── errors.ex
-├── pagination.ex
-└── rate_limiter.ex
-
-assets/vendor/swagger-ui/
+└── pagination.ex
 ```
 
 ## Components
@@ -74,9 +78,8 @@ Builds the OpenAPI 3.0 document from endpoint descriptors and reusable schema co
 
 ```elixir
 defmodule ConfigManagerWeb.Api.Spec do
-  def openapi() :: map()
-  def endpoint_specs() :: [map()]
-  def schema_components() :: map()
+  def spec() :: map()
+  def operations() :: [map()]
 end
 ```
 
@@ -94,24 +97,21 @@ Endpoint descriptors include:
 Defines reusable JSON schemas:
 
 ```text
-Sensor_Pod
-Sensor_Health
-Sensor_Pool
 Deployment
-Deployment_Result
+PCAP_Config
+PCAP_Request
+PCAP_Custody_Manifest
 Suricata_Rule
 Ruleset
 Rule_Repository
-BPF_Profile
-Forwarding_Sink
-PCAP_Carve_Request
-PCAP_Custody_Manifest
 Audit_Entry
+User
+API_Token
 Pagination_Meta
 Error_Response
 ```
 
-Forwarding and BPF schemas may exist as reusable components before endpoints exist, but the OpenAPI path list must omit non-functional routes.
+Sensor, pool, forwarding, and BPF schemas are added only when explicit Public API controllers exist. The OpenAPI path list must omit non-functional routes.
 
 ### `ConfigManagerWeb.Api.Errors`
 
@@ -141,12 +141,9 @@ Initial documented endpoints:
 | Method | Path | Permission |
 | --- | --- | --- |
 | GET | `/api/v1/openapi.json` | public by default |
-| GET | `/api/v1/sensors` | `sensors:view` |
-| GET | `/api/v1/sensors/:id` | `sensors:view` |
-| GET | `/api/v1/sensors/:id/health` | `sensors:view` |
-| GET | `/api/v1/pools` | `sensors:view` |
-| GET | `/api/v1/pools/:id` | `sensors:view` |
-| GET | `/api/v1/pools/:id/sensors` | `sensors:view` |
+| POST | `/api/v1/enrollments/:id/approve` | `enrollment:manage` |
+| POST | `/api/v1/enrollments/:id/deny` | `enrollment:manage` |
+| POST | `/api/v1/pcap-config` | `pcap:configure` |
 | GET | `/api/v1/deployments` | `sensors:view` |
 | GET | `/api/v1/deployments/:id` | `sensors:view` |
 | POST | `/api/v1/deployments` | `deployments:manage` |
@@ -158,13 +155,19 @@ Initial documented endpoints:
 | GET | `/api/v1/pcap/requests/:id/download` | `pcap:download` |
 | GET | `/api/v1/pcap/requests/:id/manifest` | `pcap:search` |
 | GET | `/api/v1/rules` | `sensors:view` |
-| GET | `/api/v1/rules/:id` | `sensors:view` |
 | GET | `/api/v1/rulesets` | `sensors:view` |
-| GET | `/api/v1/rulesets/:id` | `sensors:view` |
 | GET | `/api/v1/repositories` | `sensors:view` |
+| POST | `/api/v1/rules` | `rules:manage` |
+| POST | `/api/v1/rulesets` | `rules:manage` |
+| POST | `/api/v1/repositories` | `rules:manage` |
+| POST | `/api/v1/rules/deploy` | `rules:deploy` |
+| POST | `/api/v1/support-bundles` | `bundle:download` |
 | GET | `/api/v1/audit` | `audit:view` |
+| GET | `/api/v1/audit/export` | `audit:export` |
+| POST | `/api/v1/admin/users` | `users:manage` |
+| POST | `/api/v1/admin/api-tokens` | `tokens:manage` |
 
-Endpoint groups for forwarding and BPF are added only after their management contexts are implemented. Webhooks, GraphQL, gRPC, bulk operations, and API token rotation endpoints are deferred.
+Endpoint groups for sensors, pools, forwarding, and BPF are added only after explicit API controllers exist for those contexts. Webhooks, GraphQL, gRPC, bulk operations, and API token rotation endpoints are deferred.
 
 ## Response Format
 
@@ -205,7 +208,7 @@ Error responses also include `request_id` in the JSON body.
 
 ## Documentation UI
 
-`/api/docs` serves a LiveView or controller-rendered page that loads local Swagger UI assets and points to `/api/v1/openapi.json`.
+`/api/docs` serves a controller-rendered, no-CDN documentation page that loads `/api/v1/openapi.json`.
 
 Behavior:
 
@@ -216,7 +219,7 @@ Behavior:
 
 ## Audit Logging
 
-Every authenticated API request records an audit entry with:
+API controllers audit their domain mutations and permission denials through existing contexts and plugs. Authenticated Public API requests also record request-level audit entries with:
 
 - API token name and token ID.
 - actor type `api_token`.
@@ -261,5 +264,5 @@ For any Public API response under `/api/v1`, the response SHALL include `X-API-V
 - Router/OpenAPI consistency tests.
 - Controller tests for success, validation, not found, unauthorized, forbidden, download streaming, and rate-limited responses.
 - Property tests for permission coverage and error envelope safety.
-- Tests proving Swagger UI assets are local and no CDN references exist.
+- Tests proving the docs UI is local and no CDN references exist.
 - Tests proving `/api/v2/...` returns 404 until a v2 router exists.

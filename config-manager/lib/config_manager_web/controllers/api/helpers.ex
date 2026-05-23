@@ -5,6 +5,7 @@ defmodule ConfigManagerWeb.Api.Helpers do
   import Phoenix.Controller
 
   alias ConfigManager.Auth.ApiToken
+  alias ConfigManagerWeb.Api.Errors
   alias Ecto.Changeset
 
   def current_actor(conn) do
@@ -56,12 +57,9 @@ defmodule ConfigManagerWeb.Api.Helpers do
   end
 
   def api_error(conn, status, code, message, details \\ nil) do
-    error = %{code: code, message: message}
-    error = if is_nil(details), do: error, else: Map.put(error, :details, details)
-
     conn
     |> put_status(status)
-    |> json(%{error: error})
+    |> json(Errors.body(conn, code, message, details))
   end
 
   def changeset_error(conn, %Changeset{} = changeset) do

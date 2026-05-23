@@ -17,6 +17,9 @@ defmodule ConfigManager.Application do
       # Login attempt rate limiting
       ConfigManager.Auth.RateLimiter,
 
+      # Per-token Public API rate limiting
+      ConfigManagerWeb.Api.RateLimiter,
+
       # Periodic cleanup for expired browser sessions
       ConfigManager.Auth.SessionPruner,
 

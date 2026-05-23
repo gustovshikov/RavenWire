@@ -4,6 +4,7 @@ defmodule ConfigManagerWeb.Api.PcapController do
   import ConfigManagerWeb.Api.Helpers
 
   alias ConfigManager.{Audit, Pcap, Repo, SensorPod}
+  alias ConfigManagerWeb.Api.Errors
 
   def update_config(conn, %{"pod_id" => pod_id} = params) do
     case Repo.get(SensorPod, pod_id) do
@@ -110,29 +111,26 @@ defmodule ConfigManagerWeb.Api.PcapController do
       {:error, {:sensor_unreachable, request}} ->
         conn
         |> put_status(:service_unavailable)
-        |> json(%{
-          error: %{
-            code: "SENSOR_UNREACHABLE",
-            message: "Sensor pod has no reachable control API host"
-          },
-          data: Pcap.request_json(request)
-        })
+        |> json(
+          Errors.body(conn, "SENSOR_UNREACHABLE", "Sensor pod has no reachable control API host")
+          |> Map.put(:data, Pcap.request_json(request))
+        )
 
       {:error, {:validation_error, request}} ->
         conn
         |> put_status(:unprocessable_entity)
-        |> json(%{
-          error: %{code: "SENSOR_VALIDATION_FAILED", message: request.error_reason},
-          data: Pcap.request_json(request)
-        })
+        |> json(
+          Errors.body(conn, "SENSOR_VALIDATION_FAILED", request.error_reason)
+          |> Map.put(:data, Pcap.request_json(request))
+        )
 
       {:error, {_reason, request}} ->
         conn
         |> put_status(:bad_gateway)
-        |> json(%{
-          error: %{code: "PCAP_CARVE_FAILED", message: request.error_reason},
-          data: Pcap.request_json(request)
-        })
+        |> json(
+          Errors.body(conn, "PCAP_CARVE_FAILED", request.error_reason)
+          |> Map.put(:data, Pcap.request_json(request))
+        )
 
       {:error, %Ecto.Changeset{} = changeset} ->
         changeset_error(conn, changeset)

@@ -12,10 +12,19 @@ defmodule ConfigManagerWeb.Router do
 
   pipeline :api do
     plug(:accepts, ["json"])
+    plug(ConfigManagerWeb.Plugs.ApiVersionHeader)
+  end
+
+  pipeline :api_docs_json do
+    plug(:accepts, ["json"])
+    plug(:fetch_session)
+    plug(ConfigManagerWeb.Plugs.ApiVersionHeader)
   end
 
   pipeline :api_token_auth do
     plug(ConfigManagerWeb.Plugs.ApiTokenAuth)
+    plug(ConfigManagerWeb.Plugs.ApiRequestAudit)
+    plug(ConfigManagerWeb.Plugs.ApiRateLimit)
   end
 
   pipeline :require_auth do
@@ -97,7 +106,14 @@ defmodule ConfigManagerWeb.Router do
   # mTLS-authenticated internal API (Sensor_Agent → Config_Manager)
   pipeline :mtls_api do
     plug(:accepts, ["json"])
+    plug(ConfigManagerWeb.Plugs.ApiVersionHeader)
     plug(ConfigManagerWeb.Plugs.MTLSAuth)
+  end
+
+  scope "/", ConfigManagerWeb do
+    pipe_through(:browser)
+
+    get("/api/docs", ApiDocsController, :index)
   end
 
   scope "/", ConfigManagerWeb do
@@ -284,6 +300,12 @@ defmodule ConfigManagerWeb.Router do
   end
 
   scope "/api/v1", ConfigManagerWeb do
+    pipe_through(:api_docs_json)
+
+    get("/openapi.json", Api.OpenApiController, :show)
+  end
+
+  scope "/api/v1", ConfigManagerWeb do
     pipe_through([:api, :api_token_auth, :enrollment_manage])
 
     post("/enrollments/:id/approve", Api.EnrollmentController, :approve)
@@ -390,5 +412,11 @@ defmodule ConfigManagerWeb.Router do
     post("/enrollment/:id/approve", EnrollmentController, :approve)
     post("/enrollment/:id/deny", EnrollmentController, :deny)
     get("/crl", CRLController, :show)
+  end
+
+  scope "/api", ConfigManagerWeb do
+    pipe_through(:api)
+
+    match(:*, "/*path", Api.NotFoundController, :not_found)
   end
 end

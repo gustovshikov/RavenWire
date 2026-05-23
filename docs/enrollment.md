@@ -58,7 +58,7 @@ Config Manager currently exposes these enrollment and certificate-adjacent route
 | `POST /api/v1/enrollment/:id/deny` | mTLS manager-side action | Deny a pending enrollment. |
 | `GET /api/v1/crl` | Sensor Agent | Fetch certificate revocation list. |
 
-The Public API specs reserve bearer-token automation routes under `/api/v1`, but production auth/RBAC and token scopes are not implemented yet. The `auth-rbac-audit` spec is the first implementation dependency before broadening the public API.
+Bearer-token Public API enrollment approval and denial routes are also available under `/api/v1/enrollments/:id/...` for API tokens with `enrollment:manage`. Operator-facing Public API documentation is served from `/api/docs`.
 
 ## Sensor Bootstrap
 

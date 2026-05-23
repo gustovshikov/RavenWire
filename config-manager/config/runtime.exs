@@ -11,6 +11,10 @@ sensor_cert_validity_hours = String.to_integer(System.get_env("SENSOR_CERT_VALID
 tls_cert = System.get_env("SENSOR_TLS_CERT")
 tls_key = System.get_env("SENSOR_TLS_KEY")
 
+api_token_rate_limit_per_minute =
+  System.get_env("RAVENWIRE_API_TOKEN_RATE_LIMIT_PER_MINUTE", "100")
+  |> String.to_integer()
+
 secret_key_base =
   if config_env() == :prod do
     System.get_env("SECRET_KEY_BASE") ||
@@ -29,7 +33,10 @@ if config_env() == :prod do
 end
 
 config :config_manager,
-  sensor_cert_validity_hours: sensor_cert_validity_hours
+  sensor_cert_validity_hours: sensor_cert_validity_hours,
+  api_docs_require_auth:
+    System.get_env("RAVENWIRE_API_DOCS_REQUIRE_AUTH") in ["1", "true", "yes"],
+  api_token_rate_limit_per_minute: api_token_rate_limit_per_minute
 
 if config_env() == :prod do
   config :config_manager,

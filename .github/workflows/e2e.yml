@@ -31,7 +31,7 @@ jobs:
       E2E_SSH_USER: ${{ vars.E2E_SSH_USER || 'eric' }}
       E2E_SSH_HOST: ${{ vars.E2E_SSH_HOST || '172.16.10.38' }}
       E2E_PROFILE: ${{ inputs.profile || 'smoke' }}
-      E2E_SENSOR_NAME: ${{ vars.E2E_SENSOR_NAME || 'ravenwire-test' }}
+      E2E_SENSOR_NAME: ${{ vars.E2E_SENSOR_NAME || 'sensor-01' }}
       E2E_ALLOW_DB_CLEANUP: ${{ vars.E2E_ALLOW_DB_CLEANUP || 'false' }}
 
     steps:

@@ -140,7 +140,18 @@ npm run test:smoke
 npm run test:full
 ```
 
-Set `E2E_BASE_URL`, `E2E_ADMIN_USER`, and `E2E_ADMIN_PASSWORD` before running authenticated browser tests. The E2E suite performs HTTP/static asset preflight, SSH service and built-in sensor health checks, LiveView connectivity checks, pool workflows, forwarding workflows, BPF editor workflows, ruleset/repository workflows, and support/deployment page checks.
+Set `E2E_BASE_URL`, `E2E_ADMIN_USER`, and `E2E_ADMIN_PASSWORD` before running authenticated browser tests. The E2E suite performs HTTP/static asset preflight, SSH service and built-in sensor health checks, LiveView connectivity checks, pool workflows, forwarding workflows, PCAP search/retrieval workflows, BPF editor workflows, ruleset/repository workflows, and support/deployment page checks.
+
+## Production Pilot Checklist
+
+The checked-in Quadlet units are suitable for development and the shared test server. Before using the single-site pilot outside a lab:
+
+- Replace bundled defaults with explicit `SECRET_KEY_BASE`, `RAVENWIRE_ADMIN_USER`, `RAVENWIRE_ADMIN_PASSWORD`, and `RAVENWIRE_SINK_ENCRYPTION_KEY` values.
+- Put the manager behind the intended TLS/proxy/firewall boundary and expose only the required browser/API and sensor enrollment/control paths.
+- Back up `/data/config_manager` and `/data/ca`, then perform a restore drill before relying on the deployment.
+- Size `/sensor/pcap` for expected retention, configure `MIN_STORAGE_GB`, `PCAP_RETENTION`, and `PCAP_RETENTION_PRUNE_INTERVAL`, and verify `sensorctl cleanup`.
+- Validate every upgrade or redeploy with `sensorctl test`, `npm run preflight`, `npm run test:full`, and a post-run cleanup audit for lingering `e2e-` data.
+- Decide the release/license metadata before distributing the project outside a private/internal context.
 
 ## Fresh Reset
 
@@ -153,8 +164,8 @@ sensorctl start
 
 ## Current Boundaries
 
-The professional MVP target includes the implemented fleet pool management, sensor detail pages, deployment/drift views, rule store, BPF editor, Vector forwarding sink management, support bundles, browser E2E regression path, and browser-surface auth/RBAC/audit hardening. Admin user management, API token management UI, audit filtering/export, route/event permission checks, and role-aware controls are part of the current browser MVP surface.
+The single-site pilot MVP target includes the implemented fleet pool management, sensor detail pages, deployment/drift views, rule store, BPF editor, Vector forwarding sink management, PCAP browser search/retrieval, support bundles, browser E2E regression path, and browser-surface auth/RBAC/audit hardening. Admin user management, API token management UI, audit filtering/export, route/event permission checks, and role-aware controls are part of the current browser MVP surface.
 
-Token-authenticated Public API controllers are explicitly deferred unless pulled into the MVP. Keep that future bearer-token API separate from the existing Sensor Agent mTLS API in operations docs, tests, and route design.
+Bearer-token `/api/v1` Public API controllers are implemented for current workflows and are separate from the Sensor Agent mTLS API. The implemented Public API is documented at `/api/docs`, with raw OpenAPI JSON at `/api/v1/openapi.json`. API tokens are rate-limited by token ID, defaulting to 100 requests per minute, and authenticated API requests write request-level audit entries.
 
-The current implementation does not yet include forwarding telemetry from HealthReport, platform alerting, historical metrics, health baselines, public API documentation, offline update bundles, canary deployments, or multi-manager HA. Browser PCAP search/retrieval is implemented and should be validated with the full E2E profile after deployment. The remaining features are specified under `.kiro/specs/` and summarized in [Implementation Roadmap](implementation-roadmap.md).
+The current implementation does not yet include forwarding telemetry from HealthReport, platform alerting, historical metrics, health baselines, offline update bundles, canary deployments, or multi-manager HA. The remaining features are specified under `.kiro/specs/` and summarized in [Implementation Roadmap](implementation-roadmap.md).

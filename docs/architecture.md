@@ -2,7 +2,7 @@
 
 RavenWire is organized around one deployable model: Podman containers supervised by systemd through Quadlet.
 
-The current codebase is a professional MVP candidate. It can install a local dual-pod stack, enroll the first sensor, authenticate manager users, collect health, show fleet and sensor detail views, manage pools, track desired-state deployments and drift, manage rule, BPF, and Vector forwarding configuration, proxy support bundles, and run alert-driven packet capture. The specs under `.kiro/specs/` define both the remaining MVP hardening work and the post-MVP product roadmap.
+The current codebase is a single-site production pilot MVP candidate. It can install a local dual-pod stack, enroll the first sensor, authenticate manager users, collect health, show fleet and sensor detail views, manage pools, track desired-state deployments and drift, manage rule, BPF, and Vector forwarding configuration, proxy support bundles, run alert-driven packet capture, expose browser PCAP search/retrieval, and serve implemented bearer-token `/api/v1` controllers. The specs under `.kiro/specs/` define both the remaining production-pilot hardening work and the post-MVP product roadmap.
 
 The Config Manager web UI follows the Orbital Plasma design system documented in [Design](design.md).
 
@@ -46,6 +46,7 @@ Manager-side responsibilities currently include:
 - Sensor registry and health registry.
 - Health gRPC endpoint.
 - Sensor detail, pool management, deployment/drift, rule store, BPF editor, forwarding, and audit views.
+- Bearer-token `/api/v1` controllers for current PCAP, rules, deployments, support bundle, audit, user, token, repository, and enrollment workflows.
 - Sensor support bundle proxying.
 
 ## Packet Path
@@ -103,17 +104,29 @@ Config Manager browser routes:
 | `/admin/users` | Local user management. |
 | `/admin/roles` | Role and permission reference. |
 | `/admin/api-tokens` | Scoped API token management. |
+| `/api/docs` | Local Public API documentation UI backed by `/api/v1/openapi.json`. |
 
 Config Manager API routes:
 
 | Route | Protection | Purpose |
 |---|---|---|
+| `GET /api/v1/openapi.json` | Public by default; browser auth optional through hardened docs config | Raw OpenAPI 3.0 document for bearer-token Public API routes. |
+| `POST /api/v1/enrollments/:id/approve` | Bearer token, `enrollment:manage` | Approve enrollment through the Public API. |
+| `POST /api/v1/enrollments/:id/deny` | Bearer token, `enrollment:manage` | Deny enrollment through the Public API. |
+| `/api/v1/pcap/...` | Bearer token, `pcap:configure/search/download` | PCAP config, carve request, history, manifest, and download API. |
+| `/api/v1/rules...`, `/api/v1/rulesets`, `/api/v1/repositories` | Bearer token, `sensors:view`, `rules:manage`, or `rules:deploy` | Rule store, ruleset, repository, and deployment entry points. |
+| `/api/v1/deployments...` | Bearer token, `sensors:view` or `deployments:manage` | Deployment list/detail/create/cancel/rollback API. |
+| `POST /api/v1/support-bundles` | Bearer token, `bundle:download` | Request a support bundle through the Public API. |
+| `/api/v1/audit...` | Bearer token, `audit:view` or `audit:export` | Audit list and export API. |
+| `/api/v1/admin/users`, `/api/v1/admin/api-tokens` | Bearer token, `users:manage` or `tokens:manage` | Admin user and API token creation API. |
 | `POST /api/v1/enroll` | Bootstrap token | Sensor enrollment request. |
 | `GET /api/v1/enroll/status` | Bootstrap token/pod lookup | Enrollment polling. |
 | `GET /api/v1/health/:pod_id` | mTLS | Sensor health lookup. |
 | `POST /api/v1/enrollment/:id/approve` | mTLS | Approve enrollment. |
 | `POST /api/v1/enrollment/:id/deny` | mTLS | Deny enrollment. |
 | `GET /api/v1/crl` | mTLS | Certificate revocation list. |
+
+Bearer-token Public API routes include `X-API-Version: v1`, request IDs on JSON error responses, per-token rate limiting by API token ID with a default of 100 requests per minute, and request-level audit entries that avoid logging raw bearer tokens or request bodies.
 
 Sensor Agent mTLS control routes:
 
@@ -141,6 +154,6 @@ Sensor-internal routes:
 
 ## Forward Architecture
 
-Implementation should follow the spec order in `.kiro/specs/README.md`. The professional MVP release gate is now the implemented sensor stack plus authenticated manager workflows for fleet health, sensor detail, pools, deployments, rules, BPF, forwarding, support bundles, and audit visibility. Forwarding telemetry remains placeholder-only until HealthReport includes sink runtime metrics.
+Implementation should follow the spec order in `.kiro/specs/README.md`. The single-site pilot MVP release gate is now the implemented sensor stack plus authenticated manager workflows for fleet health, sensor detail, pools, deployments, rules, BPF, forwarding, browser PCAP search/retrieval, support bundles, audit visibility, and current bearer-token API controllers. Forwarding telemetry remains placeholder-only until HealthReport includes sink runtime metrics.
 
 New public automation endpoints should use `/api/v1`. Internal Sensor Agent routes can stay separate, but public docs must distinguish bearer-token Public API routes from mTLS/internal control routes.

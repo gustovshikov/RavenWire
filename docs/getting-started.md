@@ -2,7 +2,7 @@
 
 RavenWire has one supported operating path: Podman containers managed by systemd Quadlet and operated with `sensorctl`.
 
-The current project state is a professional MVP candidate: local install, automatic first-run enrollment, authenticated manager access, health reporting, sensor detail pages, pool management, deployment/drift views, rule and BPF management, Vector forwarding sink management, support bundles, browser E2E coverage, alert-driven PCAP plumbing, and browser PCAP search/retrieval. Remaining MVP hardening is tracked in [Implementation Roadmap](implementation-roadmap.md); forwarding telemetry, alerting, historical observability, public API docs, and HA remain roadmap work under `.kiro/specs/`.
+The current project state is a single-site production pilot MVP candidate: local install, automatic first-run enrollment, authenticated manager access, health reporting, sensor detail pages, pool management, deployment/drift views, rule and BPF management, Vector forwarding sink management, support bundles, browser E2E coverage, alert-driven PCAP plumbing, browser PCAP search/retrieval, implemented bearer-token `/api/v1` controllers, local OpenAPI docs at `/api/docs`, per-token API rate limiting, and request-level API audit entries. Remaining production-pilot hardening is tracked in [Implementation Roadmap](implementation-roadmap.md); forwarding telemetry, alerting, historical observability, and HA remain roadmap work under `.kiro/specs/`.
 
 ## Prerequisites
 
@@ -39,6 +39,8 @@ This builds the RavenWire images with rootful Podman, prepares host directories 
 If `--capture-iface` is omitted, `sensorctl` checks `CAPTURE_IFACE` and then tries the first up, non-loopback interface. Pass the interface explicitly for repeatable deployments.
 
 Install also seeds a low-noise Suricata starter rule so the detection engine is active on first boot. Replace or extend `/etc/sensor/suricata/rules/suricata.rules` through rule deployment before using the sensor for real monitoring.
+
+For production-pilot use, replace bundled development defaults before relying on the deployment. Provide explicit `SECRET_KEY_BASE`, `RAVENWIRE_ADMIN_USER`, `RAVENWIRE_ADMIN_PASSWORD`, and `RAVENWIRE_SINK_ENCRYPTION_KEY` values, then document backup and restore for `/data/config_manager` and `/data/ca`.
 
 ## Start
 

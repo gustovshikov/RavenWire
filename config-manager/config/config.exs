@@ -2,7 +2,9 @@ import Config
 
 config :config_manager,
   ecto_repos: [ConfigManager.Repo],
-  secure_session_cookie: true
+  secure_session_cookie: true,
+  api_docs_require_auth: false,
+  api_token_rate_limit_per_minute: 100
 
 config :config_manager, ConfigManager.Repo,
   database: System.get_env("SENSOR_DB_PATH", "/data/config_manager.db"),

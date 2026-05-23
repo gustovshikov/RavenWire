@@ -5,6 +5,7 @@ defmodule ConfigManagerWeb.Plugs.ApiTokenAuth do
   import Phoenix.Controller
 
   alias ConfigManager.Auth
+  alias ConfigManagerWeb.Api.Errors
 
   def init(opts), do: opts
 
@@ -42,7 +43,7 @@ defmodule ConfigManagerWeb.Plugs.ApiTokenAuth do
   defp unauthorized(conn) do
     conn
     |> put_status(:unauthorized)
-    |> json(%{error: %{code: "UNAUTHORIZED", message: "Invalid or missing bearer token"}})
+    |> json(Errors.body(conn, "UNAUTHORIZED", "Invalid or missing bearer token"))
     |> halt()
   end
 end

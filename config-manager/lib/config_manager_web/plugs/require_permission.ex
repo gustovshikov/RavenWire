@@ -6,6 +6,7 @@ defmodule ConfigManagerWeb.Plugs.RequirePermission do
 
   alias ConfigManager.Audit
   alias ConfigManager.Auth.{ApiToken, Policy}
+  alias ConfigManagerWeb.Api.Errors
 
   def init(permission), do: permission
 
@@ -51,7 +52,7 @@ defmodule ConfigManagerWeb.Plugs.RequirePermission do
     if api_request?(conn) do
       conn
       |> put_status(:forbidden)
-      |> json(%{error: %{code: "FORBIDDEN", message: "Insufficient permissions"}})
+      |> json(Errors.body(conn, "FORBIDDEN", "Insufficient permissions"))
       |> halt()
     else
       conn

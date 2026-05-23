@@ -4,7 +4,7 @@
 
 The RavenWire Config Manager exposes a web UI built with Phoenix LiveView, but it does not currently provide a documented, versioned REST API for external automation. Operators who want to integrate the Config Manager with external tools (Splunk workflow actions, CI/CD pipelines, SOAR platforms, custom scripts) must reverse-engineer the LiveView event handlers or use the internal Sensor Agent Client API, neither of which is stable or documented.
 
-This feature adds public API documentation generated from the same Phoenix backend that serves the UI. An OpenAPI 3.0 specification is auto-generated from the existing API controllers and context modules, and interactive documentation is served at `/api/docs` using Swagger UI or a similar tool. The API is versioned under a `/api/v1/` prefix, and authentication uses the existing API token system from the auth-rbac-audit spec.
+This feature adds public API documentation generated from the same Phoenix backend that serves the UI. An OpenAPI 3.0 specification is generated from the existing API controllers and context modules, and interactive documentation is served at `/api/docs` using a local no-CDN docs UI. The API is versioned under a `/api/v1/` prefix, and authentication uses the existing API token system from the auth-rbac-audit spec.
 
 The API surface mirrors the operations available in the UI where stable backend contexts already exist: sensor management, pool management, deployment operations, rule store management, forwarding configuration, BPF profile management, and audit log queries. The API does not introduce new capabilities beyond what the UI provides; endpoints for feature areas that are not implemented yet are deferred until those contexts exist.
 
@@ -13,7 +13,7 @@ The API surface mirrors the operations available in the UI where stable backend 
 - **Config_Manager**: The Phoenix/LiveView web application that manages the RavenWire sensor fleet.
 - **Public_API**: The versioned REST API exposed by the Config_Manager for external automation and integration, served under the `/api/v1/` prefix.
 - **OpenAPI_Spec**: An OpenAPI 3.0 specification document (JSON) that describes the Public_API's endpoints, request/response schemas, authentication requirements, and error formats.
-- **API_Docs_Page**: An interactive API documentation page served at `/api/docs` that renders the OpenAPI_Spec using Swagger UI or a similar tool, allowing operators to explore and test API endpoints.
+- **API_Docs_Page**: An interactive API documentation page served at `/api/docs` that renders the OpenAPI_Spec using a local no-CDN UI, allowing operators to explore and test API endpoints.
 - **API_Version**: The version prefix for the Public_API (currently `v1`). Used to support future breaking changes without disrupting existing integrations.
 - **API_Token**: A bearer token with scoped permissions and optional expiry, from the auth-rbac-audit spec. Used to authenticate Public_API requests.
 - **API_Controller**: A Phoenix controller module that handles REST API requests, delegates to context modules, and returns JSON responses.
@@ -31,9 +31,9 @@ The API surface mirrors the operations available in the UI where stable backend 
 
 1. THE Config_Manager SHALL generate an OpenAPI 3.0 specification document describing all Public_API endpoints.
 2. THE OpenAPI_Spec SHALL be served at `/api/v1/openapi.json` as a JSON document accessible without authentication, unless an application configuration setting requires authentication for documentation in hardened deployments.
-3. THE OpenAPI_Spec SHALL include: API title ("RavenWire Config Manager API"), version (`v1`), server URL, authentication scheme (Bearer token), and contact information.
+3. THE OpenAPI_Spec SHALL include: API title ("RavenWire Config Manager Public API"), version, server URL, authentication scheme (Bearer token), and contact information.
 4. THE OpenAPI_Spec SHALL describe each API endpoint with: HTTP method, path, summary, description, request parameters, request body schema (where applicable), response schemas for success and error cases, required permissions, and example request/response pairs.
-5. THE OpenAPI_Spec SHALL define reusable schema components for common data types: Sensor_Pod, Sensor_Pool, Deployment, Suricata_Rule, Ruleset, BPF_Profile, Forwarding_Sink, Audit_Entry, and pagination metadata.
+5. THE OpenAPI_Spec SHALL define reusable schema components for implemented API data types: Deployment, PCAP request/config/manifest, Suricata_Rule, Ruleset, Rule_Repository, Audit_Entry, User, API_Token, error envelopes, and pagination metadata.
 6. THE OpenAPI_Spec SHALL be generated from annotations or schema definitions co-located with the API controller modules, so that the spec stays in sync with the implementation.
 
 ### Requirement 2: Interactive API Documentation
@@ -42,12 +42,12 @@ The API surface mirrors the operations available in the UI where stable backend 
 
 #### Acceptance Criteria
 
-1. THE Config_Manager SHALL serve an interactive API documentation page at `/api/docs` using Swagger UI or a functionally equivalent tool.
-2. THE API_Docs_Page SHALL render the OpenAPI_Spec with a navigable endpoint list, request/response schema display, and a "Try it out" feature for making test requests.
-3. THE API_Docs_Page SHALL support entering a Bearer token for authenticated requests via the Swagger UI authorization dialog.
+1. THE Config_Manager SHALL serve an interactive API documentation page at `/api/docs` using a local no-CDN UI.
+2. THE API_Docs_Page SHALL render the OpenAPI_Spec with a navigable endpoint list, request/response schema display, and a "Try it out" feature or equivalent local request runner for making test requests.
+3. THE API_Docs_Page SHALL support entering a Bearer token for authenticated "Try it out" requests.
 4. THE API_Docs_Page SHALL be accessible without authentication for documentation browsing, but "Try it out" requests SHALL require a valid API_Token.
 5. THE API_Docs_Page SHALL display the API version prominently and link to the raw OpenAPI_Spec JSON.
-6. THE Config_Manager SHALL serve the Swagger UI assets from the application's static assets, not from an external CDN, to support air-gapped deployments.
+6. THE Config_Manager SHALL serve the documentation UI from the application itself, not from an external CDN, to support air-gapped deployments.
 
 ### Requirement 3: API Versioning
 

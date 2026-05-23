@@ -48,25 +48,27 @@ Public API routes are versioned under `/api/v1`. New public automation endpoints
 3. `deployment-tracking` — desired-state snapshots, deployments, rollback, and drift.
 4. `rule-store-management`, `bpf-filter-editor`, and `vector-forwarding-mgmt` — configurable content and forwarding state.
 5. `e2e-browser-test-suite` — real-browser regression coverage against the deployed test server before expanding additional browser workflows.
-6. `pcap-search-retrieval` — first post-MVP operator investigation workflow; backend PCAP request/custody/API plumbing and browser search/retrieval are implemented locally, pending test-server E2E verification.
-7. `platform-alert-center`, `historical-metrics`, `health-baselines`, and `live-data-flow-viz` — platform observability workflows after PCAP retrieval.
-8. `canary-deploys`, `detection-content-lifecycle`, `offline-update-bundle`, `public-api-docs`, and `multi-manager-ha` — advanced rollout, air-gap, integration, and production operations.
+6. `pcap-search-retrieval` — operator investigation workflow implemented and full-profile E2E verified against the test server.
+7. `public-api-docs` — implemented for the current bearer-token `/api/v1` controller surface: OpenAPI JSON, local docs UI, version headers, docs auth config, request IDs on Public API errors, per-token rate limiting, request-level API audit entries, and route/spec consistency tests.
+8. `platform-alert-center`, `historical-metrics`, `health-baselines`, and `live-data-flow-viz` — platform observability workflows after API documentation hardening.
+9. `canary-deploys`, `detection-content-lifecycle`, `offline-update-bundle`, and `multi-manager-ha` — advanced rollout, air-gap, content lifecycle, and production operations.
 
 The existing `network-sensor-stack` and `sensor-stack-production-hardening` specs define lower-level Sensor Agent and capture-plane behavior. UI and management-plane specs should reference those contracts rather than redefining capture semantics.
 
-## Professional MVP Gate
+## Single-site Production Pilot MVP Gate
 
-The MVP release target is a professional sensor/manager product slice, not only a running capture stack. The MVP includes the completed lower-level sensor stack plus authenticated manager workflows for dashboard health, sensor detail, pool management, desired-state deployments and drift, rule store management, BPF profile editing, Vector forwarding sink management, support bundles, audit visibility, and real-browser E2E coverage.
+The MVP release target is a single-site production pilot product slice, not only a running capture stack. It is intended for one manager/sensor deployment operated by a trusted user. The MVP includes the completed lower-level sensor stack plus authenticated manager workflows for dashboard health, sensor detail, pool management, desired-state deployments and drift, rule store management, BPF profile editing, Vector forwarding sink management, browser PCAP search/retrieval, support bundles, audit visibility, implemented bearer-token `/api/v1` controllers, and real-browser E2E coverage.
 
-Before treating the MVP as release-ready:
+Before treating the pilot MVP as release-ready:
 
 - Keep the MVP hardening subset of `auth-rbac-audit` covered: browser route/event permission checks, role-aware UI visibility, admin user/token management, audit filters/pagination/detail/export, and audit coverage for state-changing workflows are implemented for the browser MVP surface.
-- Defer token-authenticated Public API controllers explicitly unless they are pulled into the MVP; do not blur those future bearer-token APIs with the existing Sensor Agent mTLS API.
+- Treat implemented bearer-token Public API controllers and local OpenAPI docs as current surface. Keep adding focused consistency tests whenever new API routes are added.
 - Keep `sensorctl test` and the relevant browser E2E profile passing against the configured Test_Server.
 - Add or update E2E coverage for every completed browser-visible workflow.
 - Document any feature that is intentionally deferred in its owning spec rather than leaving it implied.
+- For production-pilot installs, require explicit operator-provided secrets and settings instead of the bundled Quadlet development defaults.
 
-Post-MVP roadmap work includes forwarding telemetry from HealthReport, PCAP browser search/retrieval test-server verification, platform alerts, historical metrics, health baselines, live data-flow visualization, canary deploys, detection-content lifecycle, offline update bundles, public API docs, and multi-manager HA. PCAP backend request/custody/API plumbing and browser workflow are implemented locally; the remaining gap is full-profile real-browser validation against the deployed test server.
+Post-MVP roadmap work includes forwarding telemetry from HealthReport, platform alerts, historical metrics, health baselines, live data-flow visualization, canary deploys, detection-content lifecycle, offline update bundles, and multi-manager HA.
 
 ## Documentation Rules
 

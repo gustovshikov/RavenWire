@@ -2,11 +2,11 @@
 
 ## Overview
 
-PCAP search/retrieval is the next post-MVP feature. The backend foundation is
-partially implemented: the carve request and custody schemas, migration, context,
-API controller, and SensorAgentClient PCAP calls exist. The remaining work is to
-finish the reusable validation/calculation modules, adapt the context for browser
-search workflows, add status polling, and ship the operator LiveView screens.
+PCAP search/retrieval is implemented for the single-site pilot MVP. The carve
+request and custody schemas, migration, context, API controller, SensorAgentClient
+PCAP calls, browser search/history/detail/manifest/download workflow, and
+full-profile test-server E2E coverage exist. Remaining unchecked items are
+targeted hardening tests, not blockers for the validated pilot workflow.
 
 ## Tasks
 
@@ -61,16 +61,16 @@ search workflows, add status polling, and ship the operator LiveView screens.
   - [x] Build request history, request detail, and manifest pages.
   - [x] Enforce `pcap:search` for pages and `pcap:download` for download.
 
-- [ ] 8. Add browser and E2E coverage
+- [x] 8. Add browser and E2E coverage
   - [x] Add route guard tests for the new PCAP browser routes.
   - [x] Add LiveView/controller route tests for search rendering, history/detail/manifest rendering, and RBAC.
   - [x] Add full-profile Playwright coverage against the test server for PCAP search/history/detail/manifest/download behavior.
-  - [ ] Run the new full-profile Playwright coverage against the deployed test server.
-  - [ ] Verify no lingering `e2e-` PCAP records remain after E2E runs.
+  - [x] Run the new full-profile Playwright coverage against the deployed test server.
+  - [x] Verify no lingering `e2e-` PCAP records remain after E2E runs.
 
-- [ ] 9. Release gate
+- [x] 9. Release gate
   - [x] Run focused PCAP unit/LiveView/API tests.
   - [x] Run full Config Manager test suite locally.
-  - [ ] Run `sensorctl test` if Sensor Agent or shared PCAP protocol code changes.
-  - [ ] Deploy to the test server and run the full E2E profile.
-  - [ ] Update operator docs once the browser workflow is verified on the test server.
+  - [x] Run `sensorctl test` if Sensor Agent or shared PCAP protocol code changes.
+  - [x] Deploy to the test server and run the full E2E profile.
+  - [x] Update operator docs once the browser workflow is verified on the test server.

@@ -56,7 +56,7 @@ Username: RavenWire
 Password: RavenWire2026!
 ```
 
-Override these before production-like use by setting `RAVENWIRE_ADMIN_USER` and `RAVENWIRE_ADMIN_PASSWORD` for the Config Manager service. If no password is configured outside the bundled Quadlet path, RavenWire generates and prints a one-time bootstrap password at first startup.
+Override these before production-pilot use by setting `RAVENWIRE_ADMIN_USER` and `RAVENWIRE_ADMIN_PASSWORD` for the Config Manager service. Also provide a real `SECRET_KEY_BASE` and `RAVENWIRE_SINK_ENCRYPTION_KEY` before configuring forwarding sinks with secrets. If no password is configured outside the bundled Quadlet path, RavenWire generates and prints a one-time bootstrap password at first startup.
 
 For a capture host with a known span interface:
 
@@ -147,7 +147,7 @@ The goal is that local testing, production-ish testing, and deployment all exerc
 
 ## Roadmap Boundaries
 
-The professional MVP is the smallest RavenWire release that is credible to share with operators: a deployable sensor/manager stack with authenticated manager access, sensor enrollment and health, sensor detail pages, pools, desired-state deployment tracking, rule and BPF management, Vector forwarding sink management, support bundles, alert-driven PCAP plumbing plus browser PCAP search/retrieval, and real-browser regression coverage against a deployed test server.
+The current MVP target is a single-site production pilot: a deployable sensor/manager stack with authenticated manager access, sensor enrollment and health, sensor detail pages, pools, desired-state deployment tracking, rule and BPF management, Vector forwarding sink management, support bundles, alert-driven PCAP plumbing plus browser PCAP search/retrieval, implemented bearer-token `/api/v1` controllers for current workflows, local OpenAPI docs at `/api/docs`, per-token API rate limiting and request-level API audit entries, and real-browser regression coverage against a deployed test server.
 
 The MVP release gate is not just "containers start." It requires:
 
@@ -158,10 +158,13 @@ The MVP release gate is not just "containers start." It requires:
 - Admin user management, API token management UI, audit filtering/export, audited state-changing manager actions, and role-aware browser route protection for the MVP surface.
 - Passing local checks plus the browser E2E smoke/full profile for changed browser workflows.
 
+Before using the pilot outside a lab, replace the bundled development Quadlet defaults with explicit operator-provided secrets and settings, including `SECRET_KEY_BASE`, `RAVENWIRE_ADMIN_USER`, `RAVENWIRE_ADMIN_PASSWORD`, and `RAVENWIRE_SINK_ENCRYPTION_KEY`. A broader production release still needs documented backup/restore, upgrade/redeploy, TLS/proxy/firewall, storage sizing, and release metadata decisions.
+
 These remain roadmap or optional extensions, not required for the clean operating path:
 
 - Full PCAP mode with netsniff-ng
 - Forwarding runtime telemetry beyond the current placeholder UI
+- Additional Public API controllers for sensors, pools, forwarding, and BPF once those automation routes are intentionally added
 - Platform alert center and historical observability
 - Strelka
 - Arkime
@@ -169,7 +172,6 @@ These remain roadmap or optional extensions, not required for the clean operatin
 - 25Gbps benchmark profiles
 - Tier 2 remote PCAP replication
 - Advanced flow/session indexing
-- Public API documentation site and OpenAPI generation
 - Multi-manager HA and offline update bundles
 
 ## License
