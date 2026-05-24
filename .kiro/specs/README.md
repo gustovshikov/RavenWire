@@ -39,7 +39,7 @@ system:manage
 
 `alerts:view` is a UI/display alias for `sensors:view`, not a stored permission.
 
-Public API routes are versioned under `/api/v1`. New public automation endpoints must not be added under an unversioned `/api` prefix. Existing Sensor Agent enrollment and mTLS endpoints may remain where their owning specs place them, but Public API documentation must clearly distinguish bearer-token Public API routes from internal Sensor Agent routes.
+Public API routes are versioned under `/api/v1`. New public automation endpoints must not be added under an unversioned `/api` prefix. Existing Sensor Agent enrollment and mTLS endpoints may remain where their owning specs place them, but Public API documentation must clearly distinguish bearer-token Public API routes from internal Sensor Agent routes. Every future Public API endpoint must include OpenAPI path/schema updates plus route/spec consistency, permission, envelope, rate-limit where applicable, and request-audit tests.
 
 ## Implementation Order
 
@@ -66,7 +66,8 @@ Before treating the pilot MVP as release-ready:
 - Keep `sensorctl test` and the relevant browser E2E profile passing against the configured Test_Server.
 - Add or update E2E coverage for every completed browser-visible workflow.
 - Document any feature that is intentionally deferred in its owning spec rather than leaving it implied.
-- For production-pilot installs, require explicit operator-provided secrets and settings instead of the bundled Quadlet development defaults.
+- For production-pilot installs, use the supported `sensorctl install --pilot-hardening` path, store `/etc/ravenwire/manager.env` secrets securely, and complete backup, restore, rollback, cleanup-audit, and deployed E2E validation before tagging.
+- Keep distribution private/internal until a public project license is selected.
 
 Post-MVP roadmap work includes forwarding telemetry from HealthReport, platform alerts, historical metrics, health baselines, live data-flow visualization, canary deploys, detection-content lifecycle, offline update bundles, and multi-manager HA.
 

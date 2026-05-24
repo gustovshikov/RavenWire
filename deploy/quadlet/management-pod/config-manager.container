@@ -10,17 +10,15 @@ Volume=/data/config_manager:/data:rw
 Volume=/data/ca:/data/ca:rw
 Volume=/data/metrics:/data/metrics:rw
 DropCapability=all
+EnvironmentFile=/etc/ravenwire/manager.env
 Environment=SENSOR_DB_PATH=/data/config_manager.db
 Environment=SENSOR_CA_PATH=/data/ca
 Environment=MIX_ENV=dev
 Environment=PHX_HOST=0.0.0.0
-Environment=SECRET_KEY_BASE=demo_secret_key_base_64chars_long_for_dev_only_not_for_prod_use
 Environment=AUTO_ENROLL_FIRST=true
 Environment=SENSOR_PORT=4000
 Environment=SENSOR_GRPC_PORT=9090
 Environment=SENSOR_CERT_VALIDITY_HOURS=720
-Environment=RAVENWIRE_ADMIN_USER=RavenWire
-Environment=RAVENWIRE_ADMIN_PASSWORD=RavenWire2026!
 
 [Service]
 Restart=on-failure

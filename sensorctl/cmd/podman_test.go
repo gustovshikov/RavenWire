@@ -5,6 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"math/big"
 	"os"
@@ -264,6 +265,26 @@ func TestSensorPodQuadletsLoadPersistentEnvironmentFile(t *testing.T) {
 	}
 }
 
+func TestConfigManagerQuadletLoadsPersistentManagerEnvironmentFile(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(root, "deploy", "quadlet", "management-pod", "config-manager.container"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+
+	if !strings.Contains(text, "EnvironmentFile=/etc/ravenwire/manager.env") {
+		t.Fatal("config-manager quadlet must load the persistent manager environment file")
+	}
+	if strings.Contains(text, "RAVENWIRE_ADMIN_PASSWORD=RavenWire2026!") {
+		t.Fatal("config-manager quadlet must not hardcode the demo admin password")
+	}
+}
+
 func TestSensorEnvironmentFileCommandWritesStableRootOnlyFile(t *testing.T) {
 	command := sensorEnvironmentFileCommand(map[string]string{
 		"SENSOR_POD_NAME":    "ravenwire-test",
@@ -282,6 +303,143 @@ func TestSensorEnvironmentFileCommandWritesStableRootOnlyFile(t *testing.T) {
 		if !strings.Contains(command, want) {
 			t.Fatalf("sensor env file command missing %q in %q", want, command)
 		}
+	}
+}
+
+func TestManagerEnvironmentFileCommandWritesStableRootOnlyFile(t *testing.T) {
+	command := environmentFileCommand(managerEnvFile, map[string]string{
+		"RAVENWIRE_ADMIN_USER":     "pilot-admin",
+		"SECRET_KEY_BASE":          "secret-key-base",
+		"RAVENWIRE_ADMIN_PASSWORD": "pilot-password",
+	})
+
+	for _, want := range []string{
+		"sudo mkdir -p '/etc/ravenwire'",
+		"'RAVENWIRE_ADMIN_PASSWORD=pilot-password'",
+		"'RAVENWIRE_ADMIN_USER=pilot-admin'",
+		"'SECRET_KEY_BASE=secret-key-base'",
+		"sudo tee '/etc/ravenwire/manager.env' >/dev/null",
+		"sudo chmod 0600 '/etc/ravenwire/manager.env'",
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("manager env file command missing %q in %q", want, command)
+		}
+	}
+}
+
+func TestLabManagerEnvironmentPreservesDemoDefaults(t *testing.T) {
+	result, err := managerEnvironment(false, func(string) string {
+		return "ignored"
+	}, func(int) (string, error) {
+		t.Fatal("lab manager environment must not generate secrets")
+		return "", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.env["SECRET_KEY_BASE"] != demoSecretKeyBase {
+		t.Fatal("lab manager environment must preserve the demo secret key base")
+	}
+	if result.env["RAVENWIRE_ADMIN_USER"] != demoAdminUser {
+		t.Fatal("lab manager environment must preserve the demo admin user")
+	}
+	if result.env["RAVENWIRE_ADMIN_PASSWORD"] != demoAdminPassword {
+		t.Fatal("lab manager environment must preserve the demo admin password")
+	}
+	if _, ok := result.env["RAVENWIRE_SINK_ENCRYPTION_KEY"]; ok {
+		t.Fatal("lab manager environment must not set a sink encryption key")
+	}
+}
+
+func TestPilotManagerEnvironmentUsesExplicitSecrets(t *testing.T) {
+	sinkKey := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
+	values := map[string]string{
+		"SECRET_KEY_BASE":               strings.Repeat("s", 64),
+		"RAVENWIRE_SINK_ENCRYPTION_KEY": sinkKey,
+		"RAVENWIRE_ADMIN_USER":          "pilot-admin",
+		"RAVENWIRE_ADMIN_PASSWORD":      "operator-password",
+	}
+
+	result, err := managerEnvironment(true, func(key string) string {
+		return values[key]
+	}, func(int) (string, error) {
+		t.Fatal("explicit pilot manager environment must not generate secrets")
+		return "", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for key, want := range values {
+		if result.env[key] != want {
+			t.Fatalf("%s = %q, want %q", key, result.env[key], want)
+		}
+	}
+	if result.env["RAVENWIRE_API_DOCS_REQUIRE_AUTH"] != "true" {
+		t.Fatal("pilot hardening must require auth for API docs")
+	}
+	if result.generatedAdminPassword != "" {
+		t.Fatal("explicit admin password must not be reported as generated")
+	}
+}
+
+func TestPilotManagerEnvironmentGeneratesNonDemoSecrets(t *testing.T) {
+	sinkKey := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
+	random := func(byteCount int) (string, error) {
+		switch byteCount {
+		case 48:
+			return strings.Repeat("s", 64), nil
+		case 32:
+			return sinkKey, nil
+		case 24:
+			return "generated-admin-password", nil
+		default:
+			t.Fatalf("unexpected random byte count %d", byteCount)
+			return "", nil
+		}
+	}
+
+	result, err := managerEnvironment(true, func(string) string {
+		return ""
+	}, random)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.env["SECRET_KEY_BASE"] == "" || result.env["SECRET_KEY_BASE"] == demoSecretKeyBase {
+		t.Fatal("pilot hardening must generate a non-demo secret key base")
+	}
+	if result.env["RAVENWIRE_SINK_ENCRYPTION_KEY"] != sinkKey {
+		t.Fatal("pilot hardening must generate a sink encryption key")
+	}
+	if result.env["RAVENWIRE_ADMIN_USER"] != demoAdminUser {
+		t.Fatal("pilot hardening should default the admin username to RavenWire")
+	}
+	if result.env["RAVENWIRE_ADMIN_PASSWORD"] != "generated-admin-password" {
+		t.Fatal("pilot hardening must generate an admin password when none is provided")
+	}
+	if result.generatedAdminPassword != "generated-admin-password" {
+		t.Fatal("generated admin password must be reported for one-time operator capture")
+	}
+}
+
+func TestPilotManagerEnvironmentRejectsDemoPassword(t *testing.T) {
+	sinkKey := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
+	values := map[string]string{
+		"SECRET_KEY_BASE":               strings.Repeat("s", 64),
+		"RAVENWIRE_SINK_ENCRYPTION_KEY": sinkKey,
+		"RAVENWIRE_ADMIN_PASSWORD":      demoAdminPassword,
+	}
+
+	_, err := managerEnvironment(true, func(key string) string {
+		return values[key]
+	}, func(int) (string, error) {
+		t.Fatal("invalid explicit pilot manager environment must not generate secrets")
+		return "", nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "must not use the bundled demo value") {
+		t.Fatalf("expected demo password rejection, got %v", err)
 	}
 }
 

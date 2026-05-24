@@ -40,7 +40,13 @@ If `--capture-iface` is omitted, `sensorctl` checks `CAPTURE_IFACE` and then tri
 
 Install also seeds a low-noise Suricata starter rule so the detection engine is active on first boot. Replace or extend `/etc/sensor/suricata/rules/suricata.rules` through rule deployment before using the sensor for real monitoring.
 
-For production-pilot use, replace bundled development defaults before relying on the deployment. Provide explicit `SECRET_KEY_BASE`, `RAVENWIRE_ADMIN_USER`, `RAVENWIRE_ADMIN_PASSWORD`, and `RAVENWIRE_SINK_ENCRYPTION_KEY` values, then document backup and restore for `/data/config_manager` and `/data/ca`.
+For production-pilot use, install with hardening enabled:
+
+```bash
+sensorctl install --pilot-hardening --capture-iface <span-interface>
+```
+
+`--pilot-hardening` writes `/etc/ravenwire/manager.env` with root-only permissions, generates `SECRET_KEY_BASE` and `RAVENWIRE_SINK_ENCRYPTION_KEY` if they are not already provided, and rejects the bundled demo admin password. If `RAVENWIRE_ADMIN_PASSWORD` is omitted, `sensorctl` prints a generated bootstrap password once during install. Store it securely, then follow the backup, restore, rollback, TLS/proxy/firewall, and cleanup checklist in [Operations](operations.md).
 
 ## Start
 

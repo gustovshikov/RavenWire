@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"bufio"
+	"crypto/rand"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"net"
@@ -27,13 +29,18 @@ const (
 	defaultManagerURL    = "http://127.0.0.1:4000/api/v1"
 	defaultManagerHealth = "http://127.0.0.1:4000/"
 	sensorEnvFile        = "/etc/ravenwire/sensor.env"
+	managerEnvFile       = "/etc/ravenwire/manager.env"
+	demoSecretKeyBase    = "demo_secret_key_base_64chars_long_for_dev_only_not_for_prod_use"
+	demoAdminUser        = "RavenWire"
+	demoAdminPassword    = "RavenWire2026!"
 )
 
 type installOptions struct {
-	captureIface string
-	podName      string
-	managerURL   string
-	skipBuild    bool
+	captureIface   string
+	podName        string
+	managerURL     string
+	skipBuild      bool
+	pilotHardening bool
 }
 
 type cleanupOptions struct {
@@ -54,6 +61,7 @@ func installCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.podName, "pod-name", "", "Sensor pod name")
 	cmd.Flags().StringVar(&opts.managerURL, "manager-url", defaultManagerURL, "Config Manager enrollment API base URL")
 	cmd.Flags().BoolVar(&opts.skipBuild, "skip-build", false, "Skip local Podman image builds")
+	cmd.Flags().BoolVar(&opts.pilotHardening, "pilot-hardening", false, "Generate a root-only manager env file with non-demo production-pilot secrets")
 	return cmd
 }
 
@@ -329,6 +337,13 @@ func configureEnvironment(opts installOptions) error {
 	if err := writeSensorEnvironmentFile(env); err != nil {
 		return err
 	}
+	managerEnv, err := managerEnvironment(opts.pilotHardening, os.Getenv, randomBase64)
+	if err != nil {
+		return err
+	}
+	if err := writeManagerEnvironmentFile(managerEnv.env); err != nil {
+		return err
+	}
 	if err := runShell("", "sudo systemctl set-environment "+strings.Join(assignments, " ")); err != nil {
 		return err
 	}
@@ -340,6 +355,7 @@ func configureEnvironment(opts installOptions) error {
 	if controlAPIHost != "" {
 		fmt.Printf("Configured Control API host %q for automatic enrollment\n", controlAPIHost)
 	}
+	printManagerEnvironmentSummary(opts.pilotHardening, managerEnv)
 	return nil
 }
 
@@ -347,7 +363,15 @@ func writeSensorEnvironmentFile(env map[string]string) error {
 	return runShell("", sensorEnvironmentFileCommand(env))
 }
 
+func writeManagerEnvironmentFile(env map[string]string) error {
+	return runShell("", environmentFileCommand(managerEnvFile, env))
+}
+
 func sensorEnvironmentFileCommand(env map[string]string) string {
+	return environmentFileCommand(sensorEnvFile, env)
+}
+
+func environmentFileCommand(path string, env map[string]string) string {
 	keys := make([]string, 0, len(env))
 	for key := range env {
 		keys = append(keys, key)
@@ -361,11 +385,131 @@ func sensorEnvironmentFileCommand(env map[string]string) string {
 
 	return fmt.Sprintf(
 		"sudo mkdir -p %s && printf '%%s\\n' %s | sudo tee %s >/dev/null && sudo chmod 0600 %s",
-		shellQuote(filepath.Dir(sensorEnvFile)),
+		shellQuote(filepath.Dir(path)),
 		strings.Join(lines, " "),
-		shellQuote(sensorEnvFile),
-		shellQuote(sensorEnvFile),
+		shellQuote(path),
+		shellQuote(path),
 	)
+}
+
+type managerEnvironmentResult struct {
+	env                    map[string]string
+	generatedAdminPassword string
+}
+
+func managerEnvironment(pilotHardening bool, getenv func(string) string, randomString func(int) (string, error)) (managerEnvironmentResult, error) {
+	if !pilotHardening {
+		return managerEnvironmentResult{
+			env: map[string]string{
+				"SECRET_KEY_BASE":          demoSecretKeyBase,
+				"RAVENWIRE_ADMIN_USER":     demoAdminUser,
+				"RAVENWIRE_ADMIN_PASSWORD": demoAdminPassword,
+			},
+		}, nil
+	}
+
+	secretKeyBase, err := pilotSecretKeyBase(getenv, randomString)
+	if err != nil {
+		return managerEnvironmentResult{}, err
+	}
+	sinkEncryptionKey, err := pilotSinkEncryptionKey(getenv, randomString)
+	if err != nil {
+		return managerEnvironmentResult{}, err
+	}
+	adminUser := getenv("RAVENWIRE_ADMIN_USER")
+	if adminUser == "" {
+		adminUser = demoAdminUser
+	}
+
+	adminPassword := getenv("RAVENWIRE_ADMIN_PASSWORD")
+	generatedAdminPassword := ""
+	if adminPassword == "" {
+		adminPassword, err = randomString(24)
+		if err != nil {
+			return managerEnvironmentResult{}, fmt.Errorf("generate RAVENWIRE_ADMIN_PASSWORD: %w", err)
+		}
+		generatedAdminPassword = adminPassword
+	}
+	if err := validatePilotAdminPassword(adminPassword); err != nil {
+		return managerEnvironmentResult{}, err
+	}
+
+	return managerEnvironmentResult{
+		env: map[string]string{
+			"SECRET_KEY_BASE":                 secretKeyBase,
+			"RAVENWIRE_ADMIN_USER":            adminUser,
+			"RAVENWIRE_ADMIN_PASSWORD":        adminPassword,
+			"RAVENWIRE_SINK_ENCRYPTION_KEY":   sinkEncryptionKey,
+			"RAVENWIRE_API_DOCS_REQUIRE_AUTH": "true",
+		},
+		generatedAdminPassword: generatedAdminPassword,
+	}, nil
+}
+
+func pilotSecretKeyBase(getenv func(string) string, randomString func(int) (string, error)) (string, error) {
+	secretKeyBase := getenv("SECRET_KEY_BASE")
+	if secretKeyBase == "" {
+		generated, err := randomString(48)
+		if err != nil {
+			return "", fmt.Errorf("generate SECRET_KEY_BASE: %w", err)
+		}
+		return generated, nil
+	}
+	if secretKeyBase == demoSecretKeyBase {
+		return "", fmt.Errorf("SECRET_KEY_BASE must not use the bundled demo value when --pilot-hardening is enabled")
+	}
+	if len(secretKeyBase) < 64 {
+		return "", fmt.Errorf("SECRET_KEY_BASE must be at least 64 characters when --pilot-hardening is enabled")
+	}
+	return secretKeyBase, nil
+}
+
+func pilotSinkEncryptionKey(getenv func(string) string, randomString func(int) (string, error)) (string, error) {
+	sinkEncryptionKey := getenv("RAVENWIRE_SINK_ENCRYPTION_KEY")
+	if sinkEncryptionKey == "" {
+		generated, err := randomString(32)
+		if err != nil {
+			return "", fmt.Errorf("generate RAVENWIRE_SINK_ENCRYPTION_KEY: %w", err)
+		}
+		return generated, nil
+	}
+	decoded, err := base64.StdEncoding.DecodeString(sinkEncryptionKey)
+	if err != nil || len(decoded) != 32 {
+		return "", fmt.Errorf("RAVENWIRE_SINK_ENCRYPTION_KEY must be a Base64-encoded 32-byte key")
+	}
+	return sinkEncryptionKey, nil
+}
+
+func validatePilotAdminPassword(adminPassword string) error {
+	if adminPassword == demoAdminPassword {
+		return fmt.Errorf("RAVENWIRE_ADMIN_PASSWORD must not use the bundled demo value when --pilot-hardening is enabled")
+	}
+	if len(adminPassword) < 12 {
+		return fmt.Errorf("RAVENWIRE_ADMIN_PASSWORD must be at least 12 characters when --pilot-hardening is enabled")
+	}
+	return nil
+}
+
+func randomBase64(byteCount int) (string, error) {
+	buf := make([]byte, byteCount)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(buf), nil
+}
+
+func printManagerEnvironmentSummary(pilotHardening bool, result managerEnvironmentResult) {
+	if !pilotHardening {
+		fmt.Printf("Configured lab manager defaults in %s\n", managerEnvFile)
+		return
+	}
+
+	fmt.Printf("Configured production-pilot manager secrets in %s\n", managerEnvFile)
+	if result.generatedAdminPassword != "" {
+		fmt.Printf("RAVENWIRE_BOOTSTRAP_ADMIN_USER=%s\n", result.env["RAVENWIRE_ADMIN_USER"])
+		fmt.Printf("RAVENWIRE_BOOTSTRAP_ADMIN_PASSWORD=%s\n", result.generatedAdminPassword)
+		fmt.Println("Store this generated admin password securely; it is printed by sensorctl only during this install.")
+	}
 }
 
 func detectControlAPIHost(managerURL string) string {
@@ -634,7 +778,7 @@ func uninstallApp(purge, images bool) error {
 	)
 
 	if purge {
-		commands = append(commands, "sudo rm -rf /data/config_manager /data/ca /data/metrics /etc/sensor /var/sensor /var/run/sensor /sensor/pcap")
+		commands = append(commands, "sudo rm -rf /data/config_manager /data/ca /data/metrics /etc/sensor /etc/ravenwire /var/sensor /var/run/sensor /sensor/pcap")
 	}
 	if images {
 		commands = append(commands, "sudo podman rmi -f localhost/ravenwire/config-manager:test localhost/ravenwire/sensor-agent:test localhost/ravenwire/pcap-ring-writer:test")

@@ -80,7 +80,7 @@ new management capabilities.
   - [x] 9.5 Test unsupported API versions return 404
   - _Requirements: 1.4, 3.4, 5.8, 6.1-6.6_
 
-- [ ] 10. Final verification
+- [x] 10. Final verification
   - [x] 10.1 Run formatter
   - [x] 10.2 Run API controller, OpenAPI, router consistency, and docs UI tests
   - [x] 10.3 Verify `/api/docs` on the deployed test server and confirm the spec loads from `/api/v1/openapi.json`
@@ -91,3 +91,4 @@ new management capabilities.
 
 - Public API docs must distinguish bearer-token Public API routes from internal Sensor Agent mTLS routes.
 - Documenting an endpoint means it is implemented and tested; planned endpoints stay out of OpenAPI until their contexts exist.
+- Every future Public API endpoint must update OpenAPI paths/schemas and include route/spec consistency, permission, envelope, rate-limit where applicable, and request-level audit tests in the same implementation pass.

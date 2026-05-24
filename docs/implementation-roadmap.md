@@ -35,7 +35,7 @@ The current validated state is a single-site pilot MVP candidate, not a broader 
 
 The repo currently supports:
 
-- `sensorctl` install/start/stop/restart/status/logs/uninstall/test.
+- `sensorctl` install/start/stop/restart/status/logs/uninstall/test, including opt-in `--pilot-hardening` manager secret generation.
 - Rootful Podman plus systemd Quadlet deployment from `deploy/quadlet/`.
 - Local dual-pod bring-up for Config Manager and a sensor pod.
 - Automatic first-run enrollment for the single-host dual-pod path.
@@ -48,7 +48,7 @@ The repo currently supports:
 - Sensor pool management, desired-state deployment tracking, rule store management, BPF profile editing, Vector forwarding sink management, and real-browser E2E coverage.
 - Bearer-token `/api/v1` controllers for enrollment actions, PCAP, rule/repository/ruleset operations, deployments, support bundle requests, audit list/export, admin user creation, and API token creation.
 
-The supported local validation path is `sensorctl test`. Browser-visible manager workflows are validated with the Playwright E2E suite in `e2e/` against the configured test server. The latest recorded full local/server/E2E validation was commit `74b8d8b` on 2026-05-23. There is no Compose, Vagrant, or separate capture harness to maintain.
+The supported local validation path is `sensorctl test`. Browser-visible manager workflows are validated with the Playwright E2E suite in `e2e/` against the configured test server. The latest recorded full local/server/E2E validation was commit `6bfded4` on 2026-05-23. There is no Compose, Vagrant, or separate capture harness to maintain.
 
 ## MVP Release Gates
 
@@ -60,15 +60,17 @@ Before calling the single-site pilot MVP release-ready, keep these gates closed:
 - Run the full regression gate: `sensorctl test && (cd e2e && npm run test:full)`.
 - Keep the test server clean after E2E runs: no lingering `e2e-` pools, rulesets, repositories, or other tracked records.
 - Update user-facing docs when a route or workflow becomes supported enough for operators.
-- For production-pilot installs, replace bundled dev/test defaults with explicit secrets and deployment settings before use.
+- For production-pilot installs, use `sensorctl install --pilot-hardening`, keep `/etc/ravenwire/manager.env` root-only, and verify generated/operator secrets are stored in the site password vault.
+- Complete a pilot runbook pass before tagging: service health, `sensorctl test`, deployed full E2E, no lingering `e2e-` data, docs consistency, backup, restore drill, rollback validation, storage/PCAP retention sizing, and cleanup audit.
+- Keep distribution private/internal until a public project license is selected.
 
 ## Production Pilot Hardening
 
 These gaps do not block a controlled single-site pilot, but they do block a broader production release:
 
-- The bundled Quadlet manager unit is still a development/test profile with `MIX_ENV=dev`, demo `SECRET_KEY_BASE`, and default seeded admin credentials. Pilot runbooks must require explicit `SECRET_KEY_BASE`, `RAVENWIRE_ADMIN_USER`, `RAVENWIRE_ADMIN_PASSWORD`, and `RAVENWIRE_SINK_ENCRYPTION_KEY`.
-- TLS/proxy/firewall guidance, backup/restore of `/data/config_manager` plus `/data/ca`, upgrade/redeploy validation, storage sizing, PCAP retention sizing, and cleanup-audit steps need to be documented as a repeatable pilot runbook.
-- Release metadata is incomplete until a project license is selected or the repository is explicitly documented as private/internal distribution.
+- The default lab/test install still uses `MIX_ENV=dev` and demo manager credentials for repeatable test-server behavior. Production-pilot installs must use `sensorctl install --pilot-hardening`, which writes `/etc/ravenwire/manager.env` with generated/operator `SECRET_KEY_BASE`, `RAVENWIRE_ADMIN_USER`, `RAVENWIRE_ADMIN_PASSWORD`, `RAVENWIRE_SINK_ENCRYPTION_KEY`, and authenticated API docs settings.
+- TLS/proxy/firewall guidance, backup/restore of `/data/config_manager`, `/data/ca`, and `/etc/ravenwire`, upgrade/redeploy validation, rollback validation, storage sizing, PCAP retention sizing, and cleanup-audit steps are documented as the pilot runbook in `docs/operations.md` and must be executed before tagging a stable pilot.
+- Release metadata is currently private/internal distribution. A public release remains incomplete until a project license is selected.
 
 ## Post-MVP Roadmap
 
@@ -104,6 +106,8 @@ The lower-level `network-sensor-stack`, `network-sensor-stack/interface-switchin
 Public API routes must be versioned under `/api/v1`. Do not add new public automation routes under an unversioned `/api` prefix.
 
 The Sensor Agent control API is internal and mTLS-oriented. Keep those routes separate from bearer-token Public API routes in code and documentation.
+
+Every new Public API endpoint must land with matching OpenAPI path/schema updates, route/spec consistency coverage, permission tests, envelope/pagination/error tests, rate-limit coverage where applicable, and request-level audit assertions. Do not add speculative API endpoints ahead of implemented product behavior.
 
 The canonical permissions are owned by `auth-rbac-audit`:
 

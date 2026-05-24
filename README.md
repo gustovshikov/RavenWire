@@ -49,14 +49,14 @@ sensorctl logs
 sensorctl cleanup
 ```
 
-The bundled Quadlet development/test deployment seeds the first manager login when the users table is empty:
+The default `sensorctl install` path writes lab/test manager defaults to `/etc/ravenwire/manager.env` so the first manager login is predictable when the users table is empty:
 
 ```text
 Username: RavenWire
 Password: RavenWire2026!
 ```
 
-Override these before production-pilot use by setting `RAVENWIRE_ADMIN_USER` and `RAVENWIRE_ADMIN_PASSWORD` for the Config Manager service. Also provide a real `SECRET_KEY_BASE` and `RAVENWIRE_SINK_ENCRYPTION_KEY` before configuring forwarding sinks with secrets. If no password is configured outside the bundled Quadlet path, RavenWire generates and prints a one-time bootstrap password at first startup.
+For production-pilot use, run `sensorctl install --pilot-hardening`. It writes a root-only `/etc/ravenwire/manager.env`, generates `SECRET_KEY_BASE` and `RAVENWIRE_SINK_ENCRYPTION_KEY` when they are not already set, and rejects the bundled demo admin password. If `RAVENWIRE_ADMIN_PASSWORD` is omitted in hardening mode, `sensorctl` generates and prints a one-time bootstrap password during install; store it securely.
 
 For a capture host with a known span interface:
 
@@ -158,7 +158,7 @@ The MVP release gate is not just "containers start." It requires:
 - Admin user management, API token management UI, audit filtering/export, audited state-changing manager actions, and role-aware browser route protection for the MVP surface.
 - Passing local checks plus the browser E2E smoke/full profile for changed browser workflows.
 
-Before using the pilot outside a lab, replace the bundled development Quadlet defaults with explicit operator-provided secrets and settings, including `SECRET_KEY_BASE`, `RAVENWIRE_ADMIN_USER`, `RAVENWIRE_ADMIN_PASSWORD`, and `RAVENWIRE_SINK_ENCRYPTION_KEY`. A broader production release still needs documented backup/restore, upgrade/redeploy, TLS/proxy/firewall, storage sizing, and release metadata decisions.
+Before using the pilot outside a lab, install with `sensorctl install --pilot-hardening`, put the manager behind the intended TLS/proxy/firewall boundary, back up `/data/config_manager`, `/data/ca`, and `/etc/ravenwire`, and complete the restore/rollback validation in [Operations](docs/operations.md). A broader production release still needs additional packaging and HA work.
 
 These remain roadmap or optional extensions, not required for the clean operating path:
 
@@ -174,6 +174,6 @@ These remain roadmap or optional extensions, not required for the clean operatin
 - Advanced flow/session indexing
 - Multi-manager HA and offline update bundles
 
-## License
+## License And Distribution
 
-No project license has been selected yet.
+No public project license has been selected yet. Treat the repository as private/internal distribution until a license decision is made.

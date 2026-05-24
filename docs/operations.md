@@ -10,6 +10,7 @@ Docker Compose and Vagrant are not supported deployment paths. Install, run, and
 
 ```bash
 sensorctl install
+sensorctl install --pilot-hardening
 sensorctl install --capture-iface ens16f1 --pod-name sensor-01 --manager-url http://127.0.0.1:4000/api/v1
 sensorctl start [app|sensor-pod|management-pod|unit]
 sensorctl stop [app|sensor-pod|management-pod|unit]
@@ -35,8 +36,9 @@ If no unit is provided, `start`, `stop`, and `restart` operate on the full dual-
 | `--pod-name` | Sensor pod identity. Falls back to `SENSOR_POD_NAME` and then hostname. |
 | `--manager-url` | Config Manager enrollment API base URL. Defaults to `http://127.0.0.1:4000/api/v1`. |
 | `--skip-build` | Reuse existing local images instead of rebuilding them. |
+| `--pilot-hardening` | Write non-demo manager secrets to `/etc/ravenwire/manager.env` for production-pilot use. |
 
-`sensorctl install` also reads a small set of environment overrides before it writes the systemd manager environment:
+`sensorctl install` also reads a small set of environment overrides before it writes the persistent sensor environment:
 
 | Environment | Default | Purpose |
 |---|---:|---|
@@ -45,6 +47,16 @@ If no unit is provided, `start`, `stop`, and `restart` operate on the full dual-
 | `CAPTURE_IFACE` | detected | Capture interface when `--capture-iface` is omitted. |
 | `SENSOR_POD_NAME` | hostname | Sensor identity when `--pod-name` is omitted. |
 | `CONTROL_API_HOST` | detected | Host/IP advertised to Config Manager during enrollment. |
+
+The manager also loads `/etc/ravenwire/manager.env`. A normal lab/test install writes the existing demo manager login there for repeatable test-server behavior. A `--pilot-hardening` install writes generated or operator-provided values:
+
+| Environment | Default in `--pilot-hardening` | Purpose |
+|---|---:|---|
+| `SECRET_KEY_BASE` | generated | Phoenix signing/encryption secret; demo values are rejected in hardening mode. |
+| `RAVENWIRE_ADMIN_USER` | `RavenWire` | Initial platform-admin username when the users table is empty. |
+| `RAVENWIRE_ADMIN_PASSWORD` | generated and printed once | Initial platform-admin password; demo and too-short values are rejected. |
+| `RAVENWIRE_SINK_ENCRYPTION_KEY` | generated | Base64-encoded 32-byte key for forwarding sink secrets. |
+| `RAVENWIRE_API_DOCS_REQUIRE_AUTH` | `true` | Require authentication for `/api/docs` in hardened pilot installs. |
 
 During install, `sensorctl` brings the capture interface up, enables promiscuous mode, disables GRO/LRO when `ethtool` is available, and best-effort tunes queue/ring depth to reduce burst drops. Unsupported NIC tuning commands are allowed to fail so portable installs still proceed; Sensor Agent reports any remaining tuning gaps as soft readiness warnings.
 
@@ -74,6 +86,7 @@ deploy/quadlet/
 /data/config_manager
 /data/ca
 /data/metrics
+/etc/ravenwire
 /etc/sensor
 /var/sensor
 /var/run/sensor
@@ -142,16 +155,48 @@ npm run test:full
 
 Set `E2E_BASE_URL`, `E2E_ADMIN_USER`, and `E2E_ADMIN_PASSWORD` before running authenticated browser tests. The E2E suite performs HTTP/static asset preflight, SSH service and built-in sensor health checks, LiveView connectivity checks, pool workflows, forwarding workflows, PCAP search/retrieval workflows, BPF editor workflows, ruleset/repository workflows, and support/deployment page checks.
 
-## Production Pilot Checklist
+## Production Pilot Runbook
 
-The checked-in Quadlet units are suitable for development and the shared test server. Before using the single-site pilot outside a lab:
+The checked-in Quadlet units are suitable for development and the shared test server. For a single-site pilot outside a lab, use this checklist before treating the deployment as release-ready:
 
-- Replace bundled defaults with explicit `SECRET_KEY_BASE`, `RAVENWIRE_ADMIN_USER`, `RAVENWIRE_ADMIN_PASSWORD`, and `RAVENWIRE_SINK_ENCRYPTION_KEY` values.
-- Put the manager behind the intended TLS/proxy/firewall boundary and expose only the required browser/API and sensor enrollment/control paths.
-- Back up `/data/config_manager` and `/data/ca`, then perform a restore drill before relying on the deployment.
-- Size `/sensor/pcap` for expected retention, configure `MIN_STORAGE_GB`, `PCAP_RETENTION`, and `PCAP_RETENTION_PRUNE_INTERVAL`, and verify `sensorctl cleanup`.
-- Validate every upgrade or redeploy with `sensorctl test`, `npm run preflight`, `npm run test:full`, and a post-run cleanup audit for lingering `e2e-` data.
-- Decide the release/license metadata before distributing the project outside a private/internal context.
+1. Install with hardening enabled:
+
+   ```bash
+   export RAVENWIRE_ADMIN_USER=<admin-user>
+   export RAVENWIRE_ADMIN_PASSWORD=<store-securely>
+   sensorctl install --pilot-hardening --capture-iface <span-interface> --pod-name sensor-01
+   sensorctl start
+   sensorctl status
+   ```
+
+   If you want `sensorctl` to generate the first admin password, do not set `RAVENWIRE_ADMIN_PASSWORD`; capture the generated `RAVENWIRE_BOOTSTRAP_ADMIN_PASSWORD` printed during install and store it in the site password vault.
+
+2. Put Config Manager behind the intended TLS/proxy/firewall boundary. Expose only the required browser/API path for operators and the sensor enrollment/control paths required by the deployment. Keep `/etc/ravenwire/manager.env`, `/data/ca`, and support bundles off public shares.
+
+3. Size storage before traffic capture. Set `MIN_STORAGE_GB`, `PCAP_RETENTION`, and `PCAP_RETENTION_PRUNE_INTERVAL` for the expected sensor load, then verify `sensorctl cleanup`.
+
+4. Back up configuration, database, CA material, and manager secrets before relying on the deployment:
+
+   ```bash
+   sudo tar --xattrs --acls -czf ravenwire-pilot-backup.tgz /data/config_manager /data/ca /etc/ravenwire
+   ```
+
+5. Perform a restore drill on a test host or maintenance window: stop RavenWire, restore the archive, run `sensorctl start`, verify login, verify the built-in sensor, and run the validation commands below.
+
+6. Validate each upgrade or redeploy:
+
+   ```bash
+   sensorctl test
+   cd e2e
+   npm run preflight
+   npm run test:full
+   ```
+
+7. Confirm service health and cleanup after validation: `sensorctl status` should show the management and sensor units active, and the E2E cleanup audit should show no lingering `e2e-` pools, users, rulesets, repositories, forwarding sinks, or PCAP requests.
+
+8. Roll back by restoring the previous git revision or image set, rerunning `sensorctl install --skip-build` only when the expected images already exist, starting RavenWire, and repeating the validation gate. Restore the latest known-good backup if the database or CA material changed during the failed upgrade.
+
+9. Keep distribution private/internal until a public project license is selected.
 
 ## Fresh Reset
 
