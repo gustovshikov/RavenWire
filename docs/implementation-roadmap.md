@@ -64,6 +64,12 @@ Before calling the single-site pilot MVP release-ready, keep these gates closed:
 - Complete a pilot runbook pass before tagging: service health, `sensorctl test`, deployed full E2E, no lingering `e2e-` data, docs consistency, backup, restore drill, rollback validation, storage/PCAP retention sizing, and cleanup audit.
 - Keep distribution private/internal until a public project license is selected.
 
+## Spec-First Post-MVP Gate
+
+Post-MVP implementation starts from `.kiro/specs/`, not from roadmap prose alone. This spec-first gate requires verifying that the spec directory exists with `requirements.md`, `design.md`, `tasks.md`, and `.config.kiro` before starting any new product branch; create those files first if they are missing.
+
+If a spec already exists, reconcile stale assumptions before code changes. For Platform Alert Center, review `.kiro/specs/platform-alert-center/` before implementation and keep forwarding sink runtime telemetry deferred or disabled until HealthReport exposes real sink runtime metrics.
+
 ## Production Pilot Hardening
 
 These gaps do not block a controlled single-site pilot, but they do block a broader production release:
@@ -100,6 +106,8 @@ These areas are specified but should not be assumed complete in the current app:
 | 10 | `canary-deploys`, `detection-content-lifecycle`, `offline-update-bundle`, `multi-manager-ha` | Not started; post-MVP. | Adds advanced rollout, air-gap, content lifecycle, and production operations. |
 
 The lower-level `network-sensor-stack`, `network-sensor-stack/interface-switching`, and `sensor-stack-production-hardening` specs define capture-plane behavior that higher-level UI and management-plane specs should reference rather than redefine.
+
+The next post-MVP branch should begin with Platform Alert Center. Its spec exists, but implementation must first confirm which alert rules can be backed by current health reports and system events; Vector sink-down behavior remains placeholder-only until forwarding telemetry is implemented.
 
 ## Shared Contracts
 

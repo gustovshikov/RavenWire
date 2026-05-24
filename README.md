@@ -174,6 +174,8 @@ These remain roadmap or optional extensions, not required for the clean operatin
 - Advanced flow/session indexing
 - Multi-manager HA and offline update bundles
 
+Post-MVP work starts from `.kiro/specs/`. The spec-first gate requires a feature to have `requirements.md`, `design.md`, `tasks.md`, and `.config.kiro` before implementation begins; existing specs must be reviewed and updated when roadmap reality changes. The next planned branch is Platform Alert Center, using the existing `.kiro/specs/platform-alert-center/` spec.
+
 ## License And Distribution
 
 No public project license has been selected yet. Treat the repository as private/internal distribution until a license decision is made.

@@ -7,6 +7,12 @@ This directory is the implementation source of truth for planned RavenWire featu
 - `tasks.md` — implementation checklist ordered so dependencies land before consumers.
 - `.config.kiro` — unique Kiro spec metadata.
 
+## Spec-First Implementation Gate
+
+New product work must have a Kiro spec directory with `requirements.md`, `design.md`, `tasks.md`, and `.config.kiro` before implementation starts. This spec-first gate means roadmap text is not enough to mark a feature implementable.
+
+Before coding against an existing spec, review and update it if roadmap reality, implemented dependencies, telemetry availability, permissions, routes, or test expectations have changed. If a requested feature has no spec directory, create the spec files first and only then begin implementation.
+
 ## Shared Contracts
 
 The `auth-rbac-audit` spec owns the canonical RBAC model. Downstream specs may introduce a feature-specific permission only by adding it to `auth-rbac-audit` Requirement 4, the Policy design, and the route/API catalog.
