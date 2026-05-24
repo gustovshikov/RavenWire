@@ -213,4 +213,4 @@ The single-site pilot MVP target includes the implemented fleet pool management,
 
 Bearer-token `/api/v1` Public API controllers are implemented for current workflows and are separate from the Sensor Agent mTLS API. The implemented Public API is documented at `/api/docs`, with raw OpenAPI JSON at `/api/v1/openapi.json`. API tokens are rate-limited by token ID, defaulting to 100 requests per minute, and authenticated API requests write request-level audit entries.
 
-The current implementation does not yet include forwarding telemetry from HealthReport, platform alerting, historical metrics, health baselines, offline update bundles, canary deployments, or multi-manager HA. The remaining features are specified under `.kiro/specs/` and summarized in [Implementation Roadmap](implementation-roadmap.md).
+The current implementation does not yet include forwarding telemetry from HealthReport, platform alerting, historical metrics, health baselines, offline update bundles, canary deployments, or multi-manager HA. The remaining features are specified under `specs/` and summarized in [Implementation Roadmap](implementation-roadmap.md).

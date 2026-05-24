@@ -5,8 +5,8 @@ This document connects the current codebase to the specs that should guide imple
 ## Source Of Truth
 
 - `docs/` describes the current supported operator and architecture model.
-- `.kiro/specs/` describes planned product behavior and implementation tasks.
-- `.kiro/specs/README.md` is the canonical spec index, dependency order, API versioning rule, and permission catalog.
+- `specs/` describes planned product behavior and implementation tasks.
+- `specs/README.md` is the canonical spec index, dependency order, API versioning rule, and permission catalog.
 
 When these disagree, update the spec first if the behavior is planned, then update `docs/` once the implementation is real enough for operators or contributors to rely on it.
 
@@ -66,9 +66,9 @@ Before calling the single-site pilot MVP release-ready, keep these gates closed:
 
 ## Spec-First Post-MVP Gate
 
-Post-MVP implementation starts from `.kiro/specs/`, not from roadmap prose alone. This spec-first gate requires verifying that the spec directory exists with `requirements.md`, `design.md`, `tasks.md`, and `.config.kiro` before starting any new product branch; create those files first if they are missing.
+Post-MVP implementation starts from feature specs, not from roadmap prose alone. This spec-first gate requires verifying that the spec directory exists with `requirements.md`, `design.md`, and `tasks.md` before starting any new product branch; create those files first if they are missing.
 
-If a spec already exists, reconcile stale assumptions before code changes. For Platform Alert Center, review `.kiro/specs/platform-alert-center/` before implementation and keep forwarding sink runtime telemetry deferred or disabled until HealthReport exposes real sink runtime metrics.
+If a spec already exists, reconcile stale assumptions before code changes. For Platform Alert Center, review `specs/platform-alert-center/` before implementation and keep forwarding sink runtime telemetry deferred or disabled until HealthReport exposes real sink runtime metrics.
 
 ## Production Pilot Hardening
 

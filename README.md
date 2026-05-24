@@ -109,7 +109,7 @@ sensorctl test && (cd e2e && npm run test:full)
 ├── config/sensor/           # Baseline sensor configs
 ├── deploy/quadlet/          # Podman Quadlet deployment units
 ├── docs/                    # Getting started, operations, enrollment, architecture
-└── .kiro/specs/             # Product specs and implementation notes
+└── specs/                   # Product specs and implementation notes
 ```
 
 ## Operational Model
@@ -174,7 +174,7 @@ These remain roadmap or optional extensions, not required for the clean operatin
 - Advanced flow/session indexing
 - Multi-manager HA and offline update bundles
 
-Post-MVP work starts from `.kiro/specs/`. The spec-first gate requires a feature to have `requirements.md`, `design.md`, `tasks.md`, and `.config.kiro` before implementation begins; existing specs must be reviewed and updated when roadmap reality changes. The next planned branch is Platform Alert Center, using the existing `.kiro/specs/platform-alert-center/` spec.
+Post-MVP work starts from feature specs. The spec-first gate requires a feature to have `requirements.md`, `design.md`, and `tasks.md` before implementation begins; existing specs must be reviewed and updated when roadmap reality changes. The next planned branch is Platform Alert Center, using the existing `specs/platform-alert-center/` spec.
 
 ## License And Distribution
 

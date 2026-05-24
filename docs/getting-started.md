@@ -2,7 +2,7 @@
 
 RavenWire has one supported operating path: Podman containers managed by systemd Quadlet and operated with `sensorctl`.
 
-The current project state is a single-site production pilot MVP candidate: local install, automatic first-run enrollment, authenticated manager access, health reporting, sensor detail pages, pool management, deployment/drift views, rule and BPF management, Vector forwarding sink management, support bundles, browser E2E coverage, alert-driven PCAP plumbing, browser PCAP search/retrieval, implemented bearer-token `/api/v1` controllers, local OpenAPI docs at `/api/docs`, per-token API rate limiting, and request-level API audit entries. Remaining production-pilot hardening is tracked in [Implementation Roadmap](implementation-roadmap.md); forwarding telemetry, alerting, historical observability, and HA remain roadmap work under `.kiro/specs/`.
+The current project state is a single-site production pilot MVP candidate: local install, automatic first-run enrollment, authenticated manager access, health reporting, sensor detail pages, pool management, deployment/drift views, rule and BPF management, Vector forwarding sink management, support bundles, browser E2E coverage, alert-driven PCAP plumbing, browser PCAP search/retrieval, implemented bearer-token `/api/v1` controllers, local OpenAPI docs at `/api/docs`, per-token API rate limiting, and request-level API audit entries. Remaining production-pilot hardening is tracked in [Implementation Roadmap](implementation-roadmap.md); forwarding telemetry, alerting, historical observability, and HA remain roadmap work under `specs/`.
 
 ## Prerequisites
 

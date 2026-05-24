@@ -2,7 +2,7 @@
 
 RavenWire is organized around one deployable model: Podman containers supervised by systemd through Quadlet.
 
-The current codebase is a single-site production pilot MVP candidate. It can install a local dual-pod stack, enroll the first sensor, authenticate manager users, collect health, show fleet and sensor detail views, manage pools, track desired-state deployments and drift, manage rule, BPF, and Vector forwarding configuration, proxy support bundles, run alert-driven packet capture, expose browser PCAP search/retrieval, and serve implemented bearer-token `/api/v1` controllers. The specs under `.kiro/specs/` define both the remaining production-pilot hardening work and the post-MVP product roadmap.
+The current codebase is a single-site production pilot MVP candidate. It can install a local dual-pod stack, enroll the first sensor, authenticate manager users, collect health, show fleet and sensor detail views, manage pools, track desired-state deployments and drift, manage rule, BPF, and Vector forwarding configuration, proxy support bundles, run alert-driven packet capture, expose browser PCAP search/retrieval, and serve implemented bearer-token `/api/v1` controllers. The specs under `specs/` define both the remaining production-pilot hardening work and the post-MVP product roadmap.
 
 The Config Manager web UI follows the Orbital Plasma design system documented in [Design](design.md).
 
@@ -154,6 +154,6 @@ Sensor-internal routes:
 
 ## Forward Architecture
 
-Implementation should follow the spec order in `.kiro/specs/README.md`. The single-site pilot MVP release gate is now the implemented sensor stack plus authenticated manager workflows for fleet health, sensor detail, pools, deployments, rules, BPF, forwarding, browser PCAP search/retrieval, support bundles, audit visibility, and current bearer-token API controllers. Forwarding telemetry remains placeholder-only until HealthReport includes sink runtime metrics.
+Implementation should follow the spec order in `specs/README.md`. The single-site pilot MVP release gate is now the implemented sensor stack plus authenticated manager workflows for fleet health, sensor detail, pools, deployments, rules, BPF, forwarding, browser PCAP search/retrieval, support bundles, audit visibility, and current bearer-token API controllers. Forwarding telemetry remains placeholder-only until HealthReport includes sink runtime metrics.
 
 New public automation endpoints should use `/api/v1`. Internal Sensor Agent routes can stay separate, but public docs must distinguish bearer-token Public API routes from mTLS/internal control routes.
