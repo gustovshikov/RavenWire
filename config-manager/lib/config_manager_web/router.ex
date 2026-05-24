@@ -175,6 +175,7 @@ defmodule ConfigManagerWeb.Router do
       live("/pools/:id/config", PoolLive.ConfigLive, :edit)
       live("/pools/:id/forwarding", ForwardingLive.OverviewLive, :index)
       live("/pools/:id/bpf", BpfLive.EditorLive, :index)
+      live("/pools/:id/metrics", MetricsLive.PoolMetricsLive, :show)
       live("/pools/:id/deployments", PoolLive.DeploymentsLive, :index)
       live("/pools/:id/drift", PoolLive.DriftLive, :index)
       live("/deployments", DeploymentLive.ListLive, :index)
@@ -216,6 +217,7 @@ defmodule ConfigManagerWeb.Router do
 
       live("/support-bundle", SupportBundleLive, :index)
       live("/sensors/:id", SensorDetailLive, :show)
+      live("/sensors/:id/metrics", MetricsLive.SensorMetricsLive, :show)
       live("/alerts", AlertDashboardLive, :index)
       live("/alerts/notifications", AlertNotificationsLive, :index)
     end

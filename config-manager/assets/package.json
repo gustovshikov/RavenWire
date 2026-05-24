@@ -1,9 +1,12 @@
 {
   "scripts": {
-    "build": "mkdir -p ../priv/static/assets && tailwindcss -i ./css/app.css -o ../priv/static/assets/app.css --minify && cp ../deps/phoenix/priv/static/phoenix.min.js ../priv/static/assets/phoenix.min.js && cp ../deps/phoenix_live_view/priv/static/phoenix_live_view.min.js ../priv/static/assets/phoenix_live_view.min.js && cp ./js/app.js ../priv/static/assets/app.js",
+    "build": "mkdir -p ../priv/static/assets && tailwindcss -i ./css/app.css -o ../priv/static/assets/app.css --minify && cp ../deps/phoenix/priv/static/phoenix.min.js ../priv/static/assets/phoenix.min.js && cp ../deps/phoenix_live_view/priv/static/phoenix_live_view.min.js ../priv/static/assets/phoenix_live_view.min.js && cp ./node_modules/chart.js/dist/chart.umd.js ../priv/static/assets/chart.umd.js && cp ./js/app.js ../priv/static/assets/app.js",
     "watch": "tailwindcss -i ./css/app.css -o ../priv/static/assets/app.css --watch"
   },
   "devDependencies": {
     "tailwindcss": "3.4.17"
+  },
+  "dependencies": {
+    "chart.js": "4.4.9"
   }
 }

@@ -34,6 +34,7 @@ defmodule ConfigManagerWeb.PoolLive.Helpers do
           <span class="ml-1 rounded bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-800">pending</span>
         <% end %>
       </a>
+      <a href={"/pools/#{@pool.id}/metrics"} class="text-blue-600 hover:underline">Metrics</a>
       <a href={"/pools/#{@pool.id}/deployments"} class="text-blue-600 hover:underline">Deployments</a>
       <a href={"/pools/#{@pool.id}/drift"} class="text-blue-600 hover:underline">Drift</a>
     </div>

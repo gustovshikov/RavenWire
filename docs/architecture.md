@@ -154,6 +154,6 @@ Sensor-internal routes:
 
 ## Forward Architecture
 
-Implementation should follow the spec order in `specs/README.md`. The single-site pilot MVP release gate is now the implemented sensor stack plus authenticated manager workflows for fleet health, sensor detail, pools, deployments, rules, BPF, forwarding, browser PCAP search/retrieval, support bundles, audit visibility, and current bearer-token API controllers. Forwarding telemetry remains placeholder-only until HealthReport includes sink runtime metrics.
+Implementation should follow the spec order in `specs/README.md`. The single-site pilot MVP release gate is now the implemented sensor stack plus authenticated manager workflows for fleet health, sensor detail, pools, deployments, rules, BPF, forwarding, browser PCAP search/retrieval, support bundles, audit visibility, current bearer-token API controllers, Platform Alert Center, and Historical Metrics pages. Forwarding telemetry remains placeholder-only until HealthReport includes sink runtime metrics.
 
 New public automation endpoints should use `/api/v1`. Internal Sensor Agent routes can stay separate, but public docs must distinguish bearer-token Public API routes from mTLS/internal control routes.

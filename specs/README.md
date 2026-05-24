@@ -56,8 +56,9 @@ Public API routes are versioned under `/api/v1`. New public automation endpoints
 6. `pcap-search-retrieval` — operator investigation workflow implemented and full-profile E2E verified against the test server.
 7. `public-api-docs` — implemented for the current bearer-token `/api/v1` controller surface: OpenAPI JSON, local docs UI, version headers, docs auth config, request IDs on Public API errors, per-token rate limiting, request-level API audit entries, and route/spec consistency tests.
 8. `platform-alert-center` — platform alerting from current health telemetry and rule deployment events; notification delivery and deferred telemetry-backed alert types remain future work.
-9. `historical-metrics`, `health-baselines`, and `live-data-flow-viz` — platform observability workflows after alerting.
-10. `canary-deploys`, `detection-content-lifecycle`, `offline-update-bundle`, and `multi-manager-ha` — advanced rollout, air-gap, content lifecycle, and production operations.
+9. `historical-metrics` — implemented on `feature/historical-metrics` with metric persistence, sampler/pruner, sensor and pool metrics pages, Chart.js rendering, route guards, local regression coverage, and deployed full-profile E2E verification.
+10. `health-baselines` and `live-data-flow-viz` — platform observability workflows that build on alerting and historical metrics.
+11. `canary-deploys`, `detection-content-lifecycle`, `offline-update-bundle`, and `multi-manager-ha` — advanced rollout, air-gap, content lifecycle, and production operations.
 
 The existing `network-sensor-stack` and `sensor-stack-production-hardening` specs define lower-level Sensor Agent and capture-plane behavior. UI and management-plane specs should reference those contracts rather than redefining capture semantics.
 
@@ -75,7 +76,7 @@ Before treating the pilot MVP as release-ready:
 - For production-pilot installs, use the supported `sensorctl install --pilot-hardening` path, store `/etc/ravenwire/manager.env` secrets securely, and complete backup, restore, rollback, cleanup-audit, and deployed E2E validation before tagging.
 - Keep distribution private/internal until a public project license is selected.
 
-Post-MVP roadmap work includes forwarding telemetry from HealthReport, alert notification delivery, historical metrics, health baselines, live data-flow visualization, canary deploys, detection-content lifecycle, offline update bundles, and multi-manager HA.
+Post-MVP roadmap work includes forwarding telemetry from HealthReport, alert notification delivery, health baselines, live data-flow visualization, canary deploys, detection-content lifecycle, offline update bundles, and multi-manager HA.
 
 ## Documentation Rules
 

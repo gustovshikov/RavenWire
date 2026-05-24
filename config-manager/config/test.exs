@@ -24,6 +24,12 @@ config :config_manager,
   grpc_port: 9090,
   allow_plain_cert_rotation: true,
   alert_engine_enabled: false,
+  metrics_sampler_enabled: false,
+  metrics_sample_interval_ms: 1_000,
+  metrics_retention_hours: 1,
+  metrics_prune_interval_ms: 1_000,
+  metrics_prune_batch_size: 100,
+  metrics_chart_point_limit: 50,
   bootstrap_admin_password: "test-admin-password"
 
 config :swoosh, :api_client, Swoosh.ApiClient.Test

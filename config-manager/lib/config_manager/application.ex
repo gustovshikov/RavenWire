@@ -33,6 +33,7 @@ defmodule ConfigManager.Application do
         # Health registry (in-memory pod state)
         ConfigManager.Health.Registry
       ] ++
+        metrics_sampler_children() ++
         alert_engine_children() ++
         [
           # Sensor detail actions run off the LiveView process so slow Control API
@@ -109,6 +110,12 @@ defmodule ConfigManager.Application do
   defp alert_engine_children do
     if Application.get_env(:config_manager, :alert_engine_enabled, true),
       do: [ConfigManager.Alerts.AlertEngine],
+      else: []
+  end
+
+  defp metrics_sampler_children do
+    if Application.get_env(:config_manager, :metrics_sampler_enabled, true),
+      do: [ConfigManager.Metrics.Sampler],
       else: []
   end
 

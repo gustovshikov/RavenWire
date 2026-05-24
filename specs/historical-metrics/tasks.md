@@ -4,9 +4,11 @@
 
 This plan implements historical metrics persistence and time-series charting for the RavenWire Config Manager. The implementation proceeds bottom-up: database schema and context module first, then the Sampler GenServer, followed by LiveView pages and chart components, and finally navigation integration and wiring. Each step builds on the previous, ensuring no orphaned code.
 
+Status: implemented on `feature/historical-metrics` with local `mix test`, asset build, `sensorctl test`, deployed full-profile E2E, service health, and cleanup audit passing. Forwarding runtime metrics remain placeholders because HealthReport does not yet expose Vector sink telemetry.
+
 ## Tasks
 
-- [ ] 1. Create database migration and MetricSnapshot schema
+- [x] 1. Create database migration and MetricSnapshot schema
   - [ ] 1.1 Create the Ecto migration for the `metric_snapshots` table
     - Create `priv/repo/migrations/YYYYMMDDHHMMSS_create_metric_snapshots.exs`
     - Define table with columns: `id` (binary_id PK), `sensor_pod_id` (binary_id FK to sensor_pods, on_delete: delete_all), `metric_type` (string, not null), `series_key` (string, not null, default "default"), `value` (float, not null), `recorded_at` (utc_datetime_usec, not null), `metadata` (text, nullable)
@@ -33,7 +35,7 @@ This plan implements historical metrics persistence and time-series charting for
     - Generate random DateTimes with microsecond precision, write and read back, verify identical
     - **Validates: Requirements 1.7**
 
-- [ ] 2. Implement the Metrics context module (query and write API)
+- [x] 2. Implement the Metrics context module (query and write API)
   - [ ] 2.1 Create `ConfigManager.Metrics` context module with write and pruning functions
     - Create `lib/config_manager/metrics.ex`
     - Implement `write_snapshots/1` — batch insert with on_conflict: :nothing for duplicate handling, returns `{:ok, inserted_count}`
@@ -74,10 +76,10 @@ This plan implements historical metrics persistence and time-series charting for
     - Generate large snapshot sets exceeding chart point limit, verify downsampled result respects limit and preserves time bounds
     - **Validates: Requirements 4.10, 8.11, 12.8**
 
-- [ ] 3. Checkpoint - Ensure all tests pass
+- [x] 3. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Implement the Metrics Sampler GenServer
+- [x] 4. Implement the Metrics Sampler GenServer
   - [ ] 4.1 Create `ConfigManager.Metrics.Sampler` GenServer with lifecycle and configuration
     - Create `lib/config_manager/metrics/sampler.ex`
     - Implement `start_link/1`, `init/1` reading config from application environment with defaults
@@ -141,10 +143,10 @@ This plan implements historical metrics persistence and time-series charting for
     - Generate random retention_hours values including values below 72, verify effective retention is always >= 72 in non-test env
     - **Validates: Requirements 3.7, 14.5**
 
-- [ ] 5. Checkpoint - Ensure all tests pass
+- [x] 5. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. Implement the Chart.js hook and ChartComponent
+- [x] 6. Implement the Chart.js hook and ChartComponent
   - [ ] 6.1 Add Chart.js dependency and create the LiveView hook
     - Add Chart.js to `assets/package.json` (pinned version)
     - Create `assets/js/hooks/chart_hook.js` implementing the LiveView hook
@@ -166,7 +168,7 @@ This plan implements historical metrics persistence and time-series charting for
     - Include downsampled note when applicable
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8, 8.9, 8.10, 8.11, 9.1, 9.2, 9.3, 11.1, 11.2, 11.3, 11.5, 11.6, 11.7_
 
-- [ ] 7. Implement the Sensor Metrics LiveView page
+- [x] 7. Implement the Sensor Metrics LiveView page
   - [ ] 7.1 Create `ConfigManagerWeb.MetricsLive.SensorMetricsLive`
     - Create `lib/config_manager_web/live/metrics_live/sensor_metrics_live.ex`
     - Implement `mount/3`: load SensorPod by ID, handle 404, subscribe to PubSub topic `"sensor_metrics:#{sensor_pod_id}"` when connected
@@ -198,7 +200,7 @@ This plan implements historical metrics persistence and time-series charting for
     - Test table view toggle
     - _Requirements: 15.4, 15.6, 15.7_
 
-- [ ] 8. Implement the Pool Metrics LiveView page
+- [x] 8. Implement the Pool Metrics LiveView page
   - [ ] 8.1 Create `ConfigManagerWeb.MetricsLive.PoolMetricsLive`
     - Create `lib/config_manager_web/live/metrics_live/pool_metrics_live.ex`
     - Implement `mount/3`: load pool and members, handle 404, handle empty pool, subscribe to `"pool:#{pool_id}"` and per-sensor PubSub topics
@@ -235,10 +237,10 @@ This plan implements historical metrics persistence and time-series charting for
     - Test per-container disambiguation by sensor and container name
     - _Requirements: 15.6, 15.7_
 
-- [ ] 9. Checkpoint - Ensure all tests pass
+- [x] 9. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 10. Add routes, navigation links, and final wiring
+- [x] 10. Add routes, navigation links, and final wiring
   - [ ] 10.1 Add metrics routes to the router
     - Add `live "/sensors/:id/metrics", MetricsLive.SensorMetricsLive, :show` to the authenticated scope with `sensors:view` permission
     - Add `live "/pools/:id/metrics", MetricsLive.PoolMetricsLive, :show` to the authenticated scope with `sensors:view` permission
@@ -262,7 +264,7 @@ This plan implements historical metrics persistence and time-series charting for
     - Test chart point limit and downsampling note displayed
     - _Requirements: 15.1, 15.5, 15.6, 15.7, 15.8, 15.9, 15.10_
 
-- [ ] 11. Final checkpoint - Ensure all tests pass
+- [x] 11. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
