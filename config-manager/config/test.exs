@@ -30,6 +30,17 @@ config :config_manager,
   metrics_prune_interval_ms: 1_000,
   metrics_prune_batch_size: 100,
   metrics_chart_point_limit: 50,
+  baselines_worker_enabled: false,
+  baseline_window_hours: 48,
+  baseline_min_samples: 3,
+  baseline_recompute_interval_ms: 100,
+  anomaly_default_sigma: 3.0,
+  anomaly_cooldown_minutes: 1,
+  anomaly_min_delta_by_metric: %{},
+  anomaly_sigma_by_metric: %{},
+  capacity_forecast_horizon_hours: 24,
+  capacity_forecast_interval_ms: 100,
+  capacity_min_forecast_samples: 3,
   bootstrap_admin_password: "test-admin-password"
 
 config :swoosh, :api_client, Swoosh.ApiClient.Test

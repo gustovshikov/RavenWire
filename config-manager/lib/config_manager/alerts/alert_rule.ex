@@ -17,6 +17,8 @@ defmodule ConfigManager.Alerts.AlertRule do
     cert_expiring
     bpf_validation_failed
     pcap_prune_failed
+    baseline_anomaly
+    capacity_warning
   )
   @severities ~w(critical warning info)
 
@@ -91,6 +93,9 @@ defmodule ConfigManager.Alerts.AlertRule do
         "pcap_prune_failed"
       ] and threshold < 0.0 ->
         add_error(changeset, :threshold_value, "must be 0 or greater")
+
+      alert_type in ["baseline_anomaly", "capacity_warning"] and threshold <= 0.0 ->
+        add_error(changeset, :threshold_value, "must be greater than 0")
 
       true ->
         changeset

@@ -2,7 +2,7 @@
 
 RavenWire is organized around one deployable model: Podman containers supervised by systemd through Quadlet.
 
-The current codebase is a single-site production pilot MVP candidate. It can install a local dual-pod stack, enroll the first sensor, authenticate manager users, collect health, show fleet and sensor detail views, manage pools, track desired-state deployments and drift, manage rule, BPF, and Vector forwarding configuration, proxy support bundles, run alert-driven packet capture, expose browser PCAP search/retrieval, and serve implemented bearer-token `/api/v1` controllers. The specs under `specs/` define both the remaining production-pilot hardening work and the post-MVP product roadmap.
+The current codebase is a single-site production pilot MVP candidate. It can install a local dual-pod stack, enroll the first sensor, authenticate manager users, collect health, show fleet and sensor detail views, manage pools, track desired-state deployments and drift, manage rule, BPF, and Vector forwarding configuration, proxy support bundles, run alert-driven packet capture, expose browser PCAP search/retrieval, provide platform alerts, historical metrics, and health baselines, and serve implemented bearer-token `/api/v1` controllers. The specs under `specs/` define both the remaining production-pilot hardening work and the post-MVP product roadmap.
 
 The Config Manager web UI follows the Orbital Plasma design system documented in [Design](design.md).
 
@@ -45,7 +45,7 @@ Manager-side responsibilities currently include:
 - Enrollment token creation, approval, denial, and certificate issuance.
 - Sensor registry and health registry.
 - Health gRPC endpoint.
-- Sensor detail, pool management, deployment/drift, rule store, BPF editor, forwarding, and audit views.
+- Sensor detail, pool management, deployment/drift, rule store, BPF editor, forwarding, alerts, metrics, baselines, and audit views.
 - Bearer-token `/api/v1` controllers for current PCAP, rules, deployments, support bundle, audit, user, token, repository, and enrollment workflows.
 - Sensor support bundle proxying.
 
@@ -71,6 +71,8 @@ Config Manager browser routes:
 | `/password/change` | Required/self-service password change. |
 | `/` | Health dashboard. |
 | `/sensors/:id` | Sensor detail, health, readiness, capture, storage, forwarding summary, and sensor actions. |
+| `/sensors/:id/metrics` | Historical sensor metric charts, tables, and placeholders for unavailable metric sources. |
+| `/sensors/:id/baselines` | Sensor health baselines, current deviation status, and capacity forecast placeholders. |
 | `/enrollment` | Enrollment queue and approval workflow. |
 | `/pools` | Pool list. |
 | `/pools/new` | Pool creation. |
@@ -81,6 +83,8 @@ Config Manager browser routes:
 | `/pools/:id/forwarding/sinks/new` | Forwarding sink creation form. |
 | `/pools/:id/forwarding/sinks/:sink_id/edit` | Forwarding sink edit form. |
 | `/pools/:id/bpf` | Pool BPF filter editor. |
+| `/pools/:id/metrics` | Pool/member historical metric charts and tables. |
+| `/pools/:id/baselines` | Pool-level health baselines and sensor outlier comparison. |
 | `/pools/:id/deployments` | Pool deployment history. |
 | `/pools/:id/drift` | Pool drift summary. |
 | `/deployments` | Desired-state deployment list. |
@@ -97,6 +101,9 @@ Config Manager browser routes:
 | `/rules/rulesets/:id` | Ruleset detail, pool assignment, and deploy entry points. |
 | `/rules/deployments` | Rule deployment history. |
 | `/rules` | Quick rule deployment screen. |
+| `/alerts` | Platform alert dashboard with filters and lifecycle actions. |
+| `/alerts/rules` | Platform alert rule management. |
+| `/alerts/notifications` | Notification delivery placeholder. |
 | `/support-bundle` | Support bundle workflow. |
 | `/support-bundle/download/:pod_id` | Support bundle download proxy. |
 | `/audit` | Audit log browser with filters, pagination, and detail view. |

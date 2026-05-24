@@ -35,6 +35,7 @@ defmodule ConfigManager.Application do
       ] ++
         metrics_sampler_children() ++
         alert_engine_children() ++
+        baselines_worker_children() ++
         [
           # Sensor detail actions run off the LiveView process so slow Control API
           # calls can be timed out without blocking UI state updates.
@@ -116,6 +117,12 @@ defmodule ConfigManager.Application do
   defp metrics_sampler_children do
     if Application.get_env(:config_manager, :metrics_sampler_enabled, true),
       do: [ConfigManager.Metrics.Sampler],
+      else: []
+  end
+
+  defp baselines_worker_children do
+    if Application.get_env(:config_manager, :baselines_worker_enabled, true),
+      do: [ConfigManager.Baselines.Worker],
       else: []
   end
 

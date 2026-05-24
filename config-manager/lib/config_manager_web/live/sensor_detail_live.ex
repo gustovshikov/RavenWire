@@ -294,6 +294,7 @@ defmodule ConfigManagerWeb.SensorDetailLive do
           <div class="flex flex-wrap gap-3 text-sm">
             <a href="/" class="text-blue-600 hover:underline">Back to dashboard</a>
             <a href={"/sensors/#{@pod.id}/metrics"} class="text-blue-600 hover:underline">Metrics</a>
+            <a href={"/sensors/#{@pod.id}/baselines"} class="text-blue-600 hover:underline">Baselines</a>
           </div>
           <h1 class="mt-2 text-2xl font-bold text-gray-900"><%= @pod.name %></h1>
           <p class="text-sm text-gray-500">Sensor detail and live health state</p>

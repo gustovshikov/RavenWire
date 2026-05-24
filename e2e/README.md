@@ -58,7 +58,7 @@ Run every implemented browser workflow:
 npm run test:full
 ```
 
-The full profile covers login, dashboard/sensor visibility, pools, forwarding sinks, platform alerts, historical metrics, deployments, rules, BPF, PCAP search/history/detail/manifest/download entry points, support bundles, admin user/role/token pages, and audit filtering/export.
+The full profile covers login, dashboard/sensor visibility, pools, forwarding sinks, platform alerts, historical metrics, health baselines, deployments, rules, BPF, PCAP search/history/detail/manifest/download entry points, support bundles, admin user/role/token pages, and audit filtering/export.
 
 Run the full RavenWire regression gate from the repository root:
 
@@ -99,7 +99,7 @@ Failure screenshots, traces, videos, console logs, and JSON summaries are writte
 
 ## Cleanup
 
-Tests create records with an `e2e-` prefix and clean up records they create. Direct SQLite cleanup is disabled unless `E2E_ALLOW_DB_CLEANUP=true`, and it only targets tracked `e2e-` records such as PCAP requests, alert fixtures, and metric snapshot fixtures.
+Tests create records with an `e2e-` prefix and clean up records they create. Direct SQLite cleanup is disabled unless `E2E_ALLOW_DB_CLEANUP=true`, and it only targets tracked `e2e-` records such as PCAP requests, alert fixtures, metric snapshot fixtures, baseline fixtures, and temporary E2E sensor rows.
 
 ## Feature Completion Gate
 

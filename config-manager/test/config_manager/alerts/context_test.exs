@@ -15,7 +15,7 @@ defmodule ConfigManager.Alerts.ContextTest do
 
   test "seed_default_rules creates enabled supported rules and disabled deferred rules" do
     rules = Alerts.list_rules()
-    assert length(rules) == 9
+    assert length(rules) == 11
 
     assert Repo.get_by!(AlertRule, alert_type: "sensor_offline").enabled
     assert Repo.get_by!(AlertRule, alert_type: "packet_drops_high").enabled
@@ -23,13 +23,15 @@ defmodule ConfigManager.Alerts.ContextTest do
     assert Repo.get_by!(AlertRule, alert_type: "disk_critical").enabled
     assert Repo.get_by!(AlertRule, alert_type: "rule_deploy_failed").enabled
     assert Repo.get_by!(AlertRule, alert_type: "cert_expiring").enabled
+    assert Repo.get_by!(AlertRule, alert_type: "baseline_anomaly").enabled
+    assert Repo.get_by!(AlertRule, alert_type: "capacity_warning").enabled
 
     refute Repo.get_by!(AlertRule, alert_type: "vector_sink_down").enabled
     refute Repo.get_by!(AlertRule, alert_type: "bpf_validation_failed").enabled
     refute Repo.get_by!(AlertRule, alert_type: "pcap_prune_failed").enabled
 
     Alerts.seed_default_rules()
-    assert Repo.aggregate(AlertRule, :count, :id) == 9
+    assert Repo.aggregate(AlertRule, :count, :id) == 11
   end
 
   test "update_rule persists threshold and writes audit" do
@@ -110,13 +112,15 @@ defmodule ConfigManager.Alerts.ContextTest do
   end
 
   defp threshold_case(code) do
-    case rem(code, 6) do
+    case rem(code, 8) do
       0 -> {"packet_drops_high", rem(code, 101), true}
       1 -> {"packet_drops_high", -1.0, false}
       2 -> {"disk_critical", 101.0, false}
       3 -> {"clock_drift", rem(code, 500) + 1, true}
       4 -> {"sensor_offline", 0.0, false}
       5 -> {"rule_deploy_failed", 0.0, true}
+      6 -> {"baseline_anomaly", 3.0, true}
+      7 -> {"capacity_warning", 0.0, false}
     end
   end
 

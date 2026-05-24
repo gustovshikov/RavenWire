@@ -2,7 +2,7 @@
 
 RavenWire has one supported operating path: Podman containers managed by systemd Quadlet and operated with `sensorctl`.
 
-The current project state is a single-site production pilot MVP candidate: local install, automatic first-run enrollment, authenticated manager access, health reporting, sensor detail pages, pool management, deployment/drift views, rule and BPF management, Vector forwarding sink management, support bundles, browser E2E coverage, alert-driven PCAP plumbing, browser PCAP search/retrieval, implemented bearer-token `/api/v1` controllers, local OpenAPI docs at `/api/docs`, per-token API rate limiting, request-level API audit entries, Platform Alert Center, and Historical Metrics pages. Remaining production-pilot hardening is tracked in [Implementation Roadmap](implementation-roadmap.md); forwarding telemetry, alert notification delivery, health baselines, live data-flow visualization, and HA remain roadmap work under `specs/`.
+The current project state is a single-site production pilot MVP candidate: local install, automatic first-run enrollment, authenticated manager access, health reporting, sensor detail pages, pool management, deployment/drift views, rule and BPF management, Vector forwarding sink management, support bundles, browser E2E coverage, alert-driven PCAP plumbing, browser PCAP search/retrieval, implemented bearer-token `/api/v1` controllers, local OpenAPI docs at `/api/docs`, per-token API rate limiting, request-level API audit entries, Platform Alert Center, Historical Metrics pages, and Health Baselines pages. Remaining production-pilot hardening is tracked in [Implementation Roadmap](implementation-roadmap.md); forwarding telemetry, alert notification delivery, live data-flow visualization, and HA remain roadmap work under `specs/`.
 
 ## Prerequisites
 
@@ -58,7 +58,7 @@ sensorctl logs
 
 On a fresh install, `sensorctl start` starts Config Manager, creates a one-time enrollment token, then starts the sensor pod so it auto-enrolls.
 
-The manager UI is available from Config Manager once the management pod is running. The current browser routes include `/login`, `/`, `/sensors/:id`, `/enrollment`, `/pools`, `/pools/:id/forwarding`, `/pools/:id/forwarding/sinks/new`, `/pools/:id/forwarding/sinks/:sink_id/edit`, `/deployments`, `/pcap-config`, `/pcap`, `/pcap/search`, `/pcap/requests`, `/rules/store`, `/rules/rulesets`, `/support-bundle`, `/audit`, `/audit/export`, `/admin/users`, `/admin/roles`, and `/admin/api-tokens`.
+The manager UI is available from Config Manager once the management pod is running. The current browser routes include `/login`, `/`, `/sensors/:id`, `/sensors/:id/metrics`, `/sensors/:id/baselines`, `/enrollment`, `/pools`, `/pools/:id/forwarding`, `/pools/:id/forwarding/sinks/new`, `/pools/:id/forwarding/sinks/:sink_id/edit`, `/pools/:id/metrics`, `/pools/:id/baselines`, `/deployments`, `/alerts`, `/alerts/rules`, `/alerts/notifications`, `/pcap-config`, `/pcap`, `/pcap/search`, `/pcap/requests`, `/rules/store`, `/rules/rulesets`, `/support-bundle`, `/audit`, `/audit/export`, `/admin/users`, `/admin/roles`, and `/admin/api-tokens`.
 
 ## Validate
 

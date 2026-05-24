@@ -82,6 +82,22 @@ defmodule ConfigManager.Alerts do
       enabled: false,
       threshold_value: 0.0,
       threshold_unit: "boolean"
+    },
+    %{
+      alert_type: "baseline_anomaly",
+      description: "Metric deviates significantly from baseline.",
+      severity: "warning",
+      enabled: true,
+      threshold_value: 3.0,
+      threshold_unit: "sigma"
+    },
+    %{
+      alert_type: "capacity_warning",
+      description: "Metric trend predicts capacity exhaustion.",
+      severity: "warning",
+      enabled: true,
+      threshold_value: 24.0,
+      threshold_unit: "hours"
     }
   ]
 

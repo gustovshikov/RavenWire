@@ -192,7 +192,7 @@ The checked-in Quadlet units are suitable for development and the shared test se
    npm run test:full
    ```
 
-7. Confirm service health and cleanup after validation: `sensorctl status` should show the management and sensor units active, and the E2E cleanup audit should show no lingering `e2e-` pools, users, rulesets, repositories, forwarding sinks, alerts, PCAP requests, or metric fixtures.
+7. Confirm service health and cleanup after validation: `sensorctl status` should show the management and sensor units active, and the E2E cleanup audit should show no lingering `e2e-` pools, users, sensors, rulesets, repositories, forwarding sinks, alerts, PCAP requests, metric fixtures, or baseline fixtures.
 
 8. Roll back by restoring the previous git revision or image set, rerunning `sensorctl install --skip-build` only when the expected images already exist, starting RavenWire, and repeating the validation gate. Restore the latest known-good backup if the database or CA material changed during the failed upgrade.
 
@@ -213,4 +213,4 @@ The single-site pilot MVP target includes the implemented fleet pool management,
 
 Bearer-token `/api/v1` Public API controllers are implemented for current workflows and are separate from the Sensor Agent mTLS API. The implemented Public API is documented at `/api/docs`, with raw OpenAPI JSON at `/api/v1/openapi.json`. API tokens are rate-limited by token ID, defaulting to 100 requests per minute, and authenticated API requests write request-level audit entries.
 
-The current implementation does not yet include forwarding telemetry from HealthReport, alert notification delivery, health baselines, live data-flow visualization, offline update bundles, canary deployments, or multi-manager HA. Historical Metrics stores snapshots in the Config Manager database, so normal `/data/config_manager` backup and restore coverage also covers metric history. The remaining features are specified under `specs/` and summarized in [Implementation Roadmap](implementation-roadmap.md).
+The current implementation does not yet include forwarding telemetry from HealthReport, alert notification delivery, live data-flow visualization, offline update bundles, canary deployments, or multi-manager HA. Health Baselines is implemented on the current feature branch with local regression coverage and deployed full-profile E2E verification. Historical Metrics and Health Baselines store snapshots/baselines in the Config Manager database, so normal `/data/config_manager` backup and restore coverage also covers metric history and learned baseline state. The remaining features are specified under `specs/` and summarized in [Implementation Roadmap](implementation-roadmap.md).

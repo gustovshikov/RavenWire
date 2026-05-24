@@ -85,7 +85,9 @@ defmodule ConfigManagerWeb.AuthRouteTest do
           "/pools",
           "/pools/new",
           "/sensors/#{Ecto.UUID.generate()}/metrics",
-          "/pools/#{Ecto.UUID.generate()}/metrics"
+          "/sensors/#{Ecto.UUID.generate()}/baselines",
+          "/pools/#{Ecto.UUID.generate()}/metrics",
+          "/pools/#{Ecto.UUID.generate()}/baselines"
         ] do
       conn = build_conn() |> get(path)
       assert redirected_to(conn) == "/login"
@@ -487,6 +489,7 @@ defmodule ConfigManagerWeb.AuthRouteTest do
       "/pools/#{pool.id}/forwarding",
       "/pools/#{pool.id}/bpf",
       "/pools/#{pool.id}/metrics",
+      "/pools/#{pool.id}/baselines",
       "/pools/#{pool.id}/deployments",
       "/pools/#{pool.id}/drift",
       "/deployments/#{deployment_id}",
@@ -499,7 +502,8 @@ defmodule ConfigManagerWeb.AuthRouteTest do
       "/rules/rulesets/#{ruleset.id}/edit",
       "/rules/deployments",
       "/sensors/#{sensor.id}",
-      "/sensors/#{sensor.id}/metrics"
+      "/sensors/#{sensor.id}/metrics",
+      "/sensors/#{sensor.id}/baselines"
     ]
   end
 

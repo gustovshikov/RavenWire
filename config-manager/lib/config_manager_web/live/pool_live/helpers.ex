@@ -35,6 +35,7 @@ defmodule ConfigManagerWeb.PoolLive.Helpers do
         <% end %>
       </a>
       <a href={"/pools/#{@pool.id}/metrics"} class="text-blue-600 hover:underline">Metrics</a>
+      <a href={"/pools/#{@pool.id}/baselines"} class="text-blue-600 hover:underline">Baselines</a>
       <a href={"/pools/#{@pool.id}/deployments"} class="text-blue-600 hover:underline">Deployments</a>
       <a href={"/pools/#{@pool.id}/drift"} class="text-blue-600 hover:underline">Drift</a>
     </div>
