@@ -1,8 +1,10 @@
+import { type Page } from "@playwright/test"
+
 import { login } from "../support/auth"
 import { expectAuditEntry } from "../support/audit"
 import { CleanupRegistry } from "../support/cleanup"
 import { test, expect } from "../support/fixtures"
-import { expectLiveViewConnected, expectNoPlainPostNavigation } from "../support/live-view"
+import { expectLiveViewConnected, expectNoPlainPostNavigation, waitForLiveViewIdle } from "../support/live-view"
 import { createPool } from "../support/pools"
 import { e2eName } from "../support/test-data"
 
@@ -23,7 +25,7 @@ test.describe("extended pool workflows @full", () => {
       await expectLiveViewConnected(page)
 
       const updatedDescription = "Updated by RavenWire E2E extended pool test."
-      await page.locator("#sensor_pool_description").fill(updatedDescription)
+      await fillAndSettle(page, "#sensor_pool_description", updatedDescription)
 
       await expectNoPlainPostNavigation(page, async () => {
         await page.getByRole("button", { name: "Save Pool" }).click()
@@ -119,3 +121,21 @@ test.describe("extended pool workflows @full", () => {
     }
   })
 })
+
+async function fillAndSettle(page: Page, selector: string, value: string) {
+  const field = page.locator(selector)
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await field.fill(value)
+    await waitForLiveViewIdle(page)
+    await expect(field).toHaveValue(value)
+    await page.waitForTimeout(250)
+    await waitForLiveViewIdle(page)
+
+    if ((await field.inputValue()) === value) {
+      return
+    }
+  }
+
+  await expect(field).toHaveValue(value)
+}

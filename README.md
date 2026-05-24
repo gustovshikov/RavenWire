@@ -109,7 +109,7 @@ sensorctl test && (cd e2e && npm run test:full)
 ├── config/sensor/           # Baseline sensor configs
 ├── deploy/quadlet/          # Podman Quadlet deployment units
 ├── docs/                    # Getting started, operations, enrollment, architecture
-└── .kiro/specs/             # Product specs and implementation notes
+└── specs/                   # Product specs and implementation notes
 ```
 
 ## Operational Model
@@ -165,7 +165,7 @@ These remain roadmap or optional extensions, not required for the clean operatin
 - Full PCAP mode with netsniff-ng
 - Forwarding runtime telemetry beyond the current placeholder UI
 - Additional Public API controllers for sensors, pools, forwarding, and BPF once those automation routes are intentionally added
-- Platform alert center and historical observability
+- Platform Alert Center notification delivery and live data-flow visualization
 - Strelka
 - Arkime
 - AF_XDP / DPDK / PF_RING
@@ -173,6 +173,8 @@ These remain roadmap or optional extensions, not required for the clean operatin
 - Tier 2 remote PCAP replication
 - Advanced flow/session indexing
 - Multi-manager HA and offline update bundles
+
+Post-MVP work starts from feature specs. The spec-first gate requires a feature to have `requirements.md`, `design.md`, and `tasks.md` before implementation begins; existing specs must be reviewed and updated when roadmap reality changes. Platform Alert Center, Historical Metrics, and Health Baselines are implemented with deployed full-profile E2E verification.
 
 ## License And Distribution
 

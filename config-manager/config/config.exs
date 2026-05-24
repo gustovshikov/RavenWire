@@ -2,9 +2,27 @@ import Config
 
 config :config_manager,
   ecto_repos: [ConfigManager.Repo],
+  env: config_env(),
   secure_session_cookie: true,
   api_docs_require_auth: false,
-  api_token_rate_limit_per_minute: 100
+  api_token_rate_limit_per_minute: 100,
+  metrics_sampler_enabled: true,
+  metrics_sample_interval_ms: 60_000,
+  metrics_retention_hours: 72,
+  metrics_prune_interval_ms: 900_000,
+  metrics_prune_batch_size: 1_000,
+  metrics_chart_point_limit: 1_000,
+  baselines_worker_enabled: true,
+  baseline_window_hours: 48,
+  baseline_min_samples: 240,
+  baseline_recompute_interval_ms: 3_600_000,
+  anomaly_default_sigma: 3.0,
+  anomaly_cooldown_minutes: 15,
+  anomaly_min_delta_by_metric: %{},
+  anomaly_sigma_by_metric: %{},
+  capacity_forecast_horizon_hours: 24,
+  capacity_forecast_interval_ms: 900_000,
+  capacity_min_forecast_samples: 12
 
 config :config_manager, ConfigManager.Repo,
   database: System.get_env("SENSOR_DB_PATH", "/data/config_manager.db"),
