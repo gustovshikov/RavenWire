@@ -165,7 +165,7 @@ These remain roadmap or optional extensions, not required for the clean operatin
 - Full PCAP mode with netsniff-ng
 - Forwarding runtime telemetry beyond the current placeholder UI
 - Additional Public API controllers for sensors, pools, forwarding, and BPF once those automation routes are intentionally added
-- Platform alert center and historical observability
+- Platform Alert Center notification delivery and historical observability
 - Strelka
 - Arkime
 - AF_XDP / DPDK / PF_RING
@@ -174,7 +174,7 @@ These remain roadmap or optional extensions, not required for the clean operatin
 - Advanced flow/session indexing
 - Multi-manager HA and offline update bundles
 
-Post-MVP work starts from feature specs. The spec-first gate requires a feature to have `requirements.md`, `design.md`, and `tasks.md` before implementation begins; existing specs must be reviewed and updated when roadmap reality changes. The next planned branch is Platform Alert Center, using the existing `specs/platform-alert-center/` spec.
+Post-MVP work starts from feature specs. The spec-first gate requires a feature to have `requirements.md`, `design.md`, and `tasks.md` before implementation begins; existing specs must be reviewed and updated when roadmap reality changes. Platform Alert Center is implemented on the current post-MVP branch; the next planned feature is Historical Metrics.
 
 ## License And Distribution
 

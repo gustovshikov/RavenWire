@@ -28,8 +28,9 @@ The single-site pilot MVP includes:
 - Alert-driven PCAP plumbing in the sensor stack, manager PCAP configuration, and browser PCAP search/history/detail/manifest/download workflows.
 - Implemented bearer-token `/api/v1` Public API controllers for current operator workflows, with local OpenAPI documentation, per-token rate limiting, request-level API audit entries, and route/spec consistency checks.
 - Browser E2E smoke/full profiles that run against a real test server and gate browser-visible workflows.
+- Platform Alert Center on the post-MVP feature branch, with browser routes, rule management, alert lifecycle, RBAC/audit coverage, and deployed full-profile E2E verification on the test server.
 
-The current validated state is a single-site pilot MVP candidate, not a broader production/enterprise release. Forwarding telemetry from HealthReport is still placeholder-only. Platform alerting, historical metrics, health baselines, live data-flow visualization, canary rollouts, detection-content lifecycle, offline update bundles, production packaging, and multi-manager HA remain roadmap work until explicitly pulled forward.
+The current validated state is a single-site pilot MVP candidate, not a broader production/enterprise release. Forwarding telemetry from HealthReport is still placeholder-only. Alert notification delivery, historical metrics, health baselines, live data-flow visualization, canary rollouts, detection-content lifecycle, offline update bundles, production packaging, and multi-manager HA remain roadmap work until explicitly pulled forward.
 
 ## Current Implementation
 
@@ -48,7 +49,7 @@ The repo currently supports:
 - Sensor pool management, desired-state deployment tracking, rule store management, BPF profile editing, Vector forwarding sink management, and real-browser E2E coverage.
 - Bearer-token `/api/v1` controllers for enrollment actions, PCAP, rule/repository/ruleset operations, deployments, support bundle requests, audit list/export, admin user creation, and API token creation.
 
-The supported local validation path is `sensorctl test`. Browser-visible manager workflows are validated with the Playwright E2E suite in `e2e/` against the configured test server. The latest recorded full local/server/E2E validation was commit `6bfded4` on 2026-05-23. There is no Compose, Vagrant, or separate capture harness to maintain.
+The supported local validation path is `sensorctl test`. Browser-visible manager workflows are validated with the Playwright E2E suite in `e2e/` against the configured test server. The latest recorded full local/server/E2E validation for the current branch was completed on 2026-05-24. There is no Compose, Vagrant, or separate capture harness to maintain.
 
 ## MVP Release Gates
 
@@ -83,8 +84,8 @@ These gaps do not block a controlled single-site pilot, but they do block a broa
 These areas are specified but should not be assumed complete in the current app:
 
 - Forwarding telemetry from HealthReport and sink-runtime delivery health beyond the current placeholder UI.
-- Additional Public API controllers for sensors, pools, forwarding, and BPF once those automation routes are intentionally added.
-- Platform alert center.
+- Additional Public API controllers for sensors, pools, forwarding, BPF, and alerts once those automation routes are intentionally added.
+- Platform alert notification delivery channels.
 - Historical metrics, health baselines, and live data-flow visualization.
 - Canary deployments and detection content lifecycle management.
 - Offline update bundle import.
@@ -102,12 +103,13 @@ These areas are specified but should not be assumed complete in the current app:
 | 6 | `vector-forwarding-mgmt` | Implemented for the browser MVP surface with pool-level sink CRUD, encrypted secrets, schema mode selection, connection test dispatch, RBAC/audit integration, sensor detail summary, telemetry placeholder, and full-profile E2E coverage. | Adds operator-managed forwarding sinks beyond the baseline Vector config. |
 | 7 | `pcap-search-retrieval` | Implemented and full-profile E2E verified against the test server. | Completes the operator investigation loop using existing sensor PCAP plumbing. |
 | 8 | `public-api-docs` | Implemented for the current Public API surface: OpenAPI JSON, local `/api/docs`, version headers, docs auth config, request IDs on Public API errors, per-token rate limiting, request-level API audit entries, and route/spec tests. | Documents and stabilizes the current automation surface before more product expansion. |
-| 9 | `platform-alert-center`, `historical-metrics`, `health-baselines`, `live-data-flow-viz` | Not started; post-MVP. | Adds platform-native alerting and observability workflows after the pilot API/documentation gap is closed. |
-| 10 | `canary-deploys`, `detection-content-lifecycle`, `offline-update-bundle`, `multi-manager-ha` | Not started; post-MVP. | Adds advanced rollout, air-gap, content lifecycle, and production operations. |
+| 9 | `platform-alert-center` | Implemented on the post-MVP feature branch and deployed full-profile E2E verified against the test server. Notification delivery and deferred telemetry-backed alert types remain future work. | Adds platform-native alerting from current health telemetry and rule deployment events. |
+| 10 | `historical-metrics`, `health-baselines`, `live-data-flow-viz` | Not started; post-MVP. | Adds platform observability workflows after alerting. |
+| 11 | `canary-deploys`, `detection-content-lifecycle`, `offline-update-bundle`, `multi-manager-ha` | Not started; post-MVP. | Adds advanced rollout, air-gap, content lifecycle, and production operations. |
 
 The lower-level `network-sensor-stack`, `network-sensor-stack/interface-switching`, and `sensor-stack-production-hardening` specs define capture-plane behavior that higher-level UI and management-plane specs should reference rather than redefine.
 
-The next post-MVP branch should begin with Platform Alert Center. Its spec exists, but implementation must first confirm which alert rules can be backed by current health reports and system events; Vector sink-down behavior remains placeholder-only until forwarding telemetry is implemented.
+The current post-MVP branch implements Platform Alert Center. It supports health/report-backed alerts and rule deployment failure events; Vector sink-down behavior remains disabled until forwarding telemetry is implemented.
 
 ## Shared Contracts
 

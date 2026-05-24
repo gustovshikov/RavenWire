@@ -2,7 +2,9 @@
 
 ## Overview
 
-This design adds a centralized alerting subsystem to the RavenWire Config Manager. The Platform Alert Center derives platform-level alerts from health telemetry (clock drift, packet drops, disk usage, sensor offline) and system events (deployment failures, BPF validation errors, certificate expiration, PCAP prune failures, Vector sink down). It does not cover network traffic / SIEM alerts.
+This design adds a centralized alerting subsystem to the RavenWire Config Manager. The Platform Alert Center derives platform-level alerts from currently available health telemetry (clock drift, packet drops, disk usage, sensor offline) and system events (rule deployment failures, certificate expiration). It does not cover network traffic / SIEM alerts.
+
+Built-in alert rules are still created for `vector_sink_down`, `bpf_validation_failed`, and `pcap_prune_failed`, but those rules are disabled by default. Vector sink runtime health remains placeholder-only until HealthReport exposes real sink telemetry, and BPF/PCAP failure alerts require reliable manager-visible system events before they are enabled.
 
 The subsystem consists of four major components:
 
@@ -27,7 +29,7 @@ The subsystem consists of four major components:
 
 7. **Reuse existing Audit context**: Alert lifecycle events (fire, ack, resolve, rule change) use the existing `Audit.append_multi/2` pattern inside Ecto.Multi transactions, ensuring atomicity between alert state changes and audit entries.
 
-8. **System events via PubSub, not polling**: Deployment failures, BPF validation errors, and PCAP prune failures are published by the existing `RuleDeployer` and future event sources to a `"system_events"` topic. The Alert Engine subscribes and evaluates. Cert expiration and sensor offline are checked periodically since they are time-based, not event-based.
+8. **System events via PubSub, not polling**: Rule deployment failures are published to a `"system_events"` topic. Deferred BPF validation, PCAP prune, and Vector sink-down alert rules will use the same topic or future HealthReport fields when those sources exist. Cert expiration and sensor offline are checked periodically since they are time-based, not event-based.
 
 ## Architecture
 

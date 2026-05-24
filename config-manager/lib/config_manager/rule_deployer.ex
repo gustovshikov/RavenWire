@@ -33,9 +33,10 @@ defmodule ConfigManager.RuleDeployer do
   def deploy_to_pool(pool_id, rules, opts \\ []) when is_map(rules) do
     pods =
       Repo.all(
-        from p in SensorPod,
+        from(p in SensorPod,
           where: p.pool_id == ^pool_id and p.status == "enrolled",
           select: p
+        )
       )
 
     results =
@@ -45,11 +46,14 @@ defmodule ConfigManager.RuleDeployer do
         case result do
           {:ok, _} ->
             Logger.info("RuleDeployer: deployed rules to pod #{pod.name} (pool #{pool_id})")
+            publish_rule_deploy_success(pod, pool_id, opts)
 
           {:error, reason} ->
             Logger.warning(
               "RuleDeployer: failed to deploy rules to pod #{pod.name}: #{inspect(reason)}"
             )
+
+            publish_rule_deploy_failure(pod, pool_id, reason, opts)
         end
 
         %{pod_id: pod.id, pod_name: pod.name, result: result}
@@ -70,7 +74,31 @@ defmodule ConfigManager.RuleDeployer do
         {:error, :pod_not_found}
 
       pod ->
-        SensorAgentClient.push_rule_bundle(pod, rules, opts)
+        result = SensorAgentClient.push_rule_bundle(pod, rules, opts)
+
+        case result do
+          {:ok, _body} -> publish_rule_deploy_success(pod, pod.pool_id, opts)
+          {:error, reason} -> publish_rule_deploy_failure(pod, pod.pool_id, reason, opts)
+        end
+
+        result
     end
+  end
+
+  defp publish_rule_deploy_success(pod, pool_id, opts) do
+    ConfigManager.Alerts.publish_system_event(:rule_deploy_success, pod.name, %{
+      sensor_pod_db_id: pod.id,
+      pool_id: pool_id,
+      version: Keyword.get(opts, :version)
+    })
+  end
+
+  defp publish_rule_deploy_failure(pod, pool_id, reason, opts) do
+    ConfigManager.Alerts.publish_system_event(:rule_deploy_failed, pod.name, %{
+      sensor_pod_db_id: pod.id,
+      pool_id: pool_id,
+      version: Keyword.get(opts, :version),
+      reason: inspect(reason)
+    })
   end
 end

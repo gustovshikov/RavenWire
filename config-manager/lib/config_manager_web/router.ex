@@ -103,6 +103,10 @@ defmodule ConfigManagerWeb.Router do
     plug(ConfigManagerWeb.Plugs.RequirePermission, "deployments:manage")
   end
 
+  pipeline :alerts_manage do
+    plug(ConfigManagerWeb.Plugs.RequirePermission, "alerts:manage")
+  end
+
   # mTLS-authenticated internal API (Sensor_Agent → Config_Manager)
   pipeline :mtls_api do
     plug(:accepts, ["json"])
@@ -212,6 +216,17 @@ defmodule ConfigManagerWeb.Router do
 
       live("/support-bundle", SupportBundleLive, :index)
       live("/sensors/:id", SensorDetailLive, :show)
+      live("/alerts", AlertDashboardLive, :index)
+      live("/alerts/notifications", AlertNotificationsLive, :index)
+    end
+  end
+
+  scope "/", ConfigManagerWeb do
+    pipe_through([:browser, :require_auth, :require_password_change, :alerts_manage])
+
+    live_session :alert_rules,
+      on_mount: [{ConfigManagerWeb.AuthHelpers, :require_auth}] do
+      live("/alerts/rules", AlertRulesLive, :index)
     end
   end
 

@@ -5,7 +5,17 @@ defmodule ConfigManagerWeb.SensorDetailLive do
 
   import ConfigManagerWeb.Formatters
 
-  alias ConfigManager.{Audit, Deployments, Forwarding, Pools, Repo, SensorAgentClient, SensorPod}
+  alias ConfigManager.{
+    Alerts,
+    Audit,
+    Deployments,
+    Forwarding,
+    Pools,
+    Repo,
+    SensorAgentClient,
+    SensorPod
+  }
+
   alias ConfigManager.Auth.Policy
   alias ConfigManager.Health.Registry
 
@@ -60,6 +70,7 @@ defmodule ConfigManagerWeb.SensorDetailLive do
 
         if connected?(socket) do
           Phoenix.PubSub.subscribe(ConfigManager.PubSub, Registry.pod_topic(health_key))
+          Phoenix.PubSub.subscribe(ConfigManager.PubSub, "alert:sensor:#{health_key}")
 
           if pod.pool_id do
             Phoenix.PubSub.subscribe(ConfigManager.PubSub, "pool:#{pod.pool_id}:drift")
@@ -77,6 +88,7 @@ defmodule ConfigManagerWeb.SensorDetailLive do
          |> assign(:sensor_drift, Deployments.sensor_drift(pod))
          |> assign(:health_key, health_key)
          |> assign(:health, Registry.get(health_key))
+         |> assign(:active_alerts, Alerts.active_alerts_for_sensor(health_key))
          |> assign(:degradation_reasons, Registry.get_degradation_reasons(health_key))
          |> assign(:in_flight_actions, MapSet.new())
          |> assign(:action_tasks, %{})
@@ -92,6 +104,11 @@ defmodule ConfigManagerWeb.SensorDetailLive do
      socket
      |> assign(:health, Registry.get(health_key))
      |> assign(:degradation_reasons, Registry.get_degradation_reasons(health_key))}
+  end
+
+  def handle_info({event, _alert}, %{assigns: %{health_key: health_key}} = socket)
+      when event in [:alert_fired, :alert_updated, :alert_resolved] do
+    {:noreply, assign(socket, :active_alerts, Alerts.active_alerts_for_sensor(health_key))}
   end
 
   def handle_info(
@@ -285,6 +302,7 @@ defmodule ConfigManagerWeb.SensorDetailLive do
 
       <.status_banners pod={@pod} health={@health} stale_threshold_sec={@stale_threshold_sec} />
       <.degradation_summary reasons={@degradation_reasons} />
+      <.alert_summary_section pod={@pod} alerts={@active_alerts} />
       <.identity_section pod={@pod} pool_name={@pool_name} health={@health} />
       <.deployment_section pod={@pod} drift={@sensor_drift} />
       <.host_readiness_section health={@health} />
@@ -300,6 +318,34 @@ defmodule ConfigManagerWeb.SensorDetailLive do
         confirm_revoke={@confirm_revoke}
       />
     </main>
+    """
+  end
+
+  attr(:pod, :map, required: true)
+  attr(:alerts, :list, required: true)
+
+  def alert_summary_section(assigns) do
+    ~H"""
+    <%= if @alerts != [] do %>
+      <section aria-label="Active Alerts" class="mb-4 rounded border border-red-200 bg-red-50 p-4">
+        <div class="mb-3 flex items-center justify-between gap-3">
+          <h2 class="text-lg font-semibold text-red-950">Active Alerts</h2>
+          <a class="text-sm text-red-800 hover:underline" href={"/alerts?sensor_pod_id=#{URI.encode(@pod.name)}"}>View filtered alerts</a>
+        </div>
+        <div class="space-y-2">
+          <%= for alert <- @alerts do %>
+            <div class="rounded border border-red-100 bg-white px-3 py-2 text-sm">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class={"inline-flex rounded px-2 py-0.5 text-xs font-medium #{Alerts.severity_class(alert.severity)}"}><%= display(alert.severity) %></span>
+                <span class={"inline-flex rounded px-2 py-0.5 text-xs font-medium #{Alerts.status_class(alert.status)}"}><%= display(alert.status) %></span>
+                <span class="font-medium text-gray-900"><%= Alerts.alert_type_label(alert.alert_type) %></span>
+              </div>
+              <p class="mt-1 text-gray-700"><%= alert.message %></p>
+            </div>
+          <% end %>
+        </div>
+      </section>
+    <% end %>
     """
   end
 

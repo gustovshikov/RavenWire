@@ -10,67 +10,70 @@ defmodule ConfigManager.Application do
 
     _grpc_tls_opts = build_grpc_tls_opts(ca_path)
 
-    children = [
-      # Database
-      ConfigManager.Repo,
+    children =
+      [
+        # Database
+        ConfigManager.Repo,
 
-      # Login attempt rate limiting
-      ConfigManager.Auth.RateLimiter,
+        # Login attempt rate limiting
+        ConfigManager.Auth.RateLimiter,
 
-      # Per-token Public API rate limiting
-      ConfigManagerWeb.Api.RateLimiter,
+        # Per-token Public API rate limiting
+        ConfigManagerWeb.Api.RateLimiter,
 
-      # Periodic cleanup for expired browser sessions
-      ConfigManager.Auth.SessionPruner,
+        # Periodic cleanup for expired browser sessions
+        ConfigManager.Auth.SessionPruner,
 
-      # Bootstrap local admin account when the users table is empty
-      ConfigManager.Auth.AdminSeeder,
+        # Bootstrap local admin account when the users table is empty
+        ConfigManager.Auth.AdminSeeder,
 
-      # PubSub for LiveView
-      {Phoenix.PubSub, name: ConfigManager.PubSub},
+        # PubSub for LiveView
+        {Phoenix.PubSub, name: ConfigManager.PubSub},
 
-      # Health registry (in-memory pod state)
-      ConfigManager.Health.Registry,
+        # Health registry (in-memory pod state)
+        ConfigManager.Health.Registry
+      ] ++
+        alert_engine_children() ++
+        [
+          # Sensor detail actions run off the LiveView process so slow Control API
+          # calls can be timed out without blocking UI state updates.
+          {Task.Supervisor, name: ConfigManager.SensorActionTaskSupervisor},
 
-      # Sensor detail actions run off the LiveView process so slow Control API
-      # calls can be timed out without blocking UI state updates.
-      {Task.Supervisor, name: ConfigManager.SensorActionTaskSupervisor},
+          # Deployment orchestration runs in supervised tasks so deployment creation
+          # can return promptly while per-sensor push results stream in.
+          {Task.Supervisor, name: ConfigManager.Deployments.TaskSupervisor},
 
-      # Deployment orchestration runs in supervised tasks so deployment creation
-      # can return promptly while per-sensor push results stream in.
-      {Task.Supervisor, name: ConfigManager.Deployments.TaskSupervisor},
+          # Rule repository updates fetch and parse archives outside request processes.
+          {Task.Supervisor, name: ConfigManager.Rules.TaskSupervisor},
 
-      # Rule repository updates fetch and parse archives outside request processes.
-      {Task.Supervisor, name: ConfigManager.Rules.TaskSupervisor},
+          # BPF validation shells out to tcpdump under an isolated async supervisor.
+          {Task.Supervisor, name: ConfigManager.Bpf.TaskSupervisor},
 
-      # BPF validation shells out to tcpdump under an isolated async supervisor.
-      {Task.Supervisor, name: ConfigManager.Bpf.TaskSupervisor},
+          # Forwarding sink connection checks run outside LiveView/request processes.
+          {Task.Supervisor, name: ConfigManager.Forwarding.TaskSupervisor},
 
-      # Forwarding sink connection checks run outside LiveView/request processes.
-      {Task.Supervisor, name: ConfigManager.Forwarding.TaskSupervisor},
+          # PCAP carve status polling runs outside LiveView/request processes.
+          {Task.Supervisor, name: ConfigManager.Pcap.TaskSupervisor},
 
-      # PCAP carve status polling runs outside LiveView/request processes.
-      {Task.Supervisor, name: ConfigManager.Pcap.TaskSupervisor},
+          # Intermediate CA — generates or loads keypair from persistent volume
+          ConfigManager.CA.IntermediateCA,
 
-      # Intermediate CA — generates or loads keypair from persistent volume
-      ConfigManager.CA.IntermediateCA,
+          # CRL store — ETS-backed revocation list, loaded from DB on startup
+          ConfigManager.CA.CRLStore,
 
-      # CRL store — ETS-backed revocation list, loaded from DB on startup
-      ConfigManager.CA.CRLStore,
+          # Finch HTTP client
+          {Finch, name: ConfigManager.Finch},
 
-      # Finch HTTP client
-      {Finch, name: ConfigManager.Finch},
+          # Telemetry
+          ConfigManager.Telemetry,
 
-      # Telemetry
-      ConfigManager.Telemetry,
+          # gRPC health stream server — accepts Sensor_Agent streams on port 9090 (mTLS)
+          {GRPC.Server.Supervisor,
+           endpoint: ConfigManager.Health.GrpcEndpoint, port: grpc_port, start_server: true},
 
-      # gRPC health stream server — accepts Sensor_Agent streams on port 9090 (mTLS)
-      {GRPC.Server.Supervisor,
-       endpoint: ConfigManager.Health.GrpcEndpoint, port: grpc_port, start_server: true},
-
-      # Phoenix endpoint (port 8443)
-      ConfigManagerWeb.Endpoint
-    ]
+          # Phoenix endpoint (port 8443)
+          ConfigManagerWeb.Endpoint
+        ]
 
     opts = [strategy: :one_for_one, name: ConfigManager.Supervisor]
     Supervisor.start_link(children, opts)
@@ -101,6 +104,12 @@ defmodule ConfigManager.Application do
       # No TLS in dev/test when certs are absent
       []
     end
+  end
+
+  defp alert_engine_children do
+    if Application.get_env(:config_manager, :alert_engine_enabled, true),
+      do: [ConfigManager.Alerts.AlertEngine],
+      else: []
   end
 
   @impl true

@@ -2,7 +2,7 @@
 
 ## Introduction
 
-The Platform Alert Center adds a centralized alerting subsystem to the RavenWire Config Manager web UI. This feature derives platform-level alerts from health telemetry and system events — not from network traffic analysis (SIEM). Alerts cover conditions such as sensor offline, high packet drops, clock drift, disk critical, Vector sink down, rule deployment failure, certificate expiration, BPF validation failure, and PCAP prune failure.
+The Platform Alert Center adds a centralized alerting subsystem to the RavenWire Config Manager web UI. This feature derives platform-level alerts from health telemetry and system events — not from network traffic analysis (SIEM). Alerts cover conditions such as sensor offline, high packet drops, clock drift, disk critical, rule deployment failure, and certificate expiration. Built-in rules also reserve `vector_sink_down`, `bpf_validation_failed`, and `pcap_prune_failed`, but those rules are disabled by default until reliable manager-visible telemetry or system events exist.
 
 The system consists of three parts: (1) an alert rule engine that evaluates configurable conditions against incoming health telemetry and system events, (2) a persistent alert store for historical review and acknowledgment workflows, and (3) LiveView pages at `/alerts`, `/alerts/rules`, and `/alerts/notifications` for viewing, managing, and configuring alerts in real time.
 
@@ -51,11 +51,11 @@ Notification channels (email, webhook) are deferred to a later phase. This spec 
 2. THE Config_Manager SHALL seed the `packet_drops_high` rule with a default threshold of 5.0 percent and severity `warning`.
 3. THE Config_Manager SHALL seed the `clock_drift` rule with a default threshold of 100 milliseconds and severity `warning`.
 4. THE Config_Manager SHALL seed the `disk_critical` rule with a default threshold of 90.0 percent and severity `critical`.
-5. THE Config_Manager SHALL seed the `vector_sink_down` rule with a default threshold of 0 (boolean condition: any sink reported down) and severity `critical`.
+5. THE Config_Manager SHALL seed the `vector_sink_down` rule disabled by default with a default threshold of 0 (boolean condition: any sink reported down) and severity `critical`, because HealthReport forwarding telemetry is placeholder-only.
 6. THE Config_Manager SHALL seed the `rule_deploy_failed` rule with a default threshold of 0 (boolean condition: any deployment failure) and severity `warning`.
 7. THE Config_Manager SHALL seed the `cert_expiring` rule with a default threshold of 72 hours before expiration and severity `warning`.
-8. THE Config_Manager SHALL seed the `bpf_validation_failed` rule with a default threshold of 0 (boolean condition: any BPF validation failure) and severity `warning`.
-9. THE Config_Manager SHALL seed the `pcap_prune_failed` rule with a default threshold of 0 (boolean condition: any prune failure) and severity `critical`.
+8. THE Config_Manager SHALL seed the `bpf_validation_failed` rule disabled by default with a default threshold of 0 (boolean condition: any BPF validation failure) and severity `warning`.
+9. THE Config_Manager SHALL seed the `pcap_prune_failed` rule disabled by default with a default threshold of 0 (boolean condition: any prune failure) and severity `critical`.
 
 ### Requirement 3: Health Telemetry Alert Evaluation
 
@@ -78,10 +78,10 @@ Notification channels (email, webhook) are deferred to a later phase. This spec 
 #### Acceptance Criteria
 
 1. WHEN a rule deployment returns a failure result for a Sensor_Pod, THE Alert_Engine SHALL fire a `rule_deploy_failed` alert for that Sensor_Pod.
-2. WHEN a BPF filter validation fails during a deployment attempt, THE Alert_Engine SHALL fire a `bpf_validation_failed` alert for that Sensor_Pod.
+2. WHEN a BPF filter validation failure event is available during a deployment attempt, THE Alert_Engine SHALL fire a `bpf_validation_failed` alert for that Sensor_Pod only if the deferred rule has been explicitly enabled.
 3. WHEN a Sensor_Pod certificate is within the `cert_expiring` threshold of its expiration time, THE Alert_Engine SHALL fire a `cert_expiring` alert for that Sensor_Pod.
-4. WHEN a PCAP storage prune operation fails for a Sensor_Pod, THE Alert_Engine SHALL fire a `pcap_prune_failed` alert for that Sensor_Pod.
-5. WHEN the Health_Report indicates a Vector sink is unreachable or in error state, THE Alert_Engine SHALL fire a `vector_sink_down` alert for that Sensor_Pod.
+4. WHEN a PCAP storage prune operation failure event is available for a Sensor_Pod, THE Alert_Engine SHALL fire a `pcap_prune_failed` alert for that Sensor_Pod only if the deferred rule has been explicitly enabled.
+5. WHEN HealthReport includes real Vector sink runtime status and indicates a Vector sink is unreachable or in error state, THE Alert_Engine SHALL fire a `vector_sink_down` alert for that Sensor_Pod only if the deferred rule has been explicitly enabled.
 6. WHEN a system event alert condition is resolved (e.g., certificate renewed, successful re-deployment), THE Alert_Engine SHALL auto-resolve the corresponding alert.
 
 ### Requirement 5: Alert Persistence and History

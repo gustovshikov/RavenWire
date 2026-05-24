@@ -4,14 +4,32 @@ defmodule ConfigManagerWeb.AuthHelpers do
   import Phoenix.Component
   import Phoenix.LiveView
 
-  alias ConfigManager.Auth
+  alias ConfigManager.{Alerts, Auth}
   alias ConfigManager.Auth.Policy
   alias ConfigManager.Audit
 
   def on_mount(:require_auth, _params, session, socket) do
     case Auth.validate_session(session["session_token"]) do
-      {:ok, user} -> {:cont, assign(socket, :current_user, user)}
-      {:error, _reason} -> {:halt, redirect(socket, to: "/login")}
+      {:ok, user} ->
+        if connected?(socket), do: Phoenix.PubSub.subscribe(ConfigManager.PubSub, "alerts")
+
+        socket =
+          socket
+          |> assign(:current_user, user)
+          |> assign(:firing_alert_count, Alerts.firing_alert_count())
+          |> attach_hook(:alert_nav_badge, :handle_info, fn
+            {event, _alert}, socket
+            when event in [:alert_fired, :alert_updated, :alert_resolved] ->
+              {:cont, assign(socket, :firing_alert_count, Alerts.firing_alert_count())}
+
+            _message, socket ->
+              {:cont, socket}
+          end)
+
+        {:cont, socket}
+
+      {:error, _reason} ->
+        {:halt, redirect(socket, to: "/login")}
     end
   end
 

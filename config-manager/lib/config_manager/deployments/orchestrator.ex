@@ -107,6 +107,7 @@ defmodule ConfigManager.Deployments.Orchestrator do
               message: "deployment applied"
             })
 
+          maybe_publish_rule_deploy_success(result.sensor_pod, deployment, updated)
           updated
 
         {:error, reason} ->
@@ -119,6 +120,7 @@ defmodule ConfigManager.Deployments.Orchestrator do
               message: format_reason(reason)
             })
 
+          maybe_publish_rule_deploy_failure(result.sensor_pod, deployment, updated, reason)
           updated
       end
     end
@@ -150,7 +152,7 @@ defmodule ConfigManager.Deployments.Orchestrator do
   defp push_rules(sensor, %{"files" => files, "version" => version}) do
     case client().push_rule_bundle(sensor, files || %{}, version: version || 0) do
       {:ok, _body} -> :ok
-      {:error, reason} -> {:error, reason}
+      {:error, reason} -> {:error, {:rule_deploy_failed, reason}}
     end
   end
 
@@ -354,12 +356,14 @@ defmodule ConfigManager.Deployments.Orchestrator do
   defp error_status(:no_control_api_host), do: "unreachable"
   defp error_status({:http_error, _status, _body}), do: "failed"
   defp error_status({:validation_error, _body}), do: "failed"
+  defp error_status({:rule_deploy_failed, reason}), do: error_status(reason)
   defp error_status(_reason), do: "unreachable"
 
   defp audit_result("successful"), do: "success"
   defp audit_result(_status), do: "failure"
 
   defp format_reason(reason) when is_binary(reason), do: reason
+  defp format_reason({:rule_deploy_failed, reason}), do: format_reason(reason)
   defp format_reason(reason), do: inspect(reason)
 
   defp timeout_message(:timeout), do: "deployment task timed out"
@@ -375,6 +379,37 @@ defmodule ConfigManager.Deployments.Orchestrator do
       message
     )
   end
+
+  defp maybe_publish_rule_deploy_success(sensor, deployment, result) do
+    if rules_payload?(deployment.config_snapshot) do
+      ConfigManager.Alerts.publish_system_event(:rule_deploy_success, sensor.name, %{
+        sensor_pod_db_id: sensor.id,
+        deployment_id: deployment.id,
+        result_id: result.id
+      })
+    end
+  end
+
+  defp maybe_publish_rule_deploy_failure(
+         sensor,
+         deployment,
+         result,
+         {:rule_deploy_failed, reason}
+       ) do
+    ConfigManager.Alerts.publish_system_event(:rule_deploy_failed, sensor.name, %{
+      sensor_pod_db_id: sensor.id,
+      deployment_id: deployment.id,
+      result_id: result.id,
+      reason: format_reason(reason)
+    })
+  end
+
+  defp maybe_publish_rule_deploy_failure(_sensor, _deployment, _result, _reason), do: :ok
+
+  defp rules_payload?(%{"rules" => %{"files" => files}}) when is_map(files),
+    do: map_size(files) > 0
+
+  defp rules_payload?(_snapshot), do: false
 
   defp now_utc, do: DateTime.utc_now()
 end
