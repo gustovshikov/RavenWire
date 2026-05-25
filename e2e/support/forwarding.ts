@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test"
 
-import { expectLiveViewConnected, expectNoPlainPostNavigation, waitForLiveViewIdle } from "./live-view"
+import { expectLiveViewConnected, expectNoPlainPostNavigation, fillAndSettle, selectAndSettle } from "./live-view"
 
 export type CreatedFileSink = {
   name: string
@@ -19,15 +19,10 @@ export async function createFileSink(
   await expect(page.getByRole("heading", { name: "Add Forwarding Sink" })).toBeVisible()
   await expectLiveViewConnected(page)
 
-  await page.locator("#sink-type").selectOption("file")
-  await waitForLiveViewIdle(page)
-  await expect(page.locator("#sink-type")).toHaveValue("file")
-  await page.locator("#sink-encoding").selectOption("ndjson")
-  await waitForLiveViewIdle(page)
-  await expect(page.locator("#sink-encoding")).toHaveValue("ndjson")
-  await page.locator("#sink-name").fill(name)
-  await page.locator("#sink-path_template").fill(pathTemplate)
-  await waitForLiveViewIdle(page)
+  await selectAndSettle(page, "#sink-type", "file")
+  await selectAndSettle(page, "#sink-encoding", "ndjson")
+  await fillAndSettle(page, "#sink-name", name)
+  await fillAndSettle(page, "#sink-path_template", pathTemplate)
   await expect(page.locator("#sink-name")).toHaveValue(name)
   await expect(page.locator("#sink-path_template")).toHaveValue(pathTemplate)
   await expect(page.locator("#sink-encoding")).toHaveValue("ndjson")

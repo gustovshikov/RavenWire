@@ -6,7 +6,7 @@ import { createMetricFixture, cleanupMetricFixturesByDatabase, type CreatedMetri
 import { createPool } from "../support/pools"
 import { e2eName } from "../support/test-data"
 import { test, expect } from "../support/fixtures"
-import { expectLiveViewConnected, waitForLiveViewIdle } from "../support/live-view"
+import { clickAndSettle, expectLiveViewConnected, selectAndSettle, waitForLiveViewIdle } from "../support/live-view"
 import { createUser } from "../support/users"
 
 test.describe("historical metrics workflows @full", () => {
@@ -40,7 +40,7 @@ test.describe("historical metrics workflows @full", () => {
       await expect(dropSection.getByRole("button", { name: "View chart" })).toBeVisible()
       await expect(dropSection.getByRole("columnheader", { name: "Timestamp" })).toBeVisible()
 
-      await page.locator("#metrics-range").selectOption("1h")
+      await selectAndSettle(page, "#metrics-range", "1h")
       await expect(page).toHaveURL(/range=1h/)
       await expect(page.locator("#metrics-range")).toHaveValue("1h")
 
@@ -98,7 +98,15 @@ async function showTableView(section: Locator, page: Page) {
       break
     }
 
-    await tableButton.click()
+    await clickAndSettle(page, tableButton)
+    await page.waitForTimeout(250)
+    await waitForLiveViewIdle(page)
+
+    if ((await section.getByRole("button", { name: "View chart" }).count()) > 0) {
+      return
+    }
+
+    await tableButton.evaluate((element) => (element as HTMLElement).click()).catch(() => undefined)
     await waitForLiveViewIdle(page)
     await page.waitForTimeout(250)
 

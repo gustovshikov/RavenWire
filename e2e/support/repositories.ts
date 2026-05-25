@@ -1,6 +1,12 @@
-import { expect, type Page } from "@playwright/test"
+import { expect, type Dialog, type Page } from "@playwright/test"
 
-import { expectLiveViewConnected, expectNoPlainPostNavigation } from "./live-view"
+import {
+  clickUntilHidden,
+  expectLiveViewConnected,
+  expectNoPlainPostNavigation,
+  fillAndSettle,
+  selectAndSettle
+} from "./live-view"
 
 export type CreatedRepository = {
   name: string
@@ -16,9 +22,9 @@ export async function createRepository(
   await expect(page.getByRole("heading", { name: "Rule Repositories" })).toBeVisible()
   await expectLiveViewConnected(page)
 
-  await page.locator('input[name="repository[name]"]').fill(name)
-  await page.locator('input[name="repository[url]"]').fill(url)
-  await page.locator('select[name="repository[repo_type]"]').selectOption("custom")
+  await fillAndSettle(page, 'input[name="repository[name]"]', name)
+  await fillAndSettle(page, 'input[name="repository[url]"]', url)
+  await selectAndSettle(page, 'select[name="repository[repo_type]"]', "custom")
 
   await expectNoPlainPostNavigation(page, async () => {
     await page.getByRole("button", { name: "Add Repository" }).click()
@@ -38,9 +44,14 @@ export async function cleanupRepositoryByUi(page: Page, repository: CreatedRepos
   const row = repositoryRow(page, repository.name)
   if ((await row.count()) === 0) return
 
-  page.once("dialog", (dialog) => dialog.accept())
-  await row.getByRole("button", { name: "Delete" }).click()
-  await expect(repositoryRows(page, repository.name)).toHaveCount(0)
+  const acceptDialog = (dialog: Dialog) => dialog.accept()
+  page.on("dialog", acceptDialog)
+  try {
+    await clickUntilHidden(page, row.getByRole("button", { name: "Delete" }), repositoryRow(page, repository.name))
+  } finally {
+    page.off("dialog", acceptDialog)
+  }
+  await expect(repositoryRow(page, repository.name)).toBeHidden()
 }
 
 export function repositoryRow(page: Page, name: string) {

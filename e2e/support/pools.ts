@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test"
 
-import { expectLiveViewConnected, expectNoPlainPostNavigation, waitForLiveViewIdle } from "./live-view"
+import { expectLiveViewConnected, expectNoPlainPostNavigation, fillAndSettle } from "./live-view"
 
 export type CreatedPool = {
   name: string
@@ -28,22 +28,4 @@ export async function createPool(page: Page, name: string, description = "Create
   if (!id) throw new Error(`Could not extract pool ID from ${url}`)
 
   return { name, url, id }
-}
-
-async function fillAndSettle(page: Page, selector: string, value: string) {
-  const field = page.locator(selector)
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await field.fill(value)
-    await waitForLiveViewIdle(page)
-    await expect(field).toHaveValue(value)
-    await page.waitForTimeout(250)
-    await waitForLiveViewIdle(page)
-
-    if ((await field.inputValue()) === value) {
-      return
-    }
-  }
-
-  await expect(field).toHaveValue(value)
 }

@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test"
 
-import { expectLiveViewConnected, expectNoPlainPostNavigation } from "./live-view"
+import { expectLiveViewConnected, expectNoPlainPostNavigation, fillAndSettle, selectAndSettle } from "./live-view"
 
 export type CreatedUser = {
   username: string
@@ -19,11 +19,11 @@ export async function createUser(
   await expectLiveViewConnected(page)
 
   const form = page.locator('form[phx-submit="create_user"]')
-  await form.locator('input[name="user[username]"]').fill(username)
-  await form.locator('input[name="user[display_name]"]').fill(`E2E ${role}`)
-  await form.locator('input[name="user[password]"]').fill(password)
-  await form.locator('select[name="user[role]"]').selectOption(role)
-  await form.locator('select[name="user[must_change_password]"]').selectOption("false")
+  await fillAndSettle(page, form.locator('input[name="user[username]"]'), username)
+  await fillAndSettle(page, form.locator('input[name="user[display_name]"]'), `E2E ${role}`)
+  await fillAndSettle(page, form.locator('input[name="user[password]"]'), password)
+  await selectAndSettle(page, form.locator('select[name="user[role]"]'), role)
+  await selectAndSettle(page, form.locator('select[name="user[must_change_password]"]'), "false")
 
   await expectNoPlainPostNavigation(page, async () => {
     await form.getByRole("button", { name: "Create User" }).click()

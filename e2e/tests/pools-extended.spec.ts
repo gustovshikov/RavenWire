@@ -1,10 +1,17 @@
-import { type Page } from "@playwright/test"
-
 import { login } from "../support/auth"
 import { expectAuditEntry } from "../support/audit"
 import { CleanupRegistry } from "../support/cleanup"
 import { test, expect } from "../support/fixtures"
-import { expectLiveViewConnected, expectNoPlainPostNavigation, waitForLiveViewIdle } from "../support/live-view"
+import {
+  checkAndSettle,
+  expectLiveViewConnected,
+  expectNoPlainPostNavigation,
+  fillAndSettle,
+  clickUntilHidden,
+  clickUntilURL,
+  clickUntilVisible,
+  selectAndSettle
+} from "../support/live-view"
 import { createPool } from "../support/pools"
 import { e2eName } from "../support/test-data"
 
@@ -39,11 +46,11 @@ test.describe("extended pool workflows @full", () => {
       await page.goto(`/pools/${pool.id}/config`)
       await expect(page.getByRole("heading", { name: `${pool.name} Config` })).toBeVisible()
       await expectLiveViewConnected(page)
-      await page.locator("#sensor_pool_capture_mode").selectOption("full_pcap")
-      await page.locator("#sensor_pool_pcap_ring_size_mb").fill("8192")
-      await page.locator("#sensor_pool_pre_alert_window_sec").fill("120")
-      await page.locator("#sensor_pool_post_alert_window_sec").fill("45")
-      await page.locator("#sensor_pool_alert_severity_threshold").selectOption("3")
+      await selectAndSettle(page, "#sensor_pool_capture_mode", "full_pcap")
+      await fillAndSettle(page, "#sensor_pool_pcap_ring_size_mb", "8192")
+      await fillAndSettle(page, "#sensor_pool_pre_alert_window_sec", "120")
+      await fillAndSettle(page, "#sensor_pool_post_alert_window_sec", "45")
+      await selectAndSettle(page, "#sensor_pool_alert_severity_threshold", "3")
 
       await expectNoPlainPostNavigation(page, async () => {
         await page.getByRole("button", { name: "Save Config" }).click()
@@ -62,14 +69,26 @@ test.describe("extended pool workflows @full", () => {
       await expectLiveViewConnected(page)
       await expect(page.getByText("Full PCAP")).toBeVisible()
 
-      await page.getByRole("button", { name: "Delete Pool" }).click()
+      await clickUntilVisible(
+        page,
+        page.getByRole("button", { name: "Delete Pool" }),
+        page.getByRole("button", { name: "Confirm Delete" })
+      )
       await expect(page.getByRole("button", { name: "Confirm Delete" })).toBeVisible()
-      await page.getByRole("button", { name: "Cancel" }).click()
+      await clickUntilHidden(
+        page,
+        page.getByRole("button", { name: "Cancel" }),
+        page.getByRole("button", { name: "Confirm Delete" })
+      )
       await expect(page.getByRole("heading", { name: pool.name })).toBeVisible()
       await expect(page.getByRole("button", { name: "Confirm Delete" })).toHaveCount(0)
 
-      await page.getByRole("button", { name: "Delete Pool" }).click()
-      await page.getByRole("button", { name: "Confirm Delete" }).click()
+      await clickUntilVisible(
+        page,
+        page.getByRole("button", { name: "Delete Pool" }),
+        page.getByRole("button", { name: "Confirm Delete" })
+      )
+      await clickUntilURL(page, page.getByRole("button", { name: "Confirm Delete" }), /\/pools$/)
       await expect(page).toHaveURL(/\/pools$/)
       await expect(page.getByRole("link", { name: pool.name })).toHaveCount(0)
       await expectAuditEntry(page, { action: "pool_deleted", targetType: "pool", targetId: pool.id })
@@ -95,7 +114,7 @@ test.describe("extended pool workflows @full", () => {
       const sensorCheckbox = assignSection.getByLabel(e2e.sensorName, { exact: true })
       test.skip((await sensorCheckbox.count()) === 0, `${e2e.sensorName} is not currently unassigned`)
 
-      await sensorCheckbox.check()
+      await checkAndSettle(page, sensorCheckbox)
       await expectNoPlainPostNavigation(page, async () => {
         await assignSection.getByRole("button", { name: "Assign selected unassigned sensors" }).click()
       })
@@ -109,9 +128,17 @@ test.describe("extended pool workflows @full", () => {
       await expect(page.getByRole("heading", { name: `${pool.name} Sensors` })).toBeVisible()
       await expectLiveViewConnected(page)
       await expect(assignedSection.getByRole("button", { name: `Remove ${e2e.sensorName} from pool` })).toBeVisible()
-      await assignedSection.getByRole("button", { name: `Remove ${e2e.sensorName} from pool` }).click()
+      await clickUntilVisible(
+        page,
+        assignedSection.getByRole("button", { name: `Remove ${e2e.sensorName} from pool` }),
+        page.getByRole("button", { name: `Confirm removal of ${e2e.sensorName}` })
+      )
       await expect(page.getByRole("button", { name: `Confirm removal of ${e2e.sensorName}` })).toBeVisible()
-      await page.getByRole("button", { name: `Confirm removal of ${e2e.sensorName}` }).click()
+      await clickUntilVisible(
+        page,
+        page.getByRole("button", { name: `Confirm removal of ${e2e.sensorName}` }),
+        page.getByText("Sensor removed from pool.")
+      )
 
       await expect(page.getByText("Sensor removed from pool.")).toBeVisible()
       await expect(assignedSection.getByText("No sensors are assigned to this pool.")).toBeVisible()
@@ -121,21 +148,3 @@ test.describe("extended pool workflows @full", () => {
     }
   })
 })
-
-async function fillAndSettle(page: Page, selector: string, value: string) {
-  const field = page.locator(selector)
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await field.fill(value)
-    await waitForLiveViewIdle(page)
-    await expect(field).toHaveValue(value)
-    await page.waitForTimeout(250)
-    await waitForLiveViewIdle(page)
-
-    if ((await field.inputValue()) === value) {
-      return
-    }
-  }
-
-  await expect(field).toHaveValue(value)
-}

@@ -1,7 +1,7 @@
 import { expect, type Page, type TestInfo } from "@playwright/test"
 
 import type { E2EEnv } from "./env"
-import { expectLiveViewConnected } from "./live-view"
+import { clickUntilURL, clickUntilVisible, expectLiveViewConnected } from "./live-view"
 import { cleanupRepositoryByUi, type CreatedRepository } from "./repositories"
 import { runSsh, shellQuote } from "./ssh"
 import { deleteUserByUi, type CreatedUser } from "./users"
@@ -120,11 +120,11 @@ export async function cleanupPoolByUi(page: Page, pool: PoolRecord) {
 
   const deleteButton = page.getByRole("button", { name: "Delete Pool" })
   await expect(deleteButton).toBeVisible()
-  await deleteButton.click()
 
   const confirmButton = page.getByRole("button", { name: "Confirm Delete" })
+  await clickUntilVisible(page, deleteButton, confirmButton)
   await expect(confirmButton).toBeVisible()
-  await confirmButton.click()
+  await clickUntilURL(page, confirmButton, /\/pools$/)
 
   await expect(page).toHaveURL(/\/pools$/)
   await expect(page.getByRole("link", { name: pool.name })).toHaveCount(0)

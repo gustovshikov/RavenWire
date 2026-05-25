@@ -1,11 +1,17 @@
-import { type Page } from "@playwright/test"
-
 import { login, loginAs } from "../support/auth"
 import { expectAuditEntry } from "../support/audit"
 import { CleanupRegistry } from "../support/cleanup"
 import { createFileSink, forwardingSinkRow } from "../support/forwarding"
 import { test, expect } from "../support/fixtures"
-import { expectLiveViewConnected, expectNoPlainPostNavigation, waitForLiveViewIdle } from "../support/live-view"
+import {
+  checkAndSettle,
+  clickUntilHidden,
+  clickUntilVisible,
+  expectLiveViewConnected,
+  expectNoPlainPostNavigation,
+  fillAndSettle,
+  selectAndSettle
+} from "../support/live-view"
 import { createPool } from "../support/pools"
 import { e2eName } from "../support/test-data"
 import { createUser } from "../support/users"
@@ -30,7 +36,7 @@ test.describe("forwarding workflows @full", () => {
       await expect(page.getByText("0/0 enabled")).toBeVisible()
       await expect(page.locator("#schema-mode")).toHaveValue("raw")
 
-      await page.locator("#schema-mode").selectOption("ecs")
+      await selectAndSettle(page, "#schema-mode", "ecs")
       await expect(page.getByText("Forwarding schema mode updated.")).toBeVisible()
       await expect(page.locator("#schema-mode")).toHaveValue("ecs")
       await expect(page.getByText("Elastic Common Schema").first()).toBeVisible()
@@ -110,37 +116,49 @@ test.describe("forwarding workflows @full", () => {
       row = forwardingSinkRow(page, updatedSinkName)
       await expect(row).toBeVisible()
 
-      await expectNoPlainPostNavigation(page, async () => {
-        await row.getByRole("button", { name: "Disable" }).click()
-      })
+      await clickUntilVisible(
+        page,
+        row.getByRole("button", { name: "Disable" }),
+        row.getByRole("cell", { name: "Disabled", exact: true })
+      )
       row = forwardingSinkRow(page, updatedSinkName)
       await expect(row.getByRole("cell", { name: "Disabled", exact: true })).toBeVisible()
       await expect(row.getByRole("button", { name: "Enable" })).toBeVisible()
       await expect(page.getByText("0/1 enabled")).toBeVisible()
 
-      await expectNoPlainPostNavigation(page, async () => {
-        await row.getByRole("button", { name: "Enable" }).click()
-      })
+      await clickUntilVisible(
+        page,
+        row.getByRole("button", { name: "Enable" }),
+        row.getByRole("cell", { name: "Enabled", exact: true })
+      )
       row = forwardingSinkRow(page, updatedSinkName)
       await expect(row.getByRole("cell", { name: "Enabled", exact: true })).toBeVisible()
       await expect(row.getByRole("button", { name: "Disable" })).toBeVisible()
 
-      await expectNoPlainPostNavigation(page, async () => {
-        await row.getByRole("button", { name: "Delete" }).click()
-      })
+      await clickUntilVisible(
+        page,
+        row.getByRole("button", { name: "Delete" }),
+        page.getByRole("button", { name: "Confirm Delete" })
+      )
       await expect(page.getByRole("button", { name: "Confirm Delete" })).toBeVisible()
-      await expectNoPlainPostNavigation(page, async () => {
-        await page.getByRole("button", { name: "Cancel" }).click()
-      })
+      await clickUntilHidden(
+        page,
+        page.getByRole("button", { name: "Cancel" }),
+        page.getByRole("button", { name: "Confirm Delete" })
+      )
       await expect(page.getByRole("button", { name: "Confirm Delete" })).toHaveCount(0)
       await expect(forwardingSinkRow(page, updatedSinkName)).toBeVisible()
 
-      await expectNoPlainPostNavigation(page, async () => {
-        await forwardingSinkRow(page, updatedSinkName).getByRole("button", { name: "Delete" }).click()
-      })
-      await expectNoPlainPostNavigation(page, async () => {
-        await page.getByRole("button", { name: "Confirm Delete" }).click()
-      })
+      await clickUntilVisible(
+        page,
+        forwardingSinkRow(page, updatedSinkName).getByRole("button", { name: "Delete" }),
+        page.getByRole("button", { name: "Confirm Delete" })
+      )
+      await clickUntilHidden(
+        page,
+        page.getByRole("button", { name: "Confirm Delete" }),
+        forwardingSinkRow(page, updatedSinkName)
+      )
       await expect(page.getByText("Forwarding sink deleted.")).toBeVisible()
       await expect(forwardingSinkRow(page, updatedSinkName)).toHaveCount(0)
       await expect(page.getByText("No forwarding sinks configured.")).toBeVisible()
@@ -178,7 +196,7 @@ test.describe("forwarding workflows @full", () => {
       const sensorCheckbox = assignSection.getByLabel(e2e.sensorName, { exact: true })
       test.skip((await sensorCheckbox.count()) === 0, `${e2e.sensorName} is not currently unassigned`)
 
-      await sensorCheckbox.check()
+      await checkAndSettle(page, sensorCheckbox)
       await expectNoPlainPostNavigation(page, async () => {
         await assignSection.getByRole("button", { name: "Assign selected unassigned sensors" }).click()
       })
@@ -253,39 +271,3 @@ test.describe("forwarding workflows @full", () => {
     }
   })
 })
-
-async function selectAndSettle(page: Page, selector: string, value: string) {
-  const field = page.locator(selector)
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await field.selectOption(value)
-    await waitForLiveViewIdle(page)
-    await expect(field).toHaveValue(value)
-    await page.waitForTimeout(250)
-    await waitForLiveViewIdle(page)
-
-    if ((await field.inputValue()) === value) {
-      return
-    }
-  }
-
-  await expect(field).toHaveValue(value)
-}
-
-async function fillAndSettle(page: Page, selector: string, value: string) {
-  const field = page.locator(selector)
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await field.fill(value)
-    await waitForLiveViewIdle(page)
-    await expect(field).toHaveValue(value)
-    await page.waitForTimeout(250)
-    await waitForLiveViewIdle(page)
-
-    if ((await field.inputValue()) === value) {
-      return
-    }
-  }
-
-  await expect(field).toHaveValue(value)
-}

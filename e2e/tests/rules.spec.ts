@@ -1,7 +1,7 @@
 import { login } from "../support/auth"
 import { CleanupRegistry } from "../support/cleanup"
 import { test, expect } from "../support/fixtures"
-import { expectLiveViewConnected } from "../support/live-view"
+import { clickAndSettle, expectLiveViewConnected, fillAndSettle } from "../support/live-view"
 import { createPool } from "../support/pools"
 import { createRuleset } from "../support/rulesets"
 import { e2eName } from "../support/test-data"
@@ -34,7 +34,7 @@ test.describe("rule store and ruleset workflows @full", () => {
       await page.getByRole("link", { name: "Edit", exact: true }).click()
       await expect(page.getByRole("heading", { name: ruleset.name })).toBeVisible()
       await expectLiveViewConnected(page)
-      await page.locator('input[name="ruleset[description]"]').fill("Edited by RavenWire E2E full test.")
+      await fillAndSettle(page, 'input[name="ruleset[description]"]', "Edited by RavenWire E2E full test.")
       await expect(page.locator('input[name="ruleset[description]"]')).toHaveValue("Edited by RavenWire E2E full test.")
 
       await page.goto(ruleset.url)
@@ -43,11 +43,11 @@ test.describe("rule store and ruleset workflows @full", () => {
 
       const poolRow = page.locator("tr", { hasText: pool.name })
       await expect(poolRow).toBeVisible()
-      await poolRow.getByRole("button", { name: "Assign" }).click()
+      await clickAndSettle(page, poolRow.getByRole("button", { name: "Assign" }))
       await expect(poolRow.getByText("This ruleset")).toBeVisible()
       await expect(poolRow.getByRole("button", { name: "Deploy Rules" })).toBeVisible()
 
-      await poolRow.getByRole("button", { name: "Unassign" }).click()
+      await clickAndSettle(page, poolRow.getByRole("button", { name: "Unassign" }))
       await expect(poolRow.getByText("No Ruleset")).toBeVisible()
     } finally {
       await cleanup.cleanup(page, testInfo, e2e)

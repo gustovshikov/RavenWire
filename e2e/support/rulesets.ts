@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test"
 
-import { expectLiveViewConnected, expectNoPlainPostNavigation } from "./live-view"
+import { expectLiveViewConnected, expectNoPlainPostNavigation, fillAndSettle } from "./live-view"
 
 export type CreatedRuleset = {
   name: string
@@ -13,8 +13,8 @@ export async function createRuleset(page: Page, name: string, description = "Cre
   await expect(page.getByRole("heading", { name: "New Ruleset" })).toBeVisible()
   await expectLiveViewConnected(page)
 
-  await page.locator('input[name="ruleset[name]"]').fill(name)
-  await page.locator('input[name="ruleset[description]"]').fill(description)
+  await fillAndSettle(page, 'input[name="ruleset[name]"]', name)
+  await fillAndSettle(page, 'input[name="ruleset[description]"]', description)
 
   await expectNoPlainPostNavigation(page, async () => {
     await page.getByRole("button", { name: "Save Ruleset" }).click()

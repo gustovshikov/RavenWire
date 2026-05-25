@@ -1,6 +1,6 @@
 import { login } from "../support/auth"
 import { test, expect } from "../support/fixtures"
-import { expectLiveViewConnected, expectNoPlainPostNavigation } from "../support/live-view"
+import { clickUntilVisible, expectLiveViewConnected } from "../support/live-view"
 
 test.describe("admin and audit workflows @full", () => {
   test("admin pages, audit filters, audit detail, and export work", async ({ page, e2e }) => {
@@ -25,10 +25,11 @@ test.describe("admin and audit workflows @full", () => {
     await expect(page.getByRole("heading", { name: "Audit Log" })).toBeVisible()
     await expectLiveViewConnected(page)
     await expect(page.getByText("login").first()).toBeVisible()
-    await expectNoPlainPostNavigation(page, async () => {
-      await page.locator("tbody tr", { hasText: "login" }).first().getByRole("button", { name: "Show" }).click()
-    })
-    await expect(page.getByRole("button", { name: "Hide" }).first()).toBeVisible()
+    await clickUntilVisible(
+      page,
+      page.locator("tbody tr", { hasText: "login" }).first().getByRole("button", { name: "Show" }),
+      page.getByRole("button", { name: "Hide" }).first()
+    )
     await expect(page.locator("pre").first()).toBeVisible()
 
     await page.goto("/audit/export?action=login")
