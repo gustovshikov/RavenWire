@@ -4,7 +4,7 @@
 
 This design adds historical metrics persistence and time-series charting to the RavenWire Config Manager. The current Health Registry stores only the latest HealthReport per sensor in ETS, providing no visibility into past health state. This feature introduces a SQLite-backed metrics persistence layer that periodically snapshots key health metrics, retains them for a configurable period (minimum 72 hours), prunes older data automatically, and renders interactive time-series charts on new LiveView pages.
 
-Implementation status: the current branch implements metric persistence, context APIs, supervised sampling/pruning, sensor and pool LiveViews, Chart.js via a committed static UMD asset, route guards, local tests, and full-profile E2E coverage using deterministic metric fixtures. Deployed full-profile E2E verification has passed on the test server. No Public API endpoints are added by this feature.
+Implementation status: implemented and merged to `main` with metric persistence, context APIs, supervised sampling/pruning, sensor and pool LiveViews, Chart.js via a committed static UMD asset, route guards, local tests, and full-profile E2E coverage using deterministic metric fixtures. Deployed full-profile E2E verification has passed on the test server. No Public API endpoints are added by this feature.
 
 The implementation introduces four new modules and one new database table:
 

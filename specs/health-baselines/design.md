@@ -4,7 +4,7 @@
 
 This design adds statistical health baselines, anomaly detection, and capacity forecasting to the RavenWire Config Manager. The existing historical-metrics spec persists time-series metric snapshots and the platform-alert-center spec provides threshold-based alerting — but both use static thresholds that cannot distinguish normal variance from genuine anomalies. This feature bridges that gap by computing per-sensor and per-pool statistical profiles from historical data, detecting deviations using sigma-based analysis, and projecting capacity exhaustion using linear regression.
 
-Implementation status: work is complete on `feature/health-baselines` after Historical Metrics. The design continues to rely on `ConfigManager.Metrics` and `ConfigManager.Alerts`; forwarding runtime telemetry remains unavailable and is not used for baseline computation. Deployed full-profile E2E verification, service health, and cleanup audit passed on the test server.
+Implementation status: work is complete and merged to `main` after Historical Metrics. The design continues to rely on `ConfigManager.Metrics` and `ConfigManager.Alerts`; forwarding runtime telemetry remains unavailable and is not used for baseline computation. Deployed full-profile E2E verification, service health, and cleanup audit passed on the test server.
 
 The implementation introduces five new modules and one new database table:
 

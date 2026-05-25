@@ -4,6 +4,15 @@
 
 This plan implements the live data-flow visualization feature for the RavenWire Config Manager. The implementation follows a bottom-up approach: first building the pure derivation module (fully testable without LiveView), then the reusable rendering component, then the LiveView pages, and finally wiring navigation and routes together. Property-based tests validate the derivation logic at each step.
 
+## Current Reconciliation
+
+- Start this branch from the validated `main` state after Platform Alert Center, Historical Metrics, and Health Baselines have been merged.
+- Use `ConfigManager.Health.Registry.pod_topic/1` for pod-scoped subscriptions and `"sensor_pods"` for fleet-wide health updates.
+- Keep forwarding sink runtime health as `no_data`; forwarding configuration may label topology nodes, but it is not delivery telemetry.
+- Keep the feature browser/UI focused. Do not add `/api/v1` endpoints in this pass.
+- Use semantic HTML plus lightweight SVG connectors; do not add D3, canvas, or a new frontend build pipeline.
+- E2E coverage should focus on route rendering, missing telemetry placeholders, basic live update behavior, table fallback/accessibility, and permission behavior.
+
 ## Tasks
 
 - [ ] 1. Create the pure derivation module with segment state logic
@@ -36,18 +45,18 @@ This plan implements the live data-flow visualization feature for the RavenWire 
     - Build tooltip with container state, uptime, CPU%, memory, packets received/dropped, drop%
     - _Requirements: 4.2, 12.2_
 
-  - [ ] 1.5 Implement `derive_vector/2` with container and forwarding buffer logic
-    - Healthy: container "running", buffer ≤ 85% (or buffer data unavailable)
-    - Degraded: container "running" + buffer > 85%
+  - [ ] 1.5 Implement `derive_vector/2` with current container logic and future forwarding-buffer extension point
+    - Healthy: container "running" when forwarding buffer data is unavailable
+    - Degraded: future-only container "running" + buffer > 85% once HealthReport exposes buffer telemetry
     - Failed: container state "error" or "stopped"
     - No Data: container not present
     - Build tooltip with container state, uptime, CPU%, memory, buffer usage
     - _Requirements: 4.3, 12.5_
 
   - [ ] 1.6 Implement `derive_forwarding_sinks/1`
-    - When forwarding data available: one segment per configured sink with appropriate state
-    - When forwarding data nil: single "Forwarding Sinks" segment with `:no_data` state
-    - Build tooltip per sink with destination, connection status, latency, error count
+    - When forwarding configuration is available: render configured sink labels as `:no_data` runtime segments
+    - When no forwarding configuration is available: render a single "Forwarding Sinks" segment with `:no_data` state
+    - Keep connection status, latency, error count, and delivery health as future-only tooltip fields until HealthReport exposes runtime sink telemetry
     - _Requirements: 4.4, 9.1, 12.6_
 
   - [ ] 1.7 Implement `derive_storage_warnings/1` for PCAP Ring storage badges

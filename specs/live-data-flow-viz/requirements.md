@@ -8,6 +8,16 @@ This feature adds a live data-flow visualization that renders the sensor pipelin
 
 The current `HealthReport` protobuf includes container health, capture stats (per-consumer packets, drops, throughput), storage stats, and clock stats. It does **not** include forwarding data (Vector sink status, buffer usage, destination health) or host-level interface readiness. The visualization handles missing telemetry gracefully, rendering "data not available" placeholders for segments without upstream telemetry rather than inferring health from absence.
 
+## Current Implementation Context
+
+This feature starts after the validated single-site pilot MVP plus Platform Alert Center, Historical Metrics, and Health Baselines. It must build on the current Phoenix LiveView application and existing health registry behavior rather than defining a new telemetry plane.
+
+- `ConfigManager.Health.Registry.pod_topic/1` is the source of truth for pod-scoped PubSub topics. The current sensor detail page derives the registry key from `SensorPod.name` and subscribes through `Registry.pod_topic(health_key)`.
+- Global health updates continue to use the existing `"sensor_pods"` topic.
+- Forwarding sink configuration exists, but forwarding runtime telemetry is still unavailable in `HealthReport`; forwarding runtime state must remain `no_data` until the protobuf and sensor agent expose real sink telemetry.
+- Historical Metrics and Health Baselines are implemented, but this feature should derive live visualization state from the latest HealthReport/Registry data, sensor identity, pool membership, and forwarding configuration only where configuration is useful for labels/topology.
+- This feature is browser/UI focused and SHALL NOT add new `/api/v1` endpoints.
+
 ## Glossary
 
 - **Config_Manager**: The Phoenix/LiveView web application that manages the RavenWire sensor fleet.
@@ -27,7 +37,7 @@ The current `HealthReport` protobuf includes container health, capture stats (pe
 - **Stale_HealthReport**: A HealthReport whose timestamp is older than the configured freshness threshold (default 60 seconds).
 - **Visual_State_Palette**: The set of visual indicators mapping Segment_State to color, icon, and text label: green/checkmark for healthy, yellow/warning-triangle for degraded, red/x-circle for failed, gray/circle-slash for disabled, blue/refresh for pending_reload, and gray-dashed/question-circle for no_data.
 - **RBAC_Gate**: The runtime permission check from the auth-rbac-audit spec that compares the current user's role permissions against the permission required by a route or action.
-- **PubSub**: The Phoenix PubSub system used for real-time health updates, with pod-scoped topics (`"sensor_pod:#{health_key}"`) and fleet-wide topics (`"sensor_pods"`).
+- **PubSub**: The Phoenix PubSub system used for real-time health updates, with pod-scoped topics returned by `ConfigManager.Health.Registry.pod_topic/1` and fleet-wide updates on `"sensor_pods"`.
 
 ## Requirements
 
@@ -53,7 +63,7 @@ The current `HealthReport` protobuf includes container health, capture stats (pe
 2. THE Pipeline_Visualization SHALL render Segment_Connectors as directed edges showing the data flow direction from source segment to destination segment.
 3. THE Pipeline_Visualization SHALL render the analysis stage (Zeek, Suricata, PCAP Ring) as parallel branches from the AF_PACKET segment, converging at the Vector segment.
 4. WHEN the HealthReport includes additional capture consumers beyond Zeek, Suricata, and pcap_ring_writer, THE Pipeline_Visualization SHALL render those consumers as additional parallel branches in the analysis stage.
-5. THE Pipeline_Visualization SHALL render Forwarding Sinks as terminal segments after Vector, with one segment per configured sink when sink data is available and a single "Forwarding Sinks" no_data segment when configured sink telemetry is not available.
+5. THE Pipeline_Visualization SHALL render Forwarding Sinks as terminal segments after Vector. In v1, configured sinks MAY render as labeled terminal segments, but each sink's runtime state SHALL remain `no_data`; when no sink configuration is available, the visualization SHALL render a single "Forwarding Sinks" `no_data` segment.
 6. THE Pipeline_Visualization SHALL maintain a consistent left-to-right or top-to-bottom layout direction across all sensor views.
 7. THE Pipeline_Visualization SHALL not render host interface readiness as healthy or failed unless host interface telemetry is present; Mirror Port SHALL use no_data when only the current HealthReport schema is available.
 
@@ -153,11 +163,11 @@ The current `HealthReport` protobuf includes container health, capture stats (pe
 
 #### Acceptance Criteria
 
-1. WHEN the Sensor_Pipeline_Page is mounted and the LiveView WebSocket is connected, THE Sensor_Pipeline_Page SHALL subscribe to PubSub updates for the displayed Sensor_Pod using the pod-scoped topic (`"sensor_pod:#{health_key}"`).
+1. WHEN the Sensor_Pipeline_Page is mounted and the LiveView WebSocket is connected, THE Sensor_Pipeline_Page SHALL subscribe to PubSub updates for the displayed Sensor_Pod using `ConfigManager.Health.Registry.pod_topic(health_key)`, where `health_key` is the same registry key used by the existing sensor detail page.
 2. WHEN a new HealthReport arrives for the displayed Sensor_Pod, THE Sensor_Pipeline_Page SHALL re-derive all segment states and throughput annotations and update the Pipeline_Visualization within 2 seconds.
 3. WHEN the displayed Sensor_Pod transitions to or from a degraded state via PubSub degradation events, THE Sensor_Pipeline_Page SHALL update the affected segment indicators without requiring a page reload.
 4. THE Sensor_Pipeline_Page SHALL display the timestamp of the most recent HealthReport to indicate data freshness.
-5. WHEN the Pool_Pipeline_Page is mounted and the LiveView WebSocket is connected, THE Pool_Pipeline_Page SHALL subscribe to PubSub updates for all member sensors and the pool topic (`"pool:#{pool_id}"`).
+5. WHEN the Pool_Pipeline_Page is mounted and the LiveView WebSocket is connected, THE Pool_Pipeline_Page SHALL subscribe to PubSub updates for all member sensors through `Registry.pod_topic(member_health_key)` and to the pool topic (`"pool:#{pool_id}"`).
 6. WHEN a new HealthReport arrives for any member sensor of the displayed pool, THE Pool_Pipeline_Page SHALL re-derive the aggregate segment state counts and update the Aggregate_Pipeline.
 7. WHEN a sensor is added to or removed from the pool via PubSub pool membership events, THE Pool_Pipeline_Page SHALL update the member count and re-derive the aggregate view.
 8. THE Sensor_Pipeline_Page SHALL ignore PubSub updates for Sensor_Pods other than the displayed one.

@@ -1,6 +1,6 @@
 # Tasks: Health Baselines and Capacity Warnings
 
-Status: Health Baselines v1 is implemented on `feature/health-baselines` from the deployed-verified Historical Metrics branch. The persistence/context/worker/browser route slice has local regression coverage, E2E fixtures, deployed full-profile E2E verification, service health, and cleanup audit passing. No Public API endpoints are added in this feature. Remaining broad property coverage and deeper worker-hardening work is tracked under Follow-up Hardening and does not block this validated v1 branch.
+Status: Health Baselines v1 is implemented and merged to `main` from the deployed-verified Historical Metrics branch. The persistence/context/worker/browser route slice has local regression coverage, E2E fixtures, deployed full-profile E2E verification, service health, and cleanup audit passing. No Public API endpoints are added in this feature. Remaining broad property coverage and deeper worker-hardening work is tracked under Follow-up Hardening and does not block this validated v1 branch.
 
 ## Task 1: Database Migration and Ecto Schema
 
@@ -90,7 +90,7 @@ Status: Health Baselines v1 is implemented on `feature/health-baselines` from th
 ## Task 11: Browser E2E Verification
 
 - [x] 11.1 Add full-profile Playwright coverage for sensor and pool baseline pages using deterministic `e2e-` database fixtures and cleanup
-- [x] 11.2 Deploy `feature/health-baselines` to the test server and run `cd e2e && npm run preflight && npm run test:full`
+- [x] 11.2 Deploy Health Baselines to the test server and run `cd e2e && npm run preflight && npm run test:full`
 - [x] 11.3 Verify no lingering `e2e-` sensors, baseline fixtures, metric fixtures, pools, users, alerts, PCAP requests, rulesets, or repositories remain after the deployed E2E run
 
 ## Follow-up Hardening

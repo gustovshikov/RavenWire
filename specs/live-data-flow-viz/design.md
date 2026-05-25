@@ -14,6 +14,16 @@ The implementation introduces three new modules:
 
 The rendering is handled by a single reusable function component (`ConfigManagerWeb.PipelineComponent`) that accepts a structured pipeline state map and a mode attribute (`:sensor` or `:pool`). The component renders the canonical topology as semantic HTML with SVG connectors, accessible labels, keyboard navigation, and a screen-reader summary table. It does not query any data source directly.
 
+### Current-State Reconciliation
+
+This design is reconciled to the current post-MVP stack:
+
+- Platform Alert Center, Historical Metrics, and Health Baselines are implemented and verified. Pipeline visualization can link alongside those pages but should not duplicate historical charting or baseline computation.
+- `ConfigManager.Health.Registry.pod_topic/1` is already implemented and broadcasts pod-scoped updates in addition to the global `"sensor_pods"` topic. The current sensor detail LiveView uses `SensorPod.name` as the health registry key.
+- HealthReport currently provides container, capture, storage, clock, and system fields. It does not provide forwarding sink runtime status, buffer usage, destination health, or host-interface readiness. Mirror Port and forwarding runtime state therefore remain `:no_data` unless future telemetry explicitly supports them.
+- Forwarding configuration can be used to label configured sinks in the topology, but not to infer runtime sink health.
+- This feature adds LiveView/browser routes only. It does not add `/api/v1` controllers or OpenAPI surface.
+
 ### Key Design Decisions
 
 1. **Pure derivation module separate from LiveView**: All segment state derivation, threshold evaluation, and tooltip assembly lives in `ConfigManager.Pipeline.Derivation`. This follows the project's pattern of keeping business logic out of LiveViews (similar to how `DashboardLive` delegates status derivation to helper functions). The derivation module is the primary target for property-based testing with PropCheck.
@@ -28,7 +38,7 @@ The rendering is handled by a single reusable function component (`ConfigManager
 
 6. **PropCheck for property-based testing**: The project already includes `propcheck ~> 1.4`. Property tests will validate derivation rules, throughput formatting, storage threshold logic, aggregate worst-state computation, and the distinction between zero values and missing telemetry.
 
-7. **Pod-scoped PubSub reuse**: The sensor pipeline page subscribes to `"sensor_pod:#{health_key}"` using the same pattern established by the sensor detail page design. This design depends on the sensor-detail-page Registry extension that broadcasts `:pod_updated`, `:pod_degraded`, and `:pod_recovered` events to pod-scoped topics in addition to `"sensor_pods"`. If that extension has not landed yet, it must be implemented before or with this feature.
+7. **Pod-scoped PubSub reuse**: The sensor pipeline page subscribes through `ConfigManager.Health.Registry.pod_topic(health_key)` using the same pattern as `SensorDetailLive`. The Registry already broadcasts `:pod_updated`, `:pod_degraded`, and `:pod_recovered` events to pod-scoped topics in addition to `"sensor_pods"`.
 
 ## Architecture
 
@@ -82,12 +92,12 @@ graph TB
 4. If not found → render 404 page
 5. If found → derive `health_key = pod.name`, read health data from `Registry.get(health_key)`, read degradation from `Registry.get_degraded_pods()[health_key]`
 6. Call `Derivation.derive_sensor_pipeline/3` with the health report, sensor pod, and config to produce the structured pipeline state
-7. Subscribe to `"sensor_pod:#{health_key}"` PubSub topic when connected
+7. Subscribe to `Registry.pod_topic(health_key)` PubSub topic when connected
 8. Pass pipeline state to `PipelineComponent` with `mode=:sensor`
 
 **Real-time sensor pipeline update:**
 1. Sensor Agent streams `HealthReport` via gRPC
-2. Health Registry updates ETS, broadcasts `{:pod_updated, health_key}` to `"sensor_pod:#{health_key}"`
+2. Health Registry updates ETS, broadcasts `{:pod_updated, health_key}` to `Registry.pod_topic(health_key)` and `"sensor_pods"`
 3. `SensorPipelineLive.handle_info/2` receives the message, reads fresh health data from Registry
 4. Re-derives pipeline state via `Derivation.derive_sensor_pipeline/3`
 5. LiveView diffs only changed segment attributes thanks to stable DOM IDs
@@ -99,7 +109,7 @@ graph TB
 4. If pool not found → render 404; if zero members → render empty state
 5. For each member sensor, read health data from Registry and derive individual pipeline states
 6. Call `Derivation.aggregate_pool_pipeline/1` with the list of per-sensor pipeline states to produce aggregate state counts and worst-state indicators
-7. Subscribe to `"pool:#{pool_id}"` for membership changes and to `"sensor_pod:#{health_key}"` for each member sensor
+7. Subscribe to `"pool:#{pool_id}"` for membership changes and to `Registry.pod_topic(health_key)` for each member sensor
 8. Pass aggregate pipeline state to `PipelineComponent` with `mode=:pool`
 
 **Real-time pool pipeline update:**
@@ -287,10 +297,11 @@ defmodule ConfigManager.Pipeline.Derivation do
   def derive_analysis_tool(segment_id, container, consumer_stats, opts \\ [])
 
   @doc """
-  Derives the Vector segment state from container health.
+  Derives the Vector segment state from current container health with a future
+  extension point for forwarding buffer telemetry.
 
   - Healthy: container running
-  - Degraded: container running but forwarding buffer > 85% (when available)
+  - Degraded: future-only container running but forwarding buffer > 85%
   - Failed: container state is "error" or "stopped"
   - No Data: container not present
   """
@@ -298,13 +309,16 @@ defmodule ConfigManager.Pipeline.Derivation do
   def derive_vector(container, forwarding_data)
 
   @doc """
-  Derives forwarding sink segment states from forwarding telemetry.
+  Derives forwarding sink segment states from forwarding configuration and
+  optional future forwarding telemetry.
 
-  Returns a list of segments — one per configured sink when data is available,
-  or a single "Forwarding Sinks" no_data segment when telemetry is missing.
+  In v1, configured sinks may be rendered as labeled terminal segments, but
+  runtime state remains :no_data because HealthReport does not expose sink
+  delivery health. If no sink configuration is available, returns one generic
+  "Forwarding Sinks" no_data segment.
   """
-  @spec derive_forwarding_sinks(forwarding_data :: map() | nil) :: [segment()]
-  def derive_forwarding_sinks(forwarding_data)
+  @spec derive_forwarding_sinks(forwarding_config :: map() | nil, forwarding_data :: map() | nil) :: [segment()]
+  def derive_forwarding_sinks(forwarding_config, forwarding_data)
 
   @doc """
   Derives the Mirror Port segment. Always no_data with the current HealthReport
@@ -400,7 +414,7 @@ defmodule ConfigManagerWeb.PipelineLive.SensorPipelineLive do
     # 4. Read health from Registry.get(health_key)
     # 5. Read degradation from Registry.get_degraded_pods()
     # 6. Derive pipeline state via Derivation.derive_sensor_pipeline/3
-    # 7. Subscribe to "sensor_pod:#{health_key}" when connected
+    # 7. Subscribe to Registry.pod_topic(health_key) when connected
     # 8. Assign: pod, health_key, pipeline_state, last_report_time
   end
 
@@ -457,7 +471,7 @@ defmodule ConfigManagerWeb.PipelineLive.PoolPipelineLive do
     # 4. For each member: read health from Registry, derive pipeline state
     # 5. Aggregate via Derivation.aggregate_pool_pipeline/1
     # 6. Subscribe to "pool:#{pool_id}" for membership changes
-    # 7. Subscribe to "sensor_pod:#{health_key}" for each member
+    # 7. Subscribe to Registry.pod_topic(health_key) for each member
     # 8. Assign: pool, members, aggregate_state, debounce_timer, debounce_token
   end
 
@@ -617,9 +631,9 @@ The pipeline pages reuse existing PubSub topics. No new topics are introduced.
 
 | Page | Topic | Messages Handled |
 |------|-------|-----------------|
-| Sensor Pipeline | `"sensor_pod:#{health_key}"` | `{:pod_updated, _}`, `{:pod_degraded, _, _, _}`, `{:pod_recovered, _, _}` |
+| Sensor Pipeline | `Registry.pod_topic(health_key)` | `{:pod_updated, _}`, `{:pod_degraded, _, _, _}`, `{:pod_recovered, _, _}` |
 | Pool Pipeline | `"pool:#{pool_id}"` | `{:sensors_assigned, _, _}`, `{:sensors_removed, _, _}`, `{:pool_config_updated, _}` |
-| Pool Pipeline | `"sensor_pod:#{health_key}"` (per member) | `{:pod_updated, _}`, `{:pod_degraded, _, _, _}`, `{:pod_recovered, _, _}` |
+| Pool Pipeline | `Registry.pod_topic(health_key)` (per member) | `{:pod_updated, _}`, `{:pod_degraded, _, _, _}`, `{:pod_recovered, _, _}` |
 
 ### 7. Navigation Integration Updates
 
@@ -647,9 +661,9 @@ The pipeline pages reuse existing PubSub topics. No new topics are introduced.
 | Suricata | Container "running", no degradation | Container "running" + CPU >90% or drops >5% | Container "error"/"stopped" | Intentionally disabled | — | Container missing |
 | PCAP Ring | Container "running", no degradation | Container "running" + consumer drops >5% or CPU >90% | Container "error"/"stopped" | Intentionally disabled | — | Container missing |
 | Vector | Container "running" | Container "running" + buffer >85% | Container "error"/"stopped" | — | — | Container missing |
-| Forwarding Sinks | Sink connected/healthy | Elevated latency/partial failures | Sink disconnected/unreachable | — | — | No forwarding data |
+| Forwarding Sinks | Future: sink connected/healthy | Future: elevated latency/partial failures | Future: sink disconnected/unreachable | Configured but disabled, when represented by config | — | Current v1 state: no forwarding runtime data |
 
-PCAP storage pressure is represented as a warning, critical, or no-data badge on the PCAP Ring segment. It does not by itself change the segment state to failed; the failed state remains tied to explicit container or future explicit failure telemetry.
+PCAP storage pressure is represented as a warning, critical, or no-data badge on the PCAP Ring segment. It does not by itself change the segment state to failed; the failed state remains tied to explicit container or future explicit failure telemetry. Forwarding sink runtime health remains `:no_data` in v1 even when sinks are configured, because configuration is not runtime delivery telemetry.
 
 ### 9. Visual State Palette
 
@@ -877,7 +891,7 @@ erDiagram
 
 ### Property 5: Vector segment state derivation
 
-*For any* Vector container health state and forwarding buffer usage value, the Vector segment state SHALL be derived as follows: `:healthy` when the container state is `"running"` and buffer usage ≤ 85% (or buffer data unavailable); `:degraded` when the container state is `"running"` and buffer usage > 85%; `:failed` when the container state is `"error"` or `"stopped"`; `:no_data` when the Vector container is not present in the HealthReport.
+*For any* Vector container health state, the Vector segment state SHALL be derived as follows: `:healthy` when the container state is `"running"` and forwarding buffer data is unavailable; future telemetry may derive `:degraded` when buffer usage exceeds 85%; `:failed` when the container state is `"error"` or `"stopped"`; `:no_data` when the Vector container is not present in the HealthReport.
 
 **Validates: Requirements 4.3**
 
@@ -1030,7 +1044,7 @@ This feature uses both property-based tests (via PropCheck) and example-based un
 2. Output structural completeness (Property 2)
 3. AF_PACKET derivation rules with threshold boundaries (Property 3)
 4. Analysis-tool derivation rules with CPU and drop thresholds (Property 4)
-5. Vector derivation rules with buffer thresholds (Property 5)
+5. Vector derivation rules with current container telemetry and future buffer threshold guardrails (Property 5)
 6. Missing telemetry → no_data (Property 6)
 7. Zero throughput ≠ failed (Property 7)
 8. Throughput formatting zero/nil distinction (Property 8)

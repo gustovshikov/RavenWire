@@ -4,7 +4,7 @@
 
 This plan implements historical metrics persistence and time-series charting for the RavenWire Config Manager. The implementation proceeds bottom-up: database schema and context module first, then the Sampler GenServer, followed by LiveView pages and chart components, and finally navigation integration and wiring. Each step builds on the previous, ensuring no orphaned code.
 
-Status: implemented on `feature/historical-metrics` with local `mix test`, asset build, `sensorctl test`, deployed full-profile E2E, service health, and cleanup audit passing. Forwarding runtime metrics remain placeholders because HealthReport does not yet expose Vector sink telemetry.
+Status: implemented and merged to `main` with local `mix test`, asset build, `sensorctl test`, deployed full-profile E2E, service health, and cleanup audit passing. Forwarding runtime metrics remain placeholders because HealthReport does not yet expose Vector sink telemetry.
 
 ## Tasks
 

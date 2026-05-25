@@ -4,7 +4,7 @@
 
 This feature adds historical metrics persistence and time-series charting to the RavenWire Config Manager. The current Health Registry stores only the latest HealthReport per sensor in ETS, providing no visibility into past health state. Operators need to answer "what happened 6 hours ago?" for incident investigation, capacity planning, and capture-loss analysis.
 
-Status: implemented on `feature/historical-metrics` after Platform Alert Center. The feature is browser/UI focused and does not add `/api/v1` metrics endpoints. Forwarding runtime metrics remain future-only placeholders until HealthReport exposes sink telemetry.
+Status: implemented and merged to `main` after Platform Alert Center. The feature is browser/UI focused and does not add `/api/v1` metrics endpoints. Forwarding runtime metrics remain future-only placeholders until HealthReport exposes sink telemetry.
 
 The feature introduces a SQLite-backed metrics persistence layer that periodically snapshots key health metrics from incoming HealthReports, retains them for at least 72 hours, and prunes older data automatically. New LiveView pages at `/sensors/:id/metrics` and `/pools/:id/metrics` render interactive time-series charts for each metric type. A time range selector allows operators to focus on 1-hour, 6-hour, 24-hour, or 72-hour windows. Charts update in real time as new snapshots arrive via PubSub.
 
