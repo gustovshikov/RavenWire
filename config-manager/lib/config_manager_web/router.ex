@@ -167,6 +167,8 @@ defmodule ConfigManagerWeb.Router do
   scope "/", ConfigManagerWeb do
     pipe_through([:browser, :require_auth, :require_password_change, :sensors_view])
 
+    get("/sensors/:id/pipeline", PipelineRedirectController, :sensor)
+
     live_session :sensor_pages,
       on_mount: [{ConfigManagerWeb.AuthHelpers, :require_auth}] do
       live("/pools", PoolLive.IndexLive, :index)
@@ -219,7 +221,6 @@ defmodule ConfigManagerWeb.Router do
 
       live("/support-bundle", SupportBundleLive, :index)
       live("/sensors/:id", SensorDetailLive, :show)
-      live("/sensors/:id/pipeline", PipelineLive.SensorPipelineLive, :show)
       live("/sensors/:id/pipeline/graph", PipelineLive.SensorPipelineGraphLive, :show)
       live("/sensors/:id/metrics", MetricsLive.SensorMetricsLive, :show)
       live("/sensors/:id/baselines", BaselinesLive.SensorBaselinesLive, :show)

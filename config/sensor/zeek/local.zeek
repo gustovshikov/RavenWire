@@ -17,8 +17,12 @@
 # Community ID — required for cross-tool correlation
 @load policy/protocols/conn/community-id-logging
 
+# Health telemetry consumed by Sensor_Agent for process-level input rates
+@load policy/misc/stats
+
 # Write logs to the Quadlet-mounted handoff path consumed by Vector.
 redef Log::default_logdir = "/logs/zeek";
+redef Stats::report_interval = 10sec;
 
 # Log rotation: rotate every hour
 redef Log::default_rotation_interval = 1hr;

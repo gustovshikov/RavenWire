@@ -791,9 +791,194 @@
     color: var(--rw-muted);
   }
 
+  .pipeline-node-readout {
+    @apply mt-4 rounded border p-4;
+    background-color: color-mix(in srgb, var(--rw-void) 84%, var(--rw-slate));
+    border-color: var(--rw-border);
+  }
+
+  .pipeline-node-readout-head {
+    @apply mb-3 flex flex-col gap-2 border-b pb-3 md:flex-row md:items-end md:justify-between;
+    border-color: var(--rw-border);
+  }
+
+  .pipeline-node-readout-head h3,
+  .pipeline-node-summary h3 {
+    @apply text-sm font-semibold;
+    color: var(--rw-text);
+  }
+
+  .pipeline-node-readout-head p {
+    @apply mt-1 text-xs;
+    color: var(--rw-muted);
+  }
+
+  .pipeline-node-flow-grid {
+    @apply grid gap-2 lg:grid-cols-2;
+  }
+
+  .pipeline-node-flow-card {
+    --pipeline-node-flow-color: var(--rw-muted);
+    @apply rounded border p-3 outline-none;
+    background-color: color-mix(in srgb, var(--rw-highlight) 48%, transparent);
+    border-color: var(--rw-border);
+    color: var(--rw-text);
+  }
+
+  .pipeline-node-flow-card:focus {
+    border-color: var(--rw-cyan);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--rw-cyan) 18%, transparent);
+  }
+
+  .pipeline-node-flow-main {
+    @apply grid items-center gap-3;
+    grid-template-columns: minmax(7rem, 1fr) minmax(8rem, 1.35fr) minmax(7rem, 1fr) auto;
+  }
+
+  .pipeline-node-flow-endpoint {
+    @apply min-w-0 truncate text-sm font-medium;
+    color: var(--rw-text);
+  }
+
+  .pipeline-node-flow-track {
+    @apply relative block h-5 min-w-28;
+  }
+
+  .pipeline-node-flow-track::before {
+    @apply absolute left-0 right-2 top-1/2;
+    content: "";
+    height: 0.2rem;
+    transform: translateY(-50%);
+    background-image: repeating-linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--pipeline-node-flow-color) 76%, var(--rw-muted)) 0 0.55rem,
+      transparent 0.55rem 1.15rem
+    );
+    opacity: 0.68;
+  }
+
+  .pipeline-node-flow-track::after {
+    @apply absolute right-0 top-1/2;
+    content: "";
+    width: 0;
+    height: 0;
+    transform: translateY(-50%);
+    border-bottom: 0.42rem solid transparent;
+    border-left: 0.75rem solid var(--pipeline-node-flow-color);
+    border-top: 0.42rem solid transparent;
+    opacity: 0.72;
+  }
+
+  .pipeline-node-flow-fill {
+    @apply absolute left-0 right-3 top-1/2;
+    height: 0.42rem;
+    transform: translateY(-50%);
+    background-image: repeating-linear-gradient(
+      90deg,
+      var(--pipeline-node-flow-color) 0 0.8rem,
+      transparent 0.8rem 1.7rem
+    );
+    animation: pipeline-node-readout-flow 1.8s linear infinite;
+    opacity: 0.95;
+  }
+
+  .pipeline-node-flow-rate {
+    @apply rounded border px-2 py-1 text-xs font-semibold;
+    background-color: color-mix(in srgb, var(--rw-highlight) 72%, transparent);
+    border-color: color-mix(in srgb, var(--rw-muted) 80%, transparent);
+    color: var(--rw-text);
+    font-family: theme("fontFamily.mono");
+  }
+
+  .pipeline-node-flow-secondary {
+    @apply mt-2 text-xs;
+    color: var(--rw-muted);
+    font-family: theme("fontFamily.mono");
+  }
+
+  .pipeline-node-flow-state-flowing.pipeline-node-flow-card,
+  .pipeline-node-flow-state-flowing .pipeline-node-flow-fill {
+    --pipeline-node-flow-color: var(--rw-green);
+  }
+
+  .pipeline-node-flow-state-degraded.pipeline-node-flow-card,
+  .pipeline-node-flow-state-degraded .pipeline-node-flow-fill {
+    --pipeline-node-flow-color: var(--rw-amber);
+  }
+
+  .pipeline-node-flow-state-stopped.pipeline-node-flow-card,
+  .pipeline-node-flow-state-stopped .pipeline-node-flow-fill {
+    --pipeline-node-flow-color: var(--rw-crimson);
+  }
+
+  .pipeline-node-flow-state-idle .pipeline-node-flow-fill,
+  .pipeline-node-flow-state-unknown .pipeline-node-flow-fill,
+  .pipeline-node-flow-state-stopped .pipeline-node-flow-fill {
+    display: none;
+  }
+
+  .pipeline-node-flow-speed-gbps .pipeline-node-flow-fill {
+    animation-duration: 0.5s;
+  }
+
+  .pipeline-node-flow-speed-mbps .pipeline-node-flow-fill {
+    animation-duration: 1.2s;
+  }
+
+  .pipeline-node-flow-speed-kbps .pipeline-node-flow-fill {
+    animation-duration: 2.8s;
+  }
+
+  .pipeline-node-summary {
+    @apply mt-4 rounded border p-3;
+    border-color: var(--rw-border);
+    background-color: color-mix(in srgb, var(--rw-highlight) 34%, transparent);
+  }
+
+  .pipeline-node-summary-scroll {
+    @apply mt-2 overflow-x-auto;
+  }
+
+  .pipeline-node-summary table {
+    @apply w-full min-w-[760px] text-left text-sm;
+    color: var(--rw-text);
+  }
+
+  .pipeline-node-summary th,
+  .pipeline-node-summary td {
+    @apply border-b px-3 py-2;
+    border-color: var(--rw-border);
+  }
+
+  .pipeline-node-summary th {
+    @apply text-xs font-semibold uppercase tracking-wide;
+    color: var(--rw-muted);
+  }
+
+  .pipeline-node-summary td {
+    color: var(--rw-text);
+  }
+
+  @media (max-width: 900px) {
+    .pipeline-node-flow-main {
+      grid-template-columns: 1fr auto;
+    }
+
+    .pipeline-node-flow-track {
+      @apply col-span-2;
+      min-width: 100%;
+    }
+  }
+
   @keyframes pipeline-flow {
     to {
       stroke-dashoffset: -36;
+    }
+  }
+
+  @keyframes pipeline-node-readout-flow {
+    to {
+      background-position: 1.7rem 0;
     }
   }
 
@@ -804,7 +989,8 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .pipeline-node-edge-flow {
+    .pipeline-node-edge-flow,
+    .pipeline-node-flow-fill {
       animation: none !important;
     }
   }

@@ -20,7 +20,7 @@ defmodule ConfigManagerWeb.PipelineGraphComponentTest do
     assert Floki.find(document, ".pipeline-node-state-badge") == []
 
     for label <- [
-          "Mirror Port",
+          "ens16f1",
           "AF_PACKET",
           "Zeek",
           "Suricata",
@@ -60,9 +60,13 @@ defmodule ConfigManagerWeb.PipelineGraphComponentTest do
     mirror_node = Floki.find(document, "#pipeline-node-segment-mirror_port") |> List.first()
     mirror_text = Floki.text(mirror_node)
 
-    assert mirror_text =~ "Mirror Port"
+    assert mirror_text =~ "ens16f1"
     assert mirror_text =~ "2.0 Mbps"
     refute mirror_text =~ "Healthy"
+
+    vector_node = Floki.find(document, "#pipeline-node-segment-vector") |> List.first()
+    assert Floki.text(vector_node) =~ "25 rec/s"
+    refute Floki.text(vector_node) =~ "1.0 Mbps"
   end
 
   test "defaults to AF_PACKET selected with the detail drawer collapsed" do
@@ -102,6 +106,54 @@ defmodule ConfigManagerWeb.PipelineGraphComponentTest do
 
     assert graph_text =~ "2.0 Mbps"
     refute graph_text =~ "1,000 packets"
+    refute graph_text =~ "zeek stats.log"
+  end
+
+  test "selected detail panel can expose process telemetry source" do
+    html =
+      render_component(&PipelineGraphComponent.sensor_pipeline_graph/1,
+        pipeline_state: sensor_pipeline_state(),
+        selected_segment_id: "zeek",
+        detail_panel_open: true
+      )
+
+    document = Floki.parse_fragment!(html)
+    panel = Floki.find(document, ".pipeline-node-detail") |> Floki.text()
+    graph_text = Floki.find(document, ".pipeline-node-canvas") |> Floki.text()
+
+    assert panel =~ "Zeek"
+    assert panel =~ "Process Telemetry Source: zeek stats.log"
+    assert panel =~ "Telemetry Source"
+    refute graph_text =~ "zeek stats.log"
+  end
+
+  test "renders visible connector readout and summary below the graph" do
+    html =
+      render_component(&PipelineGraphComponent.sensor_pipeline_graph/1,
+        pipeline_state: sensor_pipeline_state(),
+        selected_segment_id: "vector"
+      )
+
+    document = Floki.parse_fragment!(html)
+    readout = Floki.find(document, ".pipeline-node-readout")
+    readout_text = Floki.text(readout)
+    flow_cards = Floki.find(readout, ".pipeline-node-flow-card")
+
+    assert length(flow_cards) == 3
+    assert readout_text =~ "Flow Details"
+    assert readout_text =~ "ens16f1"
+    assert readout_text =~ "AF_PACKET"
+    assert readout_text =~ "2.0 Mbps"
+    assert readout_text =~ "1,000 packets"
+    assert readout_text =~ "Zeek"
+    assert readout_text =~ "Vector"
+    assert readout_text =~ "25 rec/s"
+    assert readout_text =~ "Pipeline Summary"
+    assert readout_text =~ "drops observed"
+
+    first_card = List.first(flow_cards)
+    assert attribute(first_card, "tabindex") == "0"
+    assert attribute(first_card, "aria-label") =~ "2.0 Mbps"
   end
 
   test "selected node detail panel renders metrics, warnings, badges, and tooltip data" do
@@ -133,9 +185,9 @@ defmodule ConfigManagerWeb.PipelineGraphComponentTest do
         %{kind: :pending, label: "Pending Enrollment", message: "Enrollment is pending."}
       ],
       segments: [
-        sensor_segment("mirror_port", "Mirror Port", :healthy,
-          metrics: %{capture_interface: "ens16f1", throughput: "2.0 Mbps"},
-          tooltip: %{capture_interface: "ens16f1"}
+        sensor_segment("mirror_port", "ens16f1", :healthy,
+          metrics: %{capture_interface: "ens16f1", ingest: "2.0 Mbps"},
+          tooltip: %{capture_interface: "ens16f1", nic_receive_ingest: "2.0 Mbps"}
         ),
         sensor_segment("af_packet", "AF_PACKET", :degraded,
           metrics: %{aggregate_throughput: "2.0 Mbps", max_drop_percent: 7.5},
@@ -144,8 +196,8 @@ defmodule ConfigManagerWeb.PipelineGraphComponentTest do
           tooltip: %{aggregate_throughput: "2.0 Mbps", max_drop_percent: 7.5}
         ),
         sensor_segment("zeek", "Zeek", :failed,
-          metrics: %{container_state: "stopped"},
-          tooltip: %{container_state: "stopped"}
+          metrics: %{container_state: "stopped", process_telemetry_source: "zeek stats.log"},
+          tooltip: %{container_state: "stopped", telemetry_source: "zeek stats.log"}
         ),
         sensor_segment("suricata", "Suricata", :disabled,
           metrics: %{container_state: "disabled"},
@@ -156,8 +208,8 @@ defmodule ConfigManagerWeb.PipelineGraphComponentTest do
           tooltip: %{storage_used_label: "87.0% used"}
         ),
         sensor_segment("vector", "Vector", :no_data,
-          metrics: %{},
-          tooltip: %{forwarding_telemetry: "not available"}
+          metrics: %{throughput: "1.0 Mbps", record_rate: "25 rec/s", record_rate_per_sec: 25.0},
+          tooltip: %{total_records_per_sec: "25 rec/s", forwarding_telemetry: "not available"}
         ),
         sensor_segment("forwarding_sinks", "Forwarding Sinks", :no_data,
           metrics: %{sink_count: 1, enabled_count: 1},
@@ -167,10 +219,15 @@ defmodule ConfigManagerWeb.PipelineGraphComponentTest do
       connectors: [
         connector("mirror_port", "af_packet", "2.0 Mbps", "1,000 packets", :flowing, :mbps),
         connector("af_packet", "zeek", "80.0 Kbps", nil, :degraded, :kbps),
-        connector("zeek", "vector", "—", nil, :stopped, :unknown)
+        connector("zeek", "vector", "25 rec/s", nil, :flowing, :kbps)
       ],
       summary_rows: [
-        %{segment: "Mirror Port", state: "Healthy", throughput: "2.0 Mbps", details: "ens16f1"},
+        %{
+          segment: "ens16f1",
+          state: "Healthy",
+          throughput: "2.0 Mbps",
+          details: "NIC receive ingest from ens16f1"
+        },
         %{
           segment: "AF_PACKET",
           state: "Degraded",

@@ -41,7 +41,8 @@ defmodule ConfigManagerWeb.PipelineLive.PoolPipelineLive do
   end
 
   @impl true
-  def handle_info({:pod_updated, health_key}, socket), do: maybe_schedule_rederive(socket, health_key)
+  def handle_info({:pod_updated, health_key}, socket),
+    do: maybe_schedule_rederive(socket, health_key)
 
   def handle_info({:pod_degraded, health_key, _reason, _value}, socket),
     do: maybe_schedule_rederive(socket, health_key)
@@ -62,17 +63,29 @@ defmodule ConfigManagerWeb.PipelineLive.PoolPipelineLive do
   def handle_info({:pool_deleted, pool_id}, %{assigns: %{pool: %{id: pool_id}}} = socket),
     do: {:noreply, push_navigate(socket, to: "/pools")}
 
-  def handle_info({:sensors_assigned, pool_id, _sensor_ids}, %{assigns: %{pool: %{id: pool_id}}} = socket),
-    do: {:noreply, reload_pool_members(socket)}
+  def handle_info(
+        {:sensors_assigned, pool_id, _sensor_ids},
+        %{assigns: %{pool: %{id: pool_id}}} = socket
+      ),
+      do: {:noreply, reload_pool_members(socket)}
 
-  def handle_info({:sensors_removed, pool_id, _sensor_ids}, %{assigns: %{pool: %{id: pool_id}}} = socket),
-    do: {:noreply, reload_pool_members(socket)}
+  def handle_info(
+        {:sensors_removed, pool_id, _sensor_ids},
+        %{assigns: %{pool: %{id: pool_id}}} = socket
+      ),
+      do: {:noreply, reload_pool_members(socket)}
 
   def handle_info({:pool_config_updated, pool_id}, %{assigns: %{pool: %{id: pool_id}}} = socket),
     do: {:noreply, reload_pool_members(socket)}
 
   def handle_info({event, _payload}, socket)
-      when event in [:sink_created, :sink_updated, :sink_deleted, :sink_toggled, :schema_mode_changed],
+      when event in [
+             :sink_created,
+             :sink_updated,
+             :sink_deleted,
+             :sink_toggled,
+             :schema_mode_changed
+           ],
       do: {:noreply, assign_pipeline_state(socket)}
 
   def handle_info({:connection_test_complete, _sink_id, _result}, socket),
@@ -191,7 +204,7 @@ defmodule ConfigManagerWeb.PipelineLive.PoolPipelineLive do
 
   defp member_links(members) do
     Enum.map(members, fn member ->
-      %{label: member.name, href: "/sensors/#{member.id}/pipeline"}
+      %{label: member.name, href: "/sensors/#{member.id}/pipeline/graph"}
     end)
   end
 

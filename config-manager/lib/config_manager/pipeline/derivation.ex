@@ -27,6 +27,7 @@ defmodule ConfigManager.Pipeline.Derivation do
           source_id: String.t(),
           target_id: String.t(),
           throughput_bps: number() | nil,
+          record_rate_per_sec: number() | nil,
           throughput_label: String.t(),
           secondary_label: String.t() | nil,
           flow_state: connector_flow_state(),
@@ -83,7 +84,7 @@ defmodule ConfigManager.Pipeline.Derivation do
   ]
 
   @segment_labels %{
-    "mirror_port" => "Mirror Port",
+    "mirror_port" => "NIC",
     "af_packet" => "AF_PACKET",
     "zeek" => "Zeek",
     "suricata" => "Suricata",
@@ -115,6 +116,7 @@ defmodule ConfigManager.Pipeline.Derivation do
   @spec derive_sensor_pipeline(map() | nil, map(), keyword()) :: pipeline_state()
   def derive_sensor_pipeline(health_report, sensor_pod, opts) do
     capture_stats = field(health_report, :capture)
+    vector_stats = field(health_report, :vector)
     capture_consumers = capture_consumers(capture_stats)
     capture_mode = Keyword.get(opts, :capture_mode)
     forwarding_config = forwarding_config(opts)
@@ -122,7 +124,9 @@ defmodule ConfigManager.Pipeline.Derivation do
     {stale?, stale_age_seconds} =
       check_staleness(field(health_report, :timestamp_unix_ms), opts)
 
-    mirror_port = derive_mirror_port(health_report)
+    mirror_port =
+      health_report |> derive_mirror_port() |> add_mirror_ingest_metrics(capture_consumers)
+
     af_packet = derive_af_packet(capture_stats)
 
     zeek =
@@ -151,7 +155,7 @@ defmodule ConfigManager.Pipeline.Derivation do
       |> add_storage_badge(field(health_report, :storage))
 
     dynamic_segments = derive_dynamic_capture_consumers(capture_consumers)
-    vector = derive_vector(container_for(health_report, "vector"), nil)
+    vector = derive_vector(container_for(health_report, "vector"), vector_stats)
     forwarding_sinks = derive_forwarding_sinks(forwarding_config, nil)
 
     segments =
@@ -166,7 +170,8 @@ defmodule ConfigManager.Pipeline.Derivation do
     connectors =
       derive_connectors(segments, capture_consumers,
         stale: stale?,
-        capture_mode: capture_mode
+        capture_mode: capture_mode,
+        vector_stats: vector_stats
       )
 
     status_banners =
@@ -249,11 +254,13 @@ defmodule ConfigManager.Pipeline.Derivation do
     source_label = Map.get(source, :label, source_id)
     target_label = Map.get(target, :label, target_id)
     throughput_bps = Keyword.get(opts, :throughput_bps)
+    record_rate_per_sec = Keyword.get(opts, :record_rate_per_sec)
+    flow_value = if is_nil(throughput_bps), do: record_rate_per_sec, else: throughput_bps
     stale? = Keyword.get(opts, :stale, false)
     capture_mode = Keyword.get(opts, :capture_mode)
 
     flow_state =
-      connector_flow_state(segment_state(source), segment_state(target), throughput_bps,
+      connector_flow_state(segment_state(source), segment_state(target), flow_value,
         stale: stale?,
         capture_mode: capture_mode,
         source_id: source_id,
@@ -261,18 +268,32 @@ defmodule ConfigManager.Pipeline.Derivation do
         pcap_flush_active?: Keyword.get(opts, :pcap_flush_active?, false)
       )
 
-    throughput_label = format_throughput(throughput_bps)
+    throughput_label =
+      if is_nil(throughput_bps) and not is_nil(record_rate_per_sec) do
+        format_record_rate(record_rate_per_sec)
+      else
+        format_throughput(throughput_bps)
+      end
+
     secondary_label = Keyword.get(opts, :secondary_label)
+
+    speed_tier =
+      if is_nil(throughput_bps) and not is_nil(record_rate_per_sec) do
+        classify_record_rate_speed_tier(record_rate_per_sec)
+      else
+        classify_speed_tier(throughput_bps)
+      end
 
     %{
       id: "#{source_id}->#{target_id}",
       source_id: source_id,
       target_id: target_id,
       throughput_bps: throughput_bps,
+      record_rate_per_sec: record_rate_per_sec,
       throughput_label: throughput_label,
       secondary_label: secondary_label,
       flow_state: flow_state,
-      speed_tier: classify_speed_tier(throughput_bps),
+      speed_tier: speed_tier,
       capture_mode_context: capture_mode,
       accessible_summary:
         connector_summary(
@@ -286,7 +307,7 @@ defmodule ConfigManager.Pipeline.Derivation do
   end
 
   @doc """
-  Derives Mirror Port from limited system telemetry.
+  Derives the NIC/capture-interface segment from limited system telemetry.
   """
   @spec derive_mirror_port(map() | nil) :: segment()
   def derive_mirror_port(health_report) do
@@ -317,6 +338,7 @@ defmodule ConfigManager.Pipeline.Derivation do
       end
 
     base_segment("mirror_port", state,
+      label: interface || "NIC",
       metrics: metrics,
       warnings: warnings,
       tooltip: %{
@@ -393,7 +415,8 @@ defmodule ConfigManager.Pipeline.Derivation do
         container_state(container) == "restarting" ->
           :degraded
 
-        container_state(container) == "running" and analysis_degraded?(container, consumer_stats) ->
+        container_state(container) == "running" and
+            analysis_degraded?(container, consumer_stats, segment_id) ->
           :degraded
 
         container_state(container) == "running" ->
@@ -406,9 +429,9 @@ defmodule ConfigManager.Pipeline.Derivation do
     label = Map.get(@segment_labels, segment_id, segment_id)
 
     base_segment(segment_id, state,
-      metrics: container_metrics(container, consumer_stats),
+      metrics: container_metrics(container, consumer_stats, segment_id),
       warnings:
-        analysis_warnings(label, state, container, consumer_stats) ++
+        analysis_warnings(label, state, container, consumer_stats, segment_id) ++
           pcap_capture_mode_warnings(segment_id, opts),
       tooltip:
         %{
@@ -418,17 +441,23 @@ defmodule ConfigManager.Pipeline.Derivation do
           memory_bytes: field(container, :memory_bytes),
           packets_received: field(consumer_stats, :packets_received),
           packets_dropped: field(consumer_stats, :packets_dropped),
-          drop_percent: field(consumer_stats, :drop_percent)
+          drop_percent: effective_drop_percent(segment_id, consumer_stats),
+          throughput: format_throughput(analysis_throughput_bps(segment_id, consumer_stats)),
+          telemetry_source: analysis_telemetry_source(segment_id, consumer_stats),
+          process_packets_per_sec: process_metric(consumer_stats, :process_packets_per_sec),
+          process_drop_percent: process_metric(consumer_stats, :process_drop_percent)
         }
         |> maybe_add_pcap_metrics(segment_id, consumer_stats)
     )
   end
 
   @doc """
-  Derives Vector state from container health and optional future forwarding data.
+  Derives Vector state from container health and ingress record-rate telemetry.
   """
   @spec derive_vector(map() | nil, map() | nil) :: segment()
-  def derive_vector(container, forwarding_data) do
+  def derive_vector(container, vector_stats) do
+    disk_buffer_util_pct = numeric(field(vector_stats, :disk_buffer_util_pct))
+
     state =
       cond do
         is_nil(container) ->
@@ -440,7 +469,7 @@ defmodule ConfigManager.Pipeline.Derivation do
         container_state(container) == "restarting" ->
           :degraded
 
-        container_state(container) == "running" and forwarding_buffer_degraded?(forwarding_data) ->
+        container_state(container) == "running" and disk_buffer_degraded?(disk_buffer_util_pct) ->
           :degraded
 
         container_state(container) == "running" ->
@@ -450,17 +479,30 @@ defmodule ConfigManager.Pipeline.Derivation do
           :degraded
       end
 
+    total_records_per_sec = numeric(field(vector_stats, :total_records_per_sec))
+
     base_segment("vector", state,
-      metrics: container_metrics(container, nil),
-      warnings: analysis_warnings("Vector", state, container, nil),
+      metrics:
+        container_metrics(container, nil)
+        |> Map.merge(%{
+          record_rate_per_sec: total_records_per_sec,
+          record_rate: format_record_rate(total_records_per_sec),
+          disk_buffer_util_pct: disk_buffer_util_pct,
+          disk_buffer_util_label: storage_used_label(disk_buffer_util_pct)
+        }),
+      warnings:
+        analysis_warnings("Vector", state, container, nil) ++
+          vector_warnings(vector_stats, disk_buffer_util_pct),
       tooltip: %{
         container_state: display(container_state(container)),
         uptime_seconds: field(container, :uptime_seconds),
         cpu_percent: field(container, :cpu_percent),
         memory_bytes: field(container, :memory_bytes),
-        forwarding_buffer_used_percent: field(forwarding_data, :buffer_used_percent),
-        forwarding_telemetry:
-          "Vector sink runtime telemetry is not available in the current HealthReport."
+        total_records_per_sec: format_record_rate(total_records_per_sec),
+        input_records_per_sec: vector_input_record_rates(vector_stats),
+        disk_buffer_util_pct: storage_used_label(disk_buffer_util_pct),
+        sink_connectivity: field(vector_stats, :sink_connectivity, %{}),
+        forwarding_telemetry: "Forwarding sink delivery telemetry is not available."
       }
     )
   end
@@ -582,6 +624,24 @@ defmodule ConfigManager.Pipeline.Derivation do
   def format_packet_count(count, rate), do: "#{comma_integer(count)} (#{format_rate(rate)} pps)"
 
   @doc """
+  Formats Vector ingress record rate while preserving nil versus zero.
+  """
+  @spec format_record_rate(number() | nil) :: String.t()
+  def format_record_rate(nil), do: @dash
+  def format_record_rate(rate) when not is_number(rate), do: @dash
+  def format_record_rate(rate) when rate < 0, do: @dash
+  def format_record_rate(rate) when rate == 0, do: "0 rec/s"
+
+  def format_record_rate(rate) do
+    cond do
+      rate >= 1_000_000 -> decimal(rate / 1_000_000) <> "m rec/s"
+      rate >= 1_000 -> decimal(rate / 1_000) <> "k rec/s"
+      rate < 10 -> decimal(rate) <> " rec/s"
+      true -> "#{round(rate)} rec/s"
+    end
+  end
+
+  @doc """
   Classifies throughput for connector animation speed.
   """
   @spec classify_speed_tier(number() | nil) :: speed_tier()
@@ -591,6 +651,17 @@ defmodule ConfigManager.Pipeline.Derivation do
   def classify_speed_tier(bps) when bps < 1_000_000, do: :kbps
   def classify_speed_tier(bps) when bps < 1_000_000_000, do: :mbps
   def classify_speed_tier(_bps), do: :gbps
+
+  @doc """
+  Classifies record-rate telemetry for connector animation speed.
+  """
+  @spec classify_record_rate_speed_tier(number() | nil) :: speed_tier()
+  def classify_record_rate_speed_tier(nil), do: :unknown
+  def classify_record_rate_speed_tier(rate) when not is_number(rate) or rate < 0, do: :unknown
+  def classify_record_rate_speed_tier(rate) when rate == 0, do: :zero
+  def classify_record_rate_speed_tier(rate) when rate < 1_000, do: :kbps
+  def classify_record_rate_speed_tier(rate) when rate < 1_000_000, do: :mbps
+  def classify_record_rate_speed_tier(_rate), do: :gbps
 
   @doc """
   Returns `{stale?, age_seconds}` for a HealthReport timestamp.
@@ -658,6 +729,7 @@ defmodule ConfigManager.Pipeline.Derivation do
     segment_map = Map.new(segments, &{&1.id, &1})
     stale? = Keyword.get(opts, :stale, false)
     capture_mode = Keyword.get(opts, :capture_mode)
+    vector_stats = Keyword.get(opts, :vector_stats)
 
     analysis_segment_ids =
       ["zeek", "suricata", "pcap_ring"] ++
@@ -678,7 +750,7 @@ defmodule ConfigManager.Pipeline.Derivation do
         consumer_stats = consumer_for(consumers, segment_id)
 
         derive_connector(segment_map["af_packet"], segment_map[segment_id],
-          throughput_bps: numeric(field(consumer_stats, :throughput_bps)),
+          throughput_bps: connector_throughput_bps(segment_id, consumer_stats),
           secondary_label: format_packet_count(field(consumer_stats, :packets_received)),
           stale: stale?,
           capture_mode: capture_mode
@@ -689,7 +761,7 @@ defmodule ConfigManager.Pipeline.Derivation do
     analysis_to_vector =
       Enum.map(analysis_segment_ids, fn segment_id ->
         derive_connector(segment_map[segment_id], segment_map["vector"],
-          throughput_bps: nil,
+          record_rate_per_sec: vector_input_record_rate(vector_stats, segment_id),
           stale: stale?,
           capture_mode: capture_mode
         )
@@ -953,16 +1025,13 @@ defmodule ConfigManager.Pipeline.Derivation do
     Map.has_key?(@canonical_capture_consumers, normalize_name(name))
   end
 
-  defp analysis_degraded?(container, consumer_stats) do
+  defp analysis_degraded?(container, consumer_stats, segment_id) do
     numeric(field(container, :cpu_percent), 0.0) > @cpu_percent_threshold or
-      drop_percent(consumer_stats) > @drop_percent_threshold
+      effective_drop_percent(segment_id, consumer_stats) > @drop_percent_threshold
   end
 
-  defp forwarding_buffer_degraded?(nil), do: false
-
-  defp forwarding_buffer_degraded?(forwarding_data) do
-    numeric(field(forwarding_data, :buffer_used_percent), 0.0) > @storage_warning_threshold
-  end
+  defp disk_buffer_degraded?(nil), do: false
+  defp disk_buffer_degraded?(percent), do: percent > @storage_warning_threshold
 
   defp runtime_forwarding_state(nil), do: nil
   defp runtime_forwarding_state(forwarding_data), do: field(forwarding_data, :state)
@@ -972,7 +1041,10 @@ defmodule ConfigManager.Pipeline.Derivation do
     segment_id in disabled_segments or String.to_atom(segment_id) in disabled_segments
   end
 
-  defp container_metrics(container, consumer_stats) do
+  defp container_metrics(container, consumer_stats, segment_id \\ nil) do
+    throughput_bps = analysis_throughput_bps(segment_id, consumer_stats)
+    telemetry_source = analysis_telemetry_source(segment_id, consumer_stats)
+
     %{
       container_state: container_state(container),
       uptime_seconds: field(container, :uptime_seconds),
@@ -981,9 +1053,13 @@ defmodule ConfigManager.Pipeline.Derivation do
       memory_label: format_bytes(field(container, :memory_bytes)),
       packets_received: field(consumer_stats, :packets_received),
       packets_dropped: field(consumer_stats, :packets_dropped),
-      drop_percent: field(consumer_stats, :drop_percent),
-      throughput_bps: numeric(field(consumer_stats, :throughput_bps)),
-      throughput: format_throughput(field(consumer_stats, :throughput_bps))
+      drop_percent: effective_drop_percent(segment_id, consumer_stats),
+      throughput_bps: throughput_bps,
+      throughput: format_throughput(throughput_bps),
+      process_throughput_bps: process_metric(consumer_stats, :process_throughput_bps),
+      process_packets_per_sec: process_metric(consumer_stats, :process_packets_per_sec),
+      process_drop_percent: process_metric(consumer_stats, :process_drop_percent),
+      process_telemetry_source: telemetry_source
     }
   end
 
@@ -1013,13 +1089,16 @@ defmodule ConfigManager.Pipeline.Derivation do
     )
   end
 
-  defp analysis_warnings(label, :no_data, _container, _consumer_stats),
+  defp analysis_warnings(label, state, container, consumer_stats),
+    do: analysis_warnings(label, state, container, consumer_stats, nil)
+
+  defp analysis_warnings(label, :no_data, _container, _consumer_stats, _segment_id),
     do: ["#{label} telemetry is not available."]
 
-  defp analysis_warnings(label, :failed, container, _consumer_stats),
+  defp analysis_warnings(label, :failed, container, _consumer_stats, _segment_id),
     do: ["#{label} container is #{display(container_state(container))}."]
 
-  defp analysis_warnings(label, :degraded, container, consumer_stats) do
+  defp analysis_warnings(label, :degraded, container, consumer_stats, segment_id) do
     []
     |> maybe_add_warning(
       container_state(container) == "restarting",
@@ -1030,7 +1109,7 @@ defmodule ConfigManager.Pipeline.Derivation do
       "#{label} CPU exceeds #{@cpu_percent_threshold}%."
     )
     |> maybe_add_warning(
-      drop_percent(consumer_stats) > @drop_percent_threshold,
+      effective_drop_percent(segment_id, consumer_stats) > @drop_percent_threshold,
       "#{label} capture drops exceed #{@drop_percent_threshold}%."
     )
     |> case do
@@ -1039,7 +1118,7 @@ defmodule ConfigManager.Pipeline.Derivation do
     end
   end
 
-  defp analysis_warnings(_label, _state, _container, _consumer_stats), do: []
+  defp analysis_warnings(_label, _state, _container, _consumer_stats, _segment_id), do: []
 
   defp pcap_capture_mode_warnings("pcap_ring", opts) do
     if Keyword.get(opts, :capture_mode) in [:alert_driven, "alert_driven"] do
@@ -1077,6 +1156,17 @@ defmodule ConfigManager.Pipeline.Derivation do
 
   defp forwarding_warnings(_state, _sink_count, _enabled_count), do: []
 
+  defp vector_warnings(nil, _disk_buffer_util_pct),
+    do: ["Vector ingress telemetry is not available."]
+
+  defp vector_warnings(_vector_stats, disk_buffer_util_pct) do
+    []
+    |> maybe_add_warning(
+      disk_buffer_util_pct && disk_buffer_util_pct > @storage_warning_threshold,
+      "Vector disk buffer utilization exceeds #{@storage_warning_threshold}%."
+    )
+  end
+
   defp maybe_add_warning(warnings, true, warning), do: warnings ++ [warning]
   defp maybe_add_warning(warnings, _condition, _warning), do: warnings
 
@@ -1087,6 +1177,10 @@ defmodule ConfigManager.Pipeline.Derivation do
       packets_dropped: field(stats, :packets_dropped),
       drop_percent: field(stats, :drop_percent),
       throughput: format_throughput(field(stats, :throughput_bps)),
+      process_throughput: process_throughput_tooltip(stats),
+      process_packets_per_sec: process_metric(stats, :process_packets_per_sec),
+      process_drop_percent: process_metric(stats, :process_drop_percent),
+      process_telemetry_source: process_telemetry_source(stats),
       bpf_restart_pending: field(stats, :bpf_restart_pending)
     }
   end
@@ -1241,12 +1335,97 @@ defmodule ConfigManager.Pipeline.Derivation do
 
   defp drop_percent(stats), do: numeric(field(stats, :drop_percent), 0.0)
 
+  defp effective_drop_percent(segment_id, stats)
+       when segment_id in ["zeek", "suricata"] do
+    if process_telemetry_present?(stats) do
+      numeric(field(stats, :process_drop_percent), 0.0)
+    else
+      drop_percent(stats)
+    end
+  end
+
+  defp effective_drop_percent(_segment_id, stats), do: drop_percent(stats)
+
+  defp analysis_throughput_bps(segment_id, stats)
+       when segment_id in ["zeek", "suricata"] do
+    if process_telemetry_present?(stats) do
+      numeric(field(stats, :process_throughput_bps))
+    else
+      numeric(field(stats, :throughput_bps))
+    end
+  end
+
+  defp analysis_throughput_bps(_segment_id, stats), do: numeric(field(stats, :throughput_bps))
+
+  defp process_metric(stats, key) do
+    if process_telemetry_present?(stats) do
+      numeric(field(stats, key))
+    end
+  end
+
+  defp process_throughput_tooltip(stats) do
+    if process_telemetry_present?(stats) do
+      format_throughput(field(stats, :process_throughput_bps))
+    end
+  end
+
+  defp process_telemetry_present?(stats),
+    do: not is_nil(process_telemetry_source(stats))
+
+  defp process_telemetry_source(stats),
+    do: stats |> field(:process_telemetry_source) |> present_string()
+
+  defp analysis_telemetry_source(segment_id, stats)
+       when segment_id in ["zeek", "suricata"] do
+    cond do
+      process_telemetry_present?(stats) -> process_telemetry_source(stats)
+      is_nil(stats) -> nil
+      true -> "NIC fallback"
+    end
+  end
+
+  defp analysis_telemetry_source(_segment_id, _stats), do: nil
+
   defp max_drop_percent([]), do: nil
 
   defp max_drop_percent(consumers) do
     consumers
     |> Enum.map(fn {_name, stats} -> drop_percent(stats) end)
     |> Enum.max(fn -> nil end)
+  end
+
+  defp add_mirror_ingest_metrics(segment, consumers) do
+    ingest_bps = aggregate_throughput(consumers)
+
+    if is_nil(ingest_bps) do
+      segment
+    else
+      ingest_label = format_throughput(ingest_bps)
+
+      segment
+      |> update_in([:metrics], fn metrics ->
+        Map.merge(metrics, %{
+          ingest_bps: ingest_bps,
+          ingest: ingest_label
+        })
+      end)
+      |> update_in([:tooltip], fn tooltip ->
+        Map.merge(tooltip, %{
+          nic_receive_ingest: ingest_label,
+          nic_receive_ingest_bps: ingest_bps
+        })
+      end)
+      |> Map.put(
+        :accessible_summary,
+        segment_summary(
+          segment.label,
+          segment.state,
+          Map.put(segment.metrics, :ingest, ingest_label),
+          segment.warnings,
+          segment.badges
+        )
+      )
+    end
   end
 
   defp aggregate_throughput([]), do: nil
@@ -1261,8 +1440,41 @@ defmodule ConfigManager.Pipeline.Derivation do
       [] -> nil
       # Interface-backed consumers can each report the same physical rx_bytes
       # stream. Use the largest branch as the ingress estimate so fan-out does
-      # not double-count Mirror Port -> AF_PACKET traffic.
+      # not double-count NIC -> AF_PACKET traffic.
       _ -> Enum.max(values)
+    end
+  end
+
+  defp connector_throughput_bps(segment_id, stats)
+       when segment_id in ["zeek", "suricata"],
+       do: analysis_throughput_bps(segment_id, stats)
+
+  defp connector_throughput_bps(_segment_id, stats), do: numeric(field(stats, :throughput_bps))
+
+  defp vector_input_record_rate(nil, _segment_id), do: nil
+
+  defp vector_input_record_rate(vector_stats, segment_id) do
+    vector_stats
+    |> field(:input_records_per_sec, %{})
+    |> case do
+      records when is_map(records) -> numeric(Map.get(records, segment_id))
+      _ -> nil
+    end
+  end
+
+  defp vector_input_record_rates(nil), do: %{}
+
+  defp vector_input_record_rates(vector_stats) do
+    vector_stats
+    |> field(:input_records_per_sec, %{})
+    |> case do
+      records when is_map(records) ->
+        records
+        |> Enum.map(fn {segment_id, rate} -> {segment_id, format_record_rate(numeric(rate))} end)
+        |> Map.new()
+
+      _ ->
+        %{}
     end
   end
 
@@ -1308,12 +1520,34 @@ defmodule ConfigManager.Pipeline.Derivation do
     %{
       segment: segment.label,
       state: state_label(segment.state),
-      throughput:
-        Map.get(segment.metrics, :throughput) || Map.get(segment.metrics, :aggregate_throughput) ||
-          @dash,
+      throughput: summary_throughput(segment),
       details: summary_details(segment)
     }
   end
+
+  defp summary_throughput(%{id: "vector", metrics: metrics}) do
+    first_present_metric(metrics, [:record_rate, :throughput, :aggregate_throughput, :ingest])
+  end
+
+  defp summary_throughput(%{id: "mirror_port", metrics: metrics}) do
+    first_present_metric(metrics, [:ingest, :throughput, :aggregate_throughput, :record_rate])
+  end
+
+  defp summary_throughput(%{metrics: metrics}) do
+    first_present_metric(metrics, [:throughput, :aggregate_throughput, :record_rate, :ingest])
+  end
+
+  defp first_present_metric(metrics, keys) do
+    keys
+    |> Enum.map(&Map.get(metrics, &1))
+    |> Enum.find(&present_metric?/1)
+    |> case do
+      nil -> @dash
+      value -> value
+    end
+  end
+
+  defp present_metric?(value), do: not blank?(value) and value != @dash
 
   defp aggregate_summary_row(segment) do
     %{
@@ -1334,7 +1568,13 @@ defmodule ConfigManager.Pipeline.Derivation do
         "#{segment.metrics.consumer_count} consumers"
 
       Map.has_key?(segment.metrics, :sink_count) ->
-        "#{segment.metrics.enabled_count}/#{segment.metrics.sink_count} sinks enabled"
+        forwarding_summary_details(segment)
+
+      Map.has_key?(segment.metrics, :ingest) ->
+        "NIC receive ingest from #{display(segment.metrics.capture_interface)}"
+
+      present_metric?(Map.get(segment.metrics, :process_telemetry_source)) ->
+        "container #{display(segment.metrics.container_state)}; telemetry #{segment.metrics.process_telemetry_source}"
 
       Map.has_key?(segment.metrics, :container_state) ->
         "container #{display(segment.metrics.container_state)}"
@@ -1342,6 +1582,32 @@ defmodule ConfigManager.Pipeline.Derivation do
       true ->
         segment.warnings |> List.first() |> display()
     end
+  end
+
+  defp forwarding_summary_details(segment) do
+    sink_names =
+      segment.metrics
+      |> Map.get(:sinks, [])
+      |> Enum.map(&Map.get(&1, :name))
+      |> Enum.reject(&blank?/1)
+      |> Enum.join(", ")
+
+    runtime_badge =
+      segment
+      |> Map.get(:badges, [])
+      |> Enum.find_value(fn
+        %{kind: :no_data, label: label} -> label
+        _ -> nil
+      end)
+
+    [
+      "#{segment.metrics.enabled_count}/#{segment.metrics.sink_count} sinks enabled",
+      if(blank?(sink_names), do: nil, else: sink_names),
+      runtime_badge,
+      List.first(Map.get(segment, :warnings, []))
+    ]
+    |> Enum.reject(&blank?/1)
+    |> Enum.join("; ")
   end
 
   defp segment_summary(label, state, metrics, warnings, badges) do
@@ -1352,6 +1618,11 @@ defmodule ConfigManager.Pipeline.Derivation do
           do: "throughput #{metrics.aggregate_throughput}"
         ),
         if(Map.has_key?(metrics, :throughput), do: "throughput #{metrics.throughput}"),
+        if(Map.has_key?(metrics, :record_rate), do: "record rate #{metrics.record_rate}"),
+        if(Map.has_key?(metrics, :ingest), do: "ingest #{metrics.ingest}"),
+        if(present_metric?(Map.get(metrics, :process_telemetry_source)),
+          do: "telemetry #{metrics.process_telemetry_source}"
+        ),
         if(Map.has_key?(metrics, :consumer_count), do: "#{metrics.consumer_count} consumers"),
         badges |> Enum.map(& &1.label) |> Enum.join(", "),
         List.first(warnings)

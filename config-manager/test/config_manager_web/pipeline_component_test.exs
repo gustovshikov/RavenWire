@@ -36,6 +36,7 @@ defmodule ConfigManagerWeb.PipelineComponentTest do
 
     assert html =~ "Pipeline Summary"
     assert html =~ "Throughput"
+    assert html =~ "ingest: 2.0 Mbps"
     assert html =~ "drops observed"
     assert html =~ "Details"
     assert html =~ "Capture Interface"
@@ -48,16 +49,16 @@ defmodule ConfigManagerWeb.PipelineComponentTest do
         pipeline_state: pool_pipeline_state(),
         mode: :pool,
         pool_member_links: [
-          %{label: "sensor-a", href: "/sensors/sensor-a-id/pipeline"},
-          %{label: "sensor-b", href: "/sensors/sensor-b-id/pipeline"}
+          %{label: "sensor-a", href: "/sensors/sensor-a-id/pipeline/graph"},
+          %{label: "sensor-b", href: "/sensors/sensor-b-id/pipeline/graph"}
         ]
       )
 
     assert html =~ "Aggregate pipeline health for this pool."
     assert html =~ "reporting"
     assert html =~ "Member Sensor Pipelines"
-    assert html =~ ~s(href="/sensors/sensor-a-id/pipeline")
-    assert html =~ ~s(href="/sensors/sensor-b-id/pipeline")
+    assert html =~ ~s(href="/sensors/sensor-a-id/pipeline/graph")
+    assert html =~ ~s(href="/sensors/sensor-b-id/pipeline/graph")
     assert html =~ "1 healthy"
     assert html =~ "1 degraded"
     assert html =~ "1 no data"
@@ -91,7 +92,7 @@ defmodule ConfigManagerWeb.PipelineComponentTest do
     Enum.each(connectors, fn connector ->
       assert attribute(connector, "tabindex") == "0"
       assert attribute(connector, "aria-label") =~ ~r/to/
-      assert attribute(connector, "aria-label") =~ ~r/(bps|—)/
+      assert attribute(connector, "aria-label") =~ ~r/(bps|rec\/s|—)/
     end)
 
     Enum.each(tooltips, fn tooltip ->
@@ -125,10 +126,11 @@ defmodule ConfigManagerWeb.PipelineComponentTest do
         %{kind: :no_health, label: "No Health Data", message: "This sensor is not reporting."}
       ],
       segments: [
-        sensor_segment("mirror_port", "Mirror Port", :healthy,
-          metrics: %{capture_interface: "ens16f1", throughput: "2.0 Mbps"},
+        sensor_segment("mirror_port", "ens16f1", :healthy,
+          metrics: %{capture_interface: "ens16f1", ingest: "2.0 Mbps"},
           tooltip: %{
             capture_interface: "ens16f1",
+            nic_receive_ingest: "2.0 Mbps",
             telemetry_scope: "Local capture interface only."
           }
         ),
@@ -166,7 +168,12 @@ defmodule ConfigManagerWeb.PipelineComponentTest do
         connector("zeek", "vector", "—", nil, :stopped, :unknown)
       ],
       summary_rows: [
-        %{segment: "Mirror Port", state: "Healthy", throughput: "2.0 Mbps", details: "ens16f1"},
+        %{
+          segment: "ens16f1",
+          state: "Healthy",
+          throughput: "2.0 Mbps",
+          details: "NIC receive ingest from ens16f1"
+        },
         %{
           segment: "AF_PACKET",
           state: "Degraded",
@@ -195,7 +202,7 @@ defmodule ConfigManagerWeb.PipelineComponentTest do
   defp pool_pipeline_state do
     segments =
       [
-        pool_segment("mirror_port", "Mirror Port", :healthy, %{
+        pool_segment("mirror_port", "NIC", :healthy, %{
           healthy: 1,
           degraded: 0,
           failed: 0,

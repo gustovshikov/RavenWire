@@ -129,7 +129,6 @@ defmodule ConfigManagerWeb.PipelineLive.SensorPipelineGraphLive do
         <div>
           <div class="flex flex-wrap gap-3 text-sm">
             <a href={"/sensors/#{@pod.id}"} class="text-blue-600 hover:underline">Back to sensor</a>
-            <a href={"/sensors/#{@pod.id}/pipeline"} class="text-blue-600 hover:underline">Linear Pipeline</a>
             <a href={"/sensors/#{@pod.id}/metrics"} class="text-blue-600 hover:underline">Metrics</a>
             <a href={"/sensors/#{@pod.id}/baselines"} class="text-blue-600 hover:underline">Baselines</a>
             <a :if={@pod.pool_id} href={"/pools/#{@pod.pool_id}/pipeline"} class="text-blue-600 hover:underline">Pool Pipeline</a>

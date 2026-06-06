@@ -315,6 +315,7 @@ defmodule ConfigManagerWeb.PipelineComponent do
     metrics = Map.get(segment, :metrics, %{})
 
     [
+      metric("ingest", Map.get(metrics, :ingest)),
       metric(
         "throughput",
         Map.get(metrics, :throughput) || Map.get(metrics, :aggregate_throughput)

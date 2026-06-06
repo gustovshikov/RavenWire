@@ -100,14 +100,15 @@ The baseline Suricata rules file is installed at `/etc/sensor/suricata/rules/sur
 ## Journal Storage Protection
 
 `sensorctl install` installs `/etc/systemd/journald.conf.d/ravenwire.conf` and restarts `systemd-journald`.
-The drop-in caps persistent journal use at `512M`, runtime journal use at `128M`, keeps at least `2G` free on the persistent journal filesystem, and expires journal entries after `7day`.
-Install also rotates and vacuums existing journal files to `512M`/`7day` so an already-large journal is trimmed immediately.
+The drop-in caps persistent journal use at `256M`, runtime journal use at `64M`, keeps at least `4G` free on the persistent journal filesystem, and expires journal entries after `3day`.
+Install also rotates and vacuums existing journal files to `256M`/`3day` so an already-large journal is trimmed immediately.
 `sensorctl uninstall` removes this RavenWire-owned drop-in and restarts `systemd-journald`.
 
 `sensorctl install` also installs `/etc/logrotate.d/ravenwire` for RavenWire host log handoff paths under `/var/sensor/logs`.
 Suricata EVE output is configured to rotate hourly, and Vector follows the rotated `eve*.json` files.
-The host logrotate rule caps large Zeek, Suricata, Vector, and Sensor Agent audit log files with `maxsize 512M`, `rotate 2`, compression, and `copytruncate`.
-`sensorctl install` also enables `ravenwire-log-prune.timer`, which runs hourly and enforces RavenWire storage retention: `/var/sensor/logs` files older than `2` days are removed, individual logs over `512M` are deleted or truncated if active, aggregate handoff log usage is kept below `2048M`, support bundles are kept under `512M`, and `/sensor/pcap/alerts` is kept under `4096M` with a `7` day retention safety net.
+The host logrotate rule caps large Zeek, Suricata, Vector, and Sensor Agent audit log files with `maxsize 128M`, `rotate 2`, compression, and `copytruncate`.
+`sensorctl install` also enables `ravenwire-log-prune.timer`, which runs hourly and enforces RavenWire storage retention: `/var/sensor/logs` files older than `1` day are removed, individual logs over `128M` are deleted or truncated if active, aggregate handoff log usage is kept below `768M`, support bundles are kept under `256M`, and `/sensor/pcap/alerts` is kept under `8192M` with a `7` day retention safety net.
+The same pruner preserves a default `4096M` free-space reserve on the filesystem that backs `/sensor/pcap/alerts` by deleting or truncating non-PCAP RavenWire logs first. Override with `RAVENWIRE_PCAP_RESERVED_FREE_MB` for larger capture volumes.
 
 The Sensor Agent also assigns a default `7` day retention time to carved PCAP artifacts and starts its PCAP retention pruner hourly. Override with `PCAP_RETENTION` and `PCAP_RETENTION_PRUNE_INTERVAL` duration values such as `168h` and `1h`.
 

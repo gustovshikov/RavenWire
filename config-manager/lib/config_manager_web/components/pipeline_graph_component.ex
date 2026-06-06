@@ -21,14 +21,17 @@ defmodule ConfigManagerWeb.PipelineGraphComponent do
 
   def sensor_pipeline_graph(assigns) do
     segments = Map.get(assigns.pipeline_state, :segments, [])
+    connectors = Map.get(assigns.pipeline_state, :connectors, [])
     nodes = graph_nodes(segments, assigns.selected_segment_id)
     node_map = Map.new(nodes, &{&1.id, &1})
+    segment_labels = Map.new(segments, &{&1.id, &1.label})
     selected_segment = selected_segment(segments, assigns.selected_segment_id)
 
     assigns =
       assigns
       |> assign(:nodes, nodes)
-      |> assign(:edges, graph_edges(Map.get(assigns.pipeline_state, :connectors, []), node_map))
+      |> assign(:edges, graph_edges(connectors, node_map))
+      |> assign(:flow_rows, flow_rows(connectors, segment_labels))
       |> assign(:selected_segment, selected_segment)
       |> assign(:selected_style, state_style(segment_state(selected_segment)))
       |> assign(:selected_metrics, detail_metrics(selected_segment))
@@ -179,25 +182,59 @@ defmodule ConfigManagerWeb.PipelineGraphComponent do
         </aside>
       </div>
 
-      <section class="sr-only" aria-label="Pipeline summary table">
-        <table>
-          <thead>
-            <tr>
-              <th>Segment</th>
-              <th>State</th>
-              <th>Throughput</th>
-              <th>Details</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr :for={row <- @summary_rows}>
-              <td><%= row.segment %></td>
-              <td><%= row.state %></td>
-              <td><%= row.throughput %></td>
-              <td><%= row.details %></td>
-            </tr>
-          </tbody>
-        </table>
+      <section class="pipeline-node-readout" aria-labelledby="pipeline-node-readout-title">
+        <div class="pipeline-node-readout-head">
+          <div>
+            <h3 id="pipeline-node-readout-title">Flow Details</h3>
+            <p>Live connector rates and segment summary for the current sensor pipeline.</p>
+          </div>
+        </div>
+
+        <div class="pipeline-node-flow-grid" aria-label="Pipeline connector measurements">
+          <article
+            :for={flow <- @flow_rows}
+            id={"pipeline-node-flow-#{dom_id(flow.id)}"}
+            class={["pipeline-node-flow-card", flow.class]}
+            tabindex="0"
+            aria-label={flow.accessible_summary}
+          >
+            <div class="pipeline-node-flow-main">
+              <span class="pipeline-node-flow-endpoint"><%= flow.source_label %></span>
+              <span class="pipeline-node-flow-track" aria-hidden="true">
+                <span class="pipeline-node-flow-fill"></span>
+              </span>
+              <span class="pipeline-node-flow-endpoint"><%= flow.target_label %></span>
+              <span class="pipeline-node-flow-rate"><%= flow.throughput_label %></span>
+            </div>
+            <p :if={flow.secondary_label} class="pipeline-node-flow-secondary">
+              <%= flow.secondary_label %>
+            </p>
+          </article>
+        </div>
+
+        <div class="pipeline-node-summary" aria-label="Pipeline summary table">
+          <h3>Pipeline Summary</h3>
+          <div class="pipeline-node-summary-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Segment</th>
+                  <th>State</th>
+                  <th>Throughput</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr :for={row <- @summary_rows}>
+                  <td><%= row.segment %></td>
+                  <td><%= row.state %></td>
+                  <td><%= row.throughput %></td>
+                  <td><%= row.details %></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
     </section>
     """
@@ -280,11 +317,36 @@ defmodule ConfigManagerWeb.PipelineGraphComponent do
       %{
         id: connector.id,
         path: path,
-        class: "pipeline-node-flow-state-#{flow_state} pipeline-node-flow-speed-#{speed_tier}",
+        class: flow_class(flow_state, speed_tier),
         animated: flow_state in [:flowing, :degraded],
         accessible_summary: Map.get(connector, :accessible_summary)
       }
     end)
+  end
+
+  defp flow_rows(connectors, segment_labels) do
+    Enum.map(connectors, fn connector ->
+      flow_state = Map.get(connector, :flow_state, :unknown)
+      speed_tier = Map.get(connector, :speed_tier, :unknown)
+
+      %{
+        id: connector.id,
+        source_label: endpoint_label(connector.source_id, segment_labels),
+        target_label: endpoint_label(connector.target_id, segment_labels),
+        throughput_label: Map.get(connector, :throughput_label, "—"),
+        secondary_label: Map.get(connector, :secondary_label),
+        class: flow_class(flow_state, speed_tier),
+        accessible_summary: Map.get(connector, :accessible_summary)
+      }
+    end)
+  end
+
+  defp endpoint_label(segment_id, segment_labels) do
+    Map.get(segment_labels, segment_id) || humanize(segment_id)
+  end
+
+  defp flow_class(flow_state, speed_tier) do
+    "pipeline-node-flow-state-#{flow_state} pipeline-node-flow-speed-#{speed_tier}"
   end
 
   defp edge_path(source, target) do
@@ -325,13 +387,29 @@ defmodule ConfigManagerWeb.PipelineGraphComponent do
   defp segment_state(nil), do: :no_data
   defp segment_state(segment), do: Map.get(segment, :state, :no_data)
 
+  defp node_throughput(%{id: "vector"} = segment) do
+    metrics = Map.get(segment, :metrics, %{})
+
+    first_present_metric(metrics, [:record_rate, :throughput, :aggregate_throughput])
+  end
+
   defp node_throughput(segment) do
     metrics = Map.get(segment, :metrics, %{})
 
-    Map.get(metrics, :throughput) ||
-      Map.get(metrics, :aggregate_throughput) ||
-      "—"
+    first_present_metric(metrics, [:throughput, :aggregate_throughput, :record_rate, :ingest])
   end
+
+  defp first_present_metric(metrics, keys) do
+    keys
+    |> Enum.map(&Map.get(metrics, &1))
+    |> Enum.find(&present_metric?/1)
+    |> case do
+      nil -> "—"
+      value -> value
+    end
+  end
+
+  defp present_metric?(value), do: not (is_nil(value) or value == "" or value == "—")
 
   defp detail_metrics(nil), do: []
 

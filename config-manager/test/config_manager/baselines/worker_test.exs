@@ -55,6 +55,57 @@ defmodule ConfigManager.Baselines.WorkerTest do
              "resolved"
   end
 
+  test "mixed normal and anomalous series do not churn baseline anomaly alerts" do
+    pod = insert_sensor!("baseline-worker-mixed-anomaly")
+
+    for series_key <- ["vector", "zeek"] do
+      {:ok, _baseline} =
+        Baselines.upsert_baseline(
+          baseline_attrs(%{
+            sensor_pod_id: pod.id,
+            metric_type: "cpu_percent",
+            series_key: series_key,
+            mean: 50.0,
+            stddev: 2.0,
+            p5: 45.0,
+            p95: 55.0
+          })
+        )
+    end
+
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+    Phoenix.PubSub.subscribe(ConfigManager.PubSub, "baselines:sensor:#{pod.id}")
+
+    write_snapshot!(pod.id, "cpu_percent", "vector", 80.0, now)
+    write_snapshot!(pod.id, "cpu_percent", "zeek", 51.0, now)
+
+    {:ok, worker} =
+      start_supervised(
+        {Worker, name: :baseline_worker_mixed_anomaly_test, schedule?: false, subscribe?: false}
+      )
+
+    send(worker, {:metrics_updated, pod.id})
+
+    pod_id = pod.id
+    assert_receive {:anomaly_status, ^pod_id, status}, 1_000
+    assert status[{"cpu_percent", "vector"}].status == :anomaly
+    assert status[{"cpu_percent", "zeek"}].status == :normal
+    assert %Alert{status: "firing"} = Alerts.active_alert_for("baseline_anomaly", pod.name)
+
+    send(worker, {:metrics_updated, pod.id})
+
+    assert_receive {:anomaly_status, ^pod_id, _status}, 1_000
+
+    assert Repo.aggregate(from(a in Alert, where: a.alert_type == "baseline_anomaly"), :count) ==
+             1
+
+    refute Repo.get_by(Alert,
+             alert_type: "baseline_anomaly",
+             sensor_pod_id: pod.name,
+             status: "resolved"
+           )
+  end
+
   test "forecast recompute fires and resolves capacity warnings" do
     pod = insert_sensor!("baseline-worker-capacity")
     now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
@@ -155,11 +206,16 @@ defmodule ConfigManager.Baselines.WorkerTest do
   end
 
   defp write_snapshot!(sensor_pod_id, metric_type, value, recorded_at) do
+    write_snapshot!(sensor_pod_id, metric_type, "default", value, recorded_at)
+  end
+
+  defp write_snapshot!(sensor_pod_id, metric_type, series_key, value, recorded_at) do
     assert {:ok, 1} =
              Metrics.write_snapshots([
                %{
                  sensor_pod_id: sensor_pod_id,
                  metric_type: metric_type,
+                 series_key: series_key,
                  value: value,
                  recorded_at: recorded_at
                }

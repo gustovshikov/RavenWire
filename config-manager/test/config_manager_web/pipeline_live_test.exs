@@ -9,57 +9,18 @@ defmodule ConfigManagerWeb.PipelineLiveTest do
 
   alias ConfigManagerWeb.PipelineLive.{
     PoolPipelineLive,
-    SensorPipelineGraphLive,
-    SensorPipelineLive
+    SensorPipelineGraphLive
   }
 
-  test "sensor pipeline route renders pending, enrolled, and revoked sensors", %{conn: conn} do
+  test "sensor pipeline route redirects to the node graph", %{conn: conn} do
     viewer_conn = login(conn, "viewer")
 
-    pending = insert_sensor!("pipeline-pending", %{status: "pending"})
-    enrolled = insert_sensor!("pipeline-enrolled", %{status: "enrolled"})
-    revoked = insert_sensor!("pipeline-revoked", %{status: "revoked"})
+    pod = insert_sensor!("pipeline-redirect-sensor")
 
-    Registry.update(enrolled.name, health_report(enrolled.name))
-    Process.sleep(50)
-
-    pending_html =
-      viewer_conn
-      |> recycle()
-      |> get("/sensors/#{pending.id}/pipeline")
-      |> html_response(200)
-
-    assert pending_html =~ "#{pending.name} Pipeline"
-    assert pending_html =~ "No Health Data"
-    assert pending_html =~ "Pending Enrollment"
-    assert pending_html =~ "Mirror Port"
-    assert pending_html =~ "Forwarding Sinks"
-
-    enrolled_html =
-      viewer_conn
-      |> recycle()
-      |> get("/sensors/#{enrolled.id}/pipeline")
-      |> html_response(200)
-
-    assert enrolled_html =~ "#{enrolled.name} Pipeline"
-    assert enrolled_html =~ "Live Data Flow"
-    assert enrolled_html =~ "AF_PACKET"
-    assert enrolled_html =~ "Zeek"
-    assert enrolled_html =~ "Suricata"
-    assert enrolled_html =~ "PCAP Ring"
-    assert enrolled_html =~ "Vector"
-    assert enrolled_html =~ "Pipeline Summary"
-    assert enrolled_html =~ ~s(/sensors/#{enrolled.id}/pipeline/graph)
-    assert enrolled_html =~ "Node Graph"
-
-    revoked_html =
-      viewer_conn
-      |> recycle()
-      |> get("/sensors/#{revoked.id}/pipeline")
-      |> html_response(200)
-
-    assert revoked_html =~ "#{revoked.name} Pipeline"
-    assert revoked_html =~ "Revoked Sensor"
+    assert viewer_conn
+           |> recycle()
+           |> get("/sensors/#{pod.id}/pipeline")
+           |> redirected_to() == "/sensors/#{pod.id}/pipeline/graph"
   end
 
   test "sensor pipeline graph route renders pending, enrolled, and revoked sensors", %{conn: conn} do
@@ -82,7 +43,7 @@ defmodule ConfigManagerWeb.PipelineLiveTest do
     assert pending_html =~ "Live Sensor Node Graph"
     assert pending_html =~ "No Health Data"
     assert pending_html =~ "Pending Enrollment"
-    assert pending_html =~ "Linear Pipeline"
+    refute pending_html =~ "Linear Pipeline"
 
     enrolled_html =
       viewer_conn
@@ -91,7 +52,7 @@ defmodule ConfigManagerWeb.PipelineLiveTest do
       |> html_response(200)
 
     assert enrolled_html =~ "#{enrolled.name} Pipeline Node Graph"
-    assert enrolled_html =~ "Mirror Port"
+    assert enrolled_html =~ "ens16f1"
     assert enrolled_html =~ "AF_PACKET"
     assert enrolled_html =~ "Zeek"
     assert enrolled_html =~ "Suricata"
@@ -110,6 +71,31 @@ defmodule ConfigManagerWeb.PipelineLiveTest do
     assert revoked_html =~ "Revoked Sensor"
   end
 
+  test "sensor pipeline graph renders vector ingress record rates", %{conn: conn} do
+    viewer_conn = login(conn, "viewer")
+    pod = insert_sensor!("pipeline-vector-ingress-sensor")
+
+    Registry.update(
+      pod.name,
+      health_report(pod.name,
+        vector_records: %{"zeek" => 25.0, "suricata" => 0.0},
+        vector_total_records: 25.0
+      )
+    )
+
+    Process.sleep(50)
+
+    graph_html =
+      viewer_conn
+      |> recycle()
+      |> get("/sensors/#{pod.id}/pipeline/graph")
+      |> html_response(200)
+
+    assert graph_html =~ "25 rec/s"
+    assert graph_html =~ "pipeline-node-flow-state-flowing pipeline-node-flow-speed-kbps"
+    assert graph_html =~ "pipeline-node-flow-state-idle pipeline-node-flow-speed-zero"
+  end
+
   test "pipeline routes handle missing records and authentication", %{conn: conn} do
     missing_id = Ecto.UUID.generate()
 
@@ -122,7 +108,7 @@ defmodule ConfigManagerWeb.PipelineLiveTest do
     assert viewer_conn
            |> recycle()
            |> get("/sensors/#{missing_id}/pipeline")
-           |> html_response(200) =~ "Sensor Not Found"
+           |> redirected_to() == "/sensors/#{missing_id}/pipeline/graph"
 
     assert viewer_conn
            |> recycle()
@@ -167,7 +153,7 @@ defmodule ConfigManagerWeb.PipelineLiveTest do
     assert html =~ second.name
     assert html =~ "1"
     assert html =~ "No Data"
-    assert html =~ ~s(/sensors/#{first.id}/pipeline)
+    assert html =~ ~s(/sensors/#{first.id}/pipeline/graph)
   end
 
   test "sensor detail and pool nav link to pipeline routes", %{conn: conn} do
@@ -181,7 +167,7 @@ defmodule ConfigManagerWeb.PipelineLiveTest do
       |> get("/sensors/#{pod.id}")
       |> html_response(200)
 
-    assert sensor_detail =~ ~s(/sensors/#{pod.id}/pipeline)
+    assert sensor_detail =~ ~s(/sensors/#{pod.id}/pipeline/graph)
     assert sensor_detail =~ "Pipeline"
 
     pool_detail =
@@ -192,25 +178,6 @@ defmodule ConfigManagerWeb.PipelineLiveTest do
 
     assert pool_detail =~ ~s(/pools/#{pool.id}/pipeline)
     assert pool_detail =~ "Pipeline"
-  end
-
-  test "sensor pipeline updates from pod PubSub events" do
-    pod = insert_sensor!("pipeline-live-sensor")
-
-    Registry.update(pod.name, health_report(pod.name))
-    Process.sleep(50)
-
-    Registry.update(pod.name, health_report(pod.name, drop_percent: 12.0))
-    Process.sleep(50)
-
-    assert {:noreply, updated} =
-             SensorPipelineLive.handle_info({:pod_updated, pod.name}, build_sensor_socket(pod))
-
-    af_packet = segment(updated.assigns.pipeline_state, "af_packet")
-    zeek = segment(updated.assigns.pipeline_state, "zeek")
-
-    assert af_packet.state == :degraded
-    assert zeek.state == :degraded
   end
 
   test "pool pipeline debounces member health updates and re-renders aggregate counts" do
@@ -272,7 +239,7 @@ defmodule ConfigManagerWeb.PipelineLiveTest do
     html =
       viewer_conn
       |> recycle()
-      |> get("/sensors/#{pod.id}/pipeline")
+      |> get("/sensors/#{pod.id}/pipeline/graph")
       |> html_response(200)
 
     assert html =~ "pipeline-file-sink"
@@ -432,6 +399,10 @@ defmodule ConfigManagerWeb.PipelineLiveTest do
 
   defp health_report(pod_name, opts \\ []) do
     drop_percent = Keyword.get(opts, :drop_percent, 0.0)
+    vector_records = Keyword.get(opts, :vector_records)
+
+    vector_total_records =
+      Keyword.get(opts, :vector_total_records, sum_record_rates(vector_records))
 
     %Health.HealthReport{
       sensor_pod_id: pod_name,
@@ -470,6 +441,15 @@ defmodule ConfigManagerWeb.PipelineLiveTest do
           }
         }
       },
+      vector:
+        if(vector_records,
+          do: %Health.VectorStats{
+            input_records_per_sec: vector_records,
+            total_records_per_sec: vector_total_records,
+            disk_buffer_util_pct: Keyword.get(opts, :vector_disk_buffer_util_pct, 0.0),
+            sink_connectivity: Keyword.get(opts, :vector_sink_connectivity, %{})
+          }
+        ),
       storage: %Health.StorageStats{
         path: "/var/lib/ravenwire/pcap",
         total_bytes: 1_000_000,
@@ -479,16 +459,12 @@ defmodule ConfigManagerWeb.PipelineLiveTest do
     }
   end
 
-  defp build_sensor_socket(pod) do
-    %Phoenix.LiveView.Socket{
-      assigns: %{
-        __changed__: %{},
-        flash: %{},
-        pod: pod,
-        health_key: pod.name
-      },
-      private: %{live_temp: %{}}
-    }
+  defp sum_record_rates(nil), do: 0.0
+
+  defp sum_record_rates(record_rates) do
+    record_rates
+    |> Map.values()
+    |> Enum.sum()
   end
 
   defp build_sensor_graph_socket(pod, selected_segment_id \\ "af_packet") do

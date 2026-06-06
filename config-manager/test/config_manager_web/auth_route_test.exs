@@ -244,7 +244,13 @@ defmodule ConfigManagerWeb.AuthRouteTest do
 
     for path <- dynamic_read_paths(fixtures) do
       conn = logged_in |> recycle() |> get(path)
-      assert html_response(conn, 200), "#{path} should render for a viewer"
+
+      if sensor_pipeline_redirect_path?(path) do
+        assert redirected_to(conn) == "#{path}/graph",
+               "#{path} should redirect to the canonical sensor graph"
+      else
+        assert html_response(conn, 200), "#{path} should render for a viewer"
+      end
     end
   end
 
@@ -515,6 +521,10 @@ defmodule ConfigManagerWeb.AuthRouteTest do
       {"/pools/#{pool.id}/forwarding/sinks/new", "forwarding:manage"},
       {"/pools/#{pool.id}/forwarding/sinks/#{sink.id}/edit", "forwarding:manage"}
     ]
+  end
+
+  defp sensor_pipeline_redirect_path?(path) do
+    String.starts_with?(path, "/sensors/") and String.ends_with?(path, "/pipeline")
   end
 
   defp insert_sensor!(pool_id, suffix) do

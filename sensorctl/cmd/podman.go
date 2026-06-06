@@ -237,7 +237,7 @@ func prepareHostCommands() []string {
 		"sudo install -D -m 0644 deploy/systemd/journald.conf.d/ravenwire.conf /etc/systemd/journald.conf.d/ravenwire.conf",
 		"sudo systemctl restart systemd-journald.service",
 		"sudo journalctl --rotate",
-		"sudo journalctl --vacuum-size=512M --vacuum-time=7d",
+		"sudo journalctl --vacuum-size=256M --vacuum-time=3d",
 		"sudo install -D -m 0644 deploy/systemd/tmpfiles.d/ravenwire.conf /etc/tmpfiles.d/ravenwire.conf",
 		"sudo systemd-tmpfiles --create /etc/tmpfiles.d/ravenwire.conf",
 		"sudo install -D -m 0644 deploy/systemd/logrotate.d/ravenwire /etc/logrotate.d/ravenwire",
@@ -323,6 +323,9 @@ func configureEnvironment(opts installOptions) error {
 		"SENSOR_SVC_UID":      "0",
 		"MIN_DISK_WRITE_MBPS": envOr("MIN_DISK_WRITE_MBPS", "50"),
 		"MIN_STORAGE_GB":      envOr("MIN_STORAGE_GB", "10"),
+		"VECTOR_METRICS_URL":  envOr("VECTOR_METRICS_URL", "http://127.0.0.1:9598/metrics"),
+		"ZEEK_LOG_DIR":        envOr("ZEEK_LOG_DIR", "/var/sensor/logs/zeek"),
+		"SURICATA_EVE_PATH":   envOr("SURICATA_EVE_PATH", "/var/sensor/logs/suricata/eve*.json"),
 		"SPLUNK_HEC_URL":      "",
 		"SPLUNK_HEC_TOKEN":    "",
 		"CRIBL_URL":           "",
@@ -720,16 +723,16 @@ func cleanupApp(opts cleanupOptions) error {
 func cleanupCommands(opts cleanupOptions) []string {
 	commands := []string{
 		"sudo journalctl --rotate",
-		"sudo journalctl --vacuum-size=512M --vacuum-time=7d",
+		"sudo journalctl --vacuum-size=256M --vacuum-time=3d",
 		"if systemctl list-unit-files ravenwire-log-prune.service >/dev/null 2>&1; then sudo systemctl start ravenwire-log-prune.service; fi",
 		"if [ -f /etc/logrotate.d/ravenwire ]; then sudo logrotate -f /etc/logrotate.d/ravenwire; fi",
 		"sudo find /tmp /var/sensor/support-bundles -xdev -type f -name 'sensor-support-*.tar.gz' -mtime +2 -delete 2>/dev/null || true",
 	}
 	if opts.podman {
-		commands = append(commands, "if command -v podman >/dev/null 2>&1; then sudo podman system prune -f; fi")
+		commands = append(commands, "if command -v podman >/dev/null 2>&1; then podman system prune -af || true; sudo podman system prune -af; fi")
 	}
 	if opts.docker {
-		commands = append(commands, "if command -v docker >/dev/null 2>&1; then sudo docker system prune -f; fi")
+		commands = append(commands, "if command -v docker >/dev/null 2>&1; then sudo docker system prune -af; fi")
 	}
 	return commands
 }
@@ -739,6 +742,17 @@ func uninstallApp(purge, images bool) error {
 		fmt.Fprintf(os.Stderr, "warning: stop failed during uninstall: %v\n", err)
 	}
 
+	for _, command := range uninstallCommands(purge, images) {
+		if err := runShell("", command); err != nil {
+			return err
+		}
+	}
+
+	fmt.Println("RavenWire uninstalled.")
+	return nil
+}
+
+func uninstallCommands(purge, images bool) []string {
 	quadletDst := "/etc/containers/systemd"
 	systemdDst := "/etc/systemd/system"
 
@@ -758,15 +772,26 @@ func uninstallApp(purge, images bool) error {
 	}
 
 	var commands []string
+	commands = append(commands,
+		fmt.Sprintf("systemctl --user stop %s || true", shellQuote(managementTarget)),
+		fmt.Sprintf("systemctl --user stop %s || true", shellQuote(analysisTarget)),
+		fmt.Sprintf("systemctl --user stop %s || true", shellQuote(captureTarget)),
+		fmt.Sprintf("systemctl --user stop %s || true", shellQuote(sensorTarget)),
+	)
+
 	for _, file := range files {
 		commands = append(commands, fmt.Sprintf("sudo rm -f %s", shellQuote(filepath.Join(quadletDst, file))))
+		commands = append(commands, fmt.Sprintf("rm -f \"$HOME/.config/containers/systemd/%s\"", file))
 	}
 	for _, file := range targets {
+		commands = append(commands, fmt.Sprintf("sudo rm -f %s", shellQuote(filepath.Join(quadletDst, file))))
 		commands = append(commands, fmt.Sprintf("sudo rm -f %s", shellQuote(filepath.Join(systemdDst, file))))
+		commands = append(commands, fmt.Sprintf("rm -f \"$HOME/.config/containers/systemd/%s\"", file))
+		commands = append(commands, fmt.Sprintf("rm -f \"$HOME/.config/systemd/user/%s\"", file))
 	}
 	commands = append(commands,
-		"sudo systemctl stop ravenwire-log-prune.timer ravenwire-log-prune.service",
-		"sudo systemctl disable ravenwire-log-prune.timer",
+		"sudo systemctl stop ravenwire-log-prune.timer ravenwire-log-prune.service || true",
+		"sudo systemctl disable ravenwire-log-prune.timer || true",
 		"sudo rm -f /etc/systemd/journald.conf.d/ravenwire.conf",
 		"sudo rm -f /etc/logrotate.d/ravenwire",
 		"sudo rm -f /usr/local/libexec/ravenwire-prune-logs",
@@ -774,6 +799,8 @@ func uninstallApp(purge, images bool) error {
 		"sudo systemctl restart systemd-journald.service",
 		"sudo systemctl daemon-reload",
 		"sudo systemctl reset-failed",
+		"systemctl --user daemon-reload || true",
+		"systemctl --user reset-failed || true",
 		"sudo systemctl unset-environment CAPTURE_IFACE SENSOR_POD_NAME SENSOR_ENROLLMENT_TOKEN CONFIG_MANAGER_URL CONTROL_API_HOST GRPC_ADDR SENSOR_SVC_UID MIN_DISK_WRITE_MBPS MIN_STORAGE_GB SPLUNK_HEC_URL SPLUNK_HEC_TOKEN CRIBL_URL CRIBL_TOKEN",
 	)
 
@@ -781,17 +808,13 @@ func uninstallApp(purge, images bool) error {
 		commands = append(commands, "sudo rm -rf /data/config_manager /data/ca /data/metrics /etc/sensor /etc/ravenwire /var/sensor /var/run/sensor /sensor/pcap")
 	}
 	if images {
-		commands = append(commands, "sudo podman rmi -f localhost/ravenwire/config-manager:test localhost/ravenwire/sensor-agent:test localhost/ravenwire/pcap-ring-writer:test")
+		commands = append(commands,
+			"podman rmi -f localhost/ravenwire/config-manager:test localhost/ravenwire/sensor-agent:test localhost/ravenwire/pcap-ring-writer:test || true",
+			"sudo podman rmi -f localhost/ravenwire/config-manager:test localhost/ravenwire/sensor-agent:test localhost/ravenwire/pcap-ring-writer:test",
+		)
 	}
 
-	for _, command := range commands {
-		if err := runShell("", command); err != nil {
-			return err
-		}
-	}
-
-	fmt.Println("RavenWire uninstalled.")
-	return nil
+	return commands
 }
 
 func generateEnrollmentToken() (string, error) {

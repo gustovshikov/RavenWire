@@ -57,6 +57,9 @@ func main() {
 	healthBufferPath := envOrDefault("HEALTH_BUFFER_PATH", "/var/sensor/health-buffer.bin")
 	lastKnownConfigPath := envOrDefault("LAST_KNOWN_CONFIG_PATH", "/etc/sensor/last-known-config.json")
 	captureIface := envOrDefault("CAPTURE_IFACE", "eth0")
+	vectorMetricsURL := envOrDefault("VECTOR_METRICS_URL", "http://127.0.0.1:9598/metrics")
+	zeekLogDir := envOrDefault("ZEEK_LOG_DIR", "/var/sensor/logs/zeek")
+	suricataEVEPath := envOrDefault("SURICATA_EVE_PATH", "/var/sensor/logs/suricata/eve*.json")
 	pcapRetention := envDurationOrDefault("PCAP_RETENTION", 7*24*time.Hour)
 	pcapRetentionPruneInterval := envDurationOrDefault("PCAP_RETENTION_PRUNE_INTERVAL", 1*time.Hour)
 
@@ -222,7 +225,11 @@ func main() {
 	pcapManager := pcap.NewManagerWithConfig(pcapRingSock, pcapAlertsDir, pcapIndex, auditLog, pcapManagerCfg)
 
 	// ── Module 3: Health Collector ────────────────────────────────────────────
-	healthCollector := health.NewCollector(captureManager, auditLog)
+	healthCollector := health.NewCollectorWithConfig(captureManager, auditLog, health.CollectorConfig{
+		VectorMetricsURL: vectorMetricsURL,
+		ZeekLogDir:       zeekLogDir,
+		SuricataEVEPath:  suricataEVEPath,
+	})
 
 	// ── Module 10: Support Bundle ─────────────────────────────────────────────
 	bundleGen := support.NewBundleGenerator(auditLog)

@@ -34,6 +34,7 @@ type HealthReport struct {
 	TimestampUnixMs int64             `json:"timestamp_unix_ms"`
 	Containers      []ContainerHealth `json:"containers"`
 	Capture         CaptureStats      `json:"capture"`
+	Vector          VectorStats       `json:"vector,omitempty"`
 	Storage         StorageStats      `json:"storage"`
 	Clock           ClockStats        `json:"clock"`
 	System          SystemStats       `json:"system"`
@@ -53,13 +54,26 @@ type CaptureStats struct {
 	Consumers map[string]ConsumerStats `json:"consumers"`
 }
 
+// VectorStats holds Vector log-record ingress metrics keyed by canonical
+// pipeline segment IDs.
+type VectorStats struct {
+	InputRecordsPerSec map[string]float64 `json:"input_records_per_sec,omitempty"`
+	TotalRecordsPerSec float64            `json:"total_records_per_sec,omitempty"`
+	DiskBufferUtilPct  float64            `json:"disk_buffer_util_pct,omitempty"`
+	SinkConnectivity   map[string]string  `json:"sink_connectivity,omitempty"`
+}
+
 // ConsumerStats holds per-consumer packet counters and health metrics.
 type ConsumerStats struct {
-	PacketsReceived   uint64  `json:"packets_received"`
-	PacketsDropped    uint64  `json:"packets_dropped"`
-	DropPercent       float64 `json:"drop_percent"`
-	ThroughputBps     float64 `json:"throughput_bps"`
-	BpfRestartPending bool    `json:"bpf_restart_pending"` // Req 4.7
+	PacketsReceived        uint64  `json:"packets_received"`
+	PacketsDropped         uint64  `json:"packets_dropped"`
+	DropPercent            float64 `json:"drop_percent"`
+	ThroughputBps          float64 `json:"throughput_bps"`
+	BpfRestartPending      bool    `json:"bpf_restart_pending"` // Req 4.7
+	ProcessThroughputBps   float64 `json:"process_throughput_bps,omitempty"`
+	ProcessPacketsPerSec   float64 `json:"process_packets_per_sec,omitempty"`
+	ProcessDropPercent     float64 `json:"process_drop_percent,omitempty"`
+	ProcessTelemetrySource string  `json:"process_telemetry_source,omitempty"`
 
 	// pcap_ring_writer specific (Req 7.1, 7.2)
 	PacketsWritten         uint64 `json:"packets_written"`
@@ -154,6 +168,10 @@ func (r *HealthReport) ToProto() *healthpb.HealthReport {
 			DropPercent:            cs.DropPercent,
 			ThroughputBps:          cs.ThroughputBps,
 			BpfRestartPending:      cs.BpfRestartPending,
+			ProcessThroughputBps:   cs.ProcessThroughputBps,
+			ProcessPacketsPerSec:   cs.ProcessPacketsPerSec,
+			ProcessDropPercent:     cs.ProcessDropPercent,
+			ProcessTelemetrySource: cs.ProcessTelemetrySource,
 			DropAlert:              cs.DropAlert,
 			PacketsWritten:         cs.PacketsWritten,
 			BytesWritten:           cs.BytesWritten,
@@ -164,6 +182,15 @@ func (r *HealthReport) ToProto() *healthpb.HealthReport {
 		}
 	}
 	pb.Capture = &healthpb.CaptureStats{Consumers: consumers}
+
+	if vectorStatsPresent(r.Vector) {
+		pb.Vector = &healthpb.VectorStats{
+			InputRecordsPerSec: r.Vector.InputRecordsPerSec,
+			TotalRecordsPerSec: r.Vector.TotalRecordsPerSec,
+			DiskBufferUtilPct:  r.Vector.DiskBufferUtilPct,
+			SinkConnectivity:   r.Vector.SinkConnectivity,
+		}
+	}
 
 	pb.Storage = &healthpb.StorageStats{
 		Path:           r.Storage.Path,
@@ -205,12 +232,31 @@ func (r *HealthReport) ToProto() *healthpb.HealthReport {
 	return pb
 }
 
+func vectorStatsPresent(stats VectorStats) bool {
+	return len(stats.InputRecordsPerSec) > 0 ||
+		stats.TotalRecordsPerSec != 0 ||
+		stats.DiskBufferUtilPct != 0 ||
+		len(stats.SinkConnectivity) > 0
+}
+
 // prevConsumerState tracks per-consumer state between collection intervals
 // for computing deltas (throughput, overwrite risk).
 type prevConsumerState struct {
 	BytesWritten uint64
 	WrapCount    uint64
 	Timestamp    time.Time
+}
+
+type prevVectorInputState struct {
+	Count     float64
+	Timestamp time.Time
+}
+
+type prevProcessInputState struct {
+	Bytes     uint64
+	Packets   uint64
+	Drops     uint64
+	Timestamp time.Time
 }
 
 type cpuSample struct {
@@ -255,10 +301,14 @@ type Collector struct {
 	vectorMetricsURL   string
 
 	// Previous state for delta calculations
-	prevStateMu sync.Mutex
-	prevState   map[string]prevConsumerState
-	prevCPUMu   sync.Mutex
-	prevCPU     cpuSample
+	prevStateMu      sync.Mutex
+	prevState        map[string]prevConsumerState
+	prevVectorMu     sync.Mutex
+	prevVectorState  map[string]prevVectorInputState
+	prevProcessMu    sync.Mutex
+	prevProcessState map[string]prevProcessInputState
+	prevCPUMu        sync.Mutex
+	prevCPU          cpuSample
 
 	// Injectable functions for testing
 	ringStatusFn RingStatusFunc
@@ -280,7 +330,10 @@ func NewCollector(capMgr *capture.Manager, auditLog *audit.Logger) *Collector {
 		auditLog:           auditLog,
 		interval:           10 * time.Second,
 		dropAlertThreshPct: 1.0,
+		vectorMetricsURL:   envOrDefault("VECTOR_METRICS_URL", "http://127.0.0.1:9598/metrics"),
 		prevState:          make(map[string]prevConsumerState),
+		prevVectorState:    make(map[string]prevVectorInputState),
+		prevProcessState:   make(map[string]prevProcessInputState),
 		ringStatusFn:       defaultRingStatusFunc,
 		timeNow:            time.Now,
 		httpGet:            http.Get,
@@ -326,6 +379,7 @@ func (c *Collector) Collect() HealthReport {
 
 	report.Containers = c.scrapeContainers()
 	report.Capture = c.scrapeCaptureStats()
+	report.Vector = c.scrapeVectorStats()
 	report.Storage = c.scrapeStorage()
 	report.Clock = c.scrapeClock()
 	report.System = c.scrapeSystem()
@@ -606,9 +660,6 @@ func (c *Collector) scrapeCaptureStats() CaptureStats {
 		stats.Consumers[name] = cs
 	}
 
-	// Collect Vector metrics if configured (Req 7.5)
-	c.scrapeVectorStats(stats.Consumers)
-
 	return stats
 }
 
@@ -664,13 +715,19 @@ func (c *Collector) scrapePcapRingWriterStats(cs *ConsumerStats) {
 
 // suricataEVEStats represents the capture stats from a Suricata EVE stats event.
 type suricataEVEStats struct {
-	EventType string `json:"event_type"`
-	Stats     struct {
+	EventType    string          `json:"event_type"`
+	TimestampRaw json.RawMessage `json:"timestamp"`
+	Timestamp    time.Time       `json:"-"`
+	Stats        struct {
 		Capture struct {
 			KernelPackets uint64 `json:"kernel_packets"`
 			KernelDrops   uint64 `json:"kernel_drops"`
 			KernelIfdrops uint64 `json:"kernel_ifdrops"`
 		} `json:"capture"`
+		Decoder struct {
+			Bytes uint64 `json:"bytes"`
+			Pkts  uint64 `json:"pkts"`
+		} `json:"decoder"`
 	} `json:"stats"`
 }
 
@@ -690,27 +747,37 @@ func (c *Collector) scrapeSuricataStats(cs *ConsumerStats) {
 	cs.KernelPackets = stats.Stats.Capture.KernelPackets
 	cs.KernelDrops = stats.Stats.Capture.KernelDrops
 	cs.KernelIfdrops = stats.Stats.Capture.KernelIfdrops
+	c.applySuricataProcessStats(cs, stats)
 }
 
 // parseSuricataEVEStats reads the Suricata EVE JSON log and finds the last
 // stats event to extract capture statistics.
 func (c *Collector) parseSuricataEVEStats(evePath string) (*suricataEVEStats, error) {
-	data, err := c.readFile(evePath)
+	resolvedPath, err := c.resolveNewestLogPath(evePath)
 	if err != nil {
-		return nil, fmt.Errorf("read EVE log %s: %w", evePath, err)
+		return nil, err
+	}
+
+	data, err := c.readFile(resolvedPath)
+	if err != nil {
+		return nil, fmt.Errorf("read EVE log %s: %w", resolvedPath, err)
 	}
 
 	// Scan lines in reverse to find the last stats event
 	var lastStats *suricataEVEStats
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if !strings.Contains(line, `"event_type":"stats"`) {
+		if !strings.Contains(line, `"stats"`) {
 			continue
 		}
 		var evt suricataEVEStats
 		if err := json.Unmarshal([]byte(line), &evt); err != nil {
 			continue
+		}
+		if ts, ok := parseJSONTimestamp(evt.TimestampRaw); ok {
+			evt.Timestamp = ts
 		}
 		if evt.EventType == "stats" {
 			lastStats = &evt
@@ -721,6 +788,13 @@ func (c *Collector) parseSuricataEVEStats(evePath string) (*suricataEVEStats, er
 		return nil, fmt.Errorf("no stats event found in EVE log")
 	}
 	return lastStats, nil
+}
+
+type zeekStatsRow struct {
+	Timestamp        time.Time
+	BytesRecv        uint64
+	PacketsProcessed uint64
+	PacketsDropped   uint64
 }
 
 // scrapeZeekStats collects Zeek process health metrics (Req 7.4):
@@ -757,6 +831,136 @@ func (c *Collector) scrapeZeekStats(cs *ConsumerStats) {
 	if cs.LogWriteLagMs > 60000 {
 		cs.Degraded = true
 	}
+
+	if c.zeekLogDir != "" {
+		stats, err := c.parseZeekStatsLog(c.zeekLogDir)
+		if err != nil {
+			log.Printf("health: failed to read Zeek stats log: %v", err)
+		} else {
+			c.applyZeekProcessStats(cs, stats)
+		}
+	}
+}
+
+// parseZeekStatsLog reads the newest Zeek stats*.log JSON file and returns the
+// most recent row with the fields needed for app-native process input telemetry.
+func (c *Collector) parseZeekStatsLog(logDir string) (*zeekStatsRow, error) {
+	statsPath, err := c.newestFileInDir(logDir, "stats*.log")
+	if err != nil {
+		return nil, err
+	}
+	return c.parseZeekStatsFile(statsPath)
+}
+
+func (c *Collector) parseZeekStatsFile(statsPath string) (*zeekStatsRow, error) {
+	data, err := c.readFile(statsPath)
+	if err != nil {
+		return nil, fmt.Errorf("read Zeek stats log %s: %w", statsPath, err)
+	}
+
+	var lastStats *zeekStatsRow
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			continue
+		}
+
+		timestamp, hasTimestamp := parseJSONTimestamp(raw["ts"])
+		bytesRecv, hasBytes := parseJSONUint(raw["bytes_recv"])
+		packetsProcessed, hasPackets := parseJSONUint(raw["pkts_proc"])
+		packetsDropped, _ := parseJSONUint(raw["pkts_dropped"])
+		if !hasTimestamp || !hasBytes || !hasPackets {
+			continue
+		}
+
+		lastStats = &zeekStatsRow{
+			Timestamp:        timestamp,
+			BytesRecv:        bytesRecv,
+			PacketsProcessed: packetsProcessed,
+			PacketsDropped:   packetsDropped,
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan Zeek stats log %s: %w", statsPath, err)
+	}
+	if lastStats == nil {
+		return nil, fmt.Errorf("no usable stats row found in Zeek stats log")
+	}
+	return lastStats, nil
+}
+
+func (c *Collector) applyZeekProcessStats(cs *ConsumerStats, stats *zeekStatsRow) {
+	if stats == nil || c.processTelemetryStale(stats.Timestamp) {
+		return
+	}
+
+	intervalSeconds := c.interval.Seconds()
+	if intervalSeconds <= 0 {
+		intervalSeconds = 10
+	}
+
+	cs.ProcessThroughputBps = float64(stats.BytesRecv) * 8 / intervalSeconds
+	cs.ProcessPacketsPerSec = float64(stats.PacketsProcessed) / intervalSeconds
+	cs.ProcessDropPercent = packetDropPercent(stats.PacketsProcessed, stats.PacketsDropped)
+	cs.ProcessTelemetrySource = "zeek stats.log"
+}
+
+func (c *Collector) applySuricataProcessStats(cs *ConsumerStats, stats *suricataEVEStats) {
+	if stats == nil || c.processTelemetryStale(stats.Timestamp) {
+		return
+	}
+
+	current := prevProcessInputState{
+		Bytes:     stats.Stats.Decoder.Bytes,
+		Packets:   stats.Stats.Decoder.Pkts,
+		Drops:     stats.Stats.Capture.KernelDrops + stats.Stats.Capture.KernelIfdrops,
+		Timestamp: stats.Timestamp,
+	}
+
+	bps, pps, dropPercent := c.computeProcessInputRates("suricata", current)
+	cs.ProcessThroughputBps = bps
+	cs.ProcessPacketsPerSec = pps
+	cs.ProcessDropPercent = dropPercent
+	cs.ProcessTelemetrySource = "suricata eve stats"
+}
+
+func (c *Collector) computeProcessInputRates(name string, current prevProcessInputState) (float64, float64, float64) {
+	c.prevProcessMu.Lock()
+	defer c.prevProcessMu.Unlock()
+
+	if c.prevProcessState == nil {
+		c.prevProcessState = make(map[string]prevProcessInputState)
+	}
+
+	prev, hasPrev := c.prevProcessState[name]
+	c.prevProcessState[name] = current
+
+	if !hasPrev || !current.Timestamp.After(prev.Timestamp) {
+		return 0, 0, 0
+	}
+	if current.Bytes < prev.Bytes || current.Packets < prev.Packets || current.Drops < prev.Drops {
+		return 0, 0, 0
+	}
+
+	elapsed := current.Timestamp.Sub(prev.Timestamp).Seconds()
+	if elapsed <= 0 {
+		return 0, 0, 0
+	}
+
+	byteDelta := current.Bytes - prev.Bytes
+	packetDelta := current.Packets - prev.Packets
+	dropDelta := current.Drops - prev.Drops
+
+	return float64(byteDelta) * 8 / elapsed,
+		float64(packetDelta) / elapsed,
+		packetDropPercent(packetDelta, dropDelta)
 }
 
 // findProcessPID scans /proc for a process with the given name and returns its PID.
@@ -861,82 +1065,378 @@ func (c *Collector) computeLogWriteLag(logDir string) (int64, error) {
 	return lag.Milliseconds(), nil
 }
 
-// vectorMetricsResponse represents the subset of Vector's internal metrics
-// endpoint response that we need (Req 7.5).
-type vectorMetricsResponse struct {
-	ComponentsReceivedEventsTotal []struct {
-		Name  string  `json:"name"`
-		Value float64 `json:"value"`
-	} `json:"components_received_events_total,omitempty"`
-	Sinks []struct {
-		Name      string `json:"name"`
-		Connected bool   `json:"connected"`
-	} `json:"sinks,omitempty"`
-	DiskBufferUsage struct {
-		UsedBytes  uint64 `json:"used_bytes"`
-		TotalBytes uint64 `json:"total_bytes"`
-	} `json:"disk_buffer_usage,omitempty"`
+func (c *Collector) resolveNewestLogPath(pathOrGlob string) (string, error) {
+	if !strings.ContainsAny(pathOrGlob, "*?[") {
+		return pathOrGlob, nil
+	}
+
+	dir, pattern := filepath.Split(pathOrGlob)
+	if dir == "" {
+		dir = "."
+	}
+	if pattern == "" {
+		return "", fmt.Errorf("log path pattern is empty: %s", pathOrGlob)
+	}
+
+	return c.newestFileInDir(filepath.Clean(dir), pattern)
 }
 
-// scrapeVectorStats collects Vector internal metrics (Req 7.5).
-// If a "vector" consumer exists in the consumers map, it enriches it;
-// otherwise it creates a new entry.
-func (c *Collector) scrapeVectorStats(consumers map[string]ConsumerStats) {
+func (c *Collector) newestFileInDir(dir, pattern string) (string, error) {
+	entries, err := c.readDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("read log dir %s: %w", dir, err)
+	}
+
+	var newestPath string
+	var newestMtime time.Time
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		matched, err := filepath.Match(pattern, entry.Name())
+		if err != nil {
+			return "", fmt.Errorf("invalid log file pattern %s: %w", pattern, err)
+		}
+		if !matched {
+			continue
+		}
+
+		path := filepath.Join(dir, entry.Name())
+		info, err := c.stat(path)
+		if err != nil {
+			continue
+		}
+		if newestPath == "" || info.ModTime().After(newestMtime) {
+			newestPath = path
+			newestMtime = info.ModTime()
+		}
+	}
+
+	if newestPath == "" {
+		return "", fmt.Errorf("no log files matching %s in %s", pattern, dir)
+	}
+	return newestPath, nil
+}
+
+func parseJSONUint(raw json.RawMessage) (uint64, bool) {
+	value, ok := parseJSONFloat(raw)
+	if !ok || value < 0 {
+		return 0, false
+	}
+	return uint64(value), true
+}
+
+func parseJSONFloat(raw json.RawMessage) (float64, bool) {
+	if len(raw) == 0 {
+		return 0, false
+	}
+
+	var number float64
+	if err := json.Unmarshal(raw, &number); err == nil {
+		return number, true
+	}
+
+	var stringValue string
+	if err := json.Unmarshal(raw, &stringValue); err != nil {
+		return 0, false
+	}
+	stringValue = strings.TrimSpace(stringValue)
+	if stringValue == "" {
+		return 0, false
+	}
+
+	parsed, err := strconv.ParseFloat(stringValue, 64)
+	if err != nil {
+		return 0, false
+	}
+	return parsed, true
+}
+
+func parseJSONTimestamp(raw json.RawMessage) (time.Time, bool) {
+	if unixSeconds, ok := parseJSONFloat(raw); ok {
+		seconds := int64(unixSeconds)
+		nanos := int64((unixSeconds - float64(seconds)) * 1_000_000_000)
+		return time.Unix(seconds, nanos).UTC(), true
+	}
+
+	var stringValue string
+	if err := json.Unmarshal(raw, &stringValue); err != nil {
+		return time.Time{}, false
+	}
+	stringValue = strings.TrimSpace(stringValue)
+	if stringValue == "" {
+		return time.Time{}, false
+	}
+
+	layouts := []string{
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05.999999Z0700",
+		"2006-01-02T15:04:05.999999-0700",
+		"2006-01-02T15:04:05Z0700",
+		"2006-01-02T15:04:05-0700",
+	}
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, stringValue); err == nil {
+			return parsed.UTC(), true
+		}
+	}
+
+	return time.Time{}, false
+}
+
+func (c *Collector) processTelemetryStale(timestamp time.Time) bool {
+	if timestamp.IsZero() {
+		return true
+	}
+
+	now := time.Now()
+	if c.timeNow != nil {
+		now = c.timeNow()
+	}
+
+	age := now.Sub(timestamp)
+	if age < 0 {
+		return false
+	}
+
+	threshold := c.interval * 3
+	if threshold < 30*time.Second {
+		threshold = 30 * time.Second
+	}
+	return age > threshold
+}
+
+func packetDropPercent(processedPackets, droppedPackets uint64) float64 {
+	total := processedPackets + droppedPackets
+	if total == 0 {
+		return 0
+	}
+	return float64(droppedPackets) / float64(total) * 100
+}
+
+// vectorPrometheusMetrics represents the subset of Vector internal Prometheus
+// metrics needed by the HealthReport VectorStats field.
+type vectorPrometheusMetrics struct {
+	InputCounters     map[string]float64
+	DiskBufferUtilPct float64
+	SinkConnectivity  map[string]string
+}
+
+// scrapeVectorStats collects Vector internal metrics from the local Prometheus
+// exporter. Missing or unreachable metrics return an empty VectorStats value so
+// Config Manager can keep Vector ingress flow in the unknown state.
+func (c *Collector) scrapeVectorStats() VectorStats {
 	if c.vectorMetricsURL == "" {
-		return
+		return VectorStats{}
 	}
 
 	resp, err := c.httpGet(c.vectorMetricsURL)
 	if err != nil {
 		log.Printf("health: failed to query Vector metrics: %v", err)
-		return
+		return VectorStats{}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("health: Vector metrics returned status %d", resp.StatusCode)
-		return
+		return VectorStats{}
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("health: failed to read Vector metrics response: %v", err)
-		return
+		return VectorStats{}
 	}
 
-	var metrics vectorMetricsResponse
-	if err := json.Unmarshal(body, &metrics); err != nil {
-		log.Printf("health: failed to parse Vector metrics: %v", err)
-		return
+	metrics := parseVectorPrometheusMetrics(string(body))
+	if len(metrics.InputCounters) == 0 && len(metrics.SinkConnectivity) == 0 && metrics.DiskBufferUtilPct == 0 {
+		return VectorStats{}
 	}
 
-	cs := consumers["vector"]
-
-	// Records ingested per second: sum of all component received events / interval
-	var totalEvents float64
-	for _, comp := range metrics.ComponentsReceivedEventsTotal {
-		totalEvents += comp.Value
-	}
-	if c.interval > 0 {
-		cs.RecordsIngestedPerSec = totalEvents / c.interval.Seconds()
+	now := time.Now()
+	if c.timeNow != nil {
+		now = c.timeNow()
 	}
 
-	// Sink connectivity status
-	cs.SinkConnectivity = make(map[string]string)
-	for _, sink := range metrics.Sinks {
-		if sink.Connected {
-			cs.SinkConnectivity[sink.Name] = "connected"
-		} else {
-			cs.SinkConnectivity[sink.Name] = "disconnected"
+	rates := c.computeVectorRecordRates(metrics.InputCounters, now)
+	total := 0.0
+	for _, rate := range rates {
+		total += rate
+	}
+
+	return VectorStats{
+		InputRecordsPerSec: rates,
+		TotalRecordsPerSec: total,
+		DiskBufferUtilPct:  metrics.DiskBufferUtilPct,
+		SinkConnectivity:   metrics.SinkConnectivity,
+	}
+}
+
+func parseVectorPrometheusMetrics(body string) vectorPrometheusMetrics {
+	metrics := vectorPrometheusMetrics{
+		InputCounters:    make(map[string]float64),
+		SinkConnectivity: make(map[string]string),
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(body))
+	for scanner.Scan() {
+		name, labels, value, ok := parsePrometheusMetricLine(scanner.Text())
+		if !ok {
+			continue
+		}
+
+		switch name {
+		case "component_received_events_total", "vector_component_received_events_total":
+			componentID := firstPresent(labels["component_id"], labels["component_name"], labels["name"])
+			if segmentID := vectorInputComponentToSegmentID(componentID); segmentID != "" {
+				metrics.InputCounters[segmentID] += value
+			}
+		case "vector_disk_buffer_utilization_ratio", "disk_buffer_utilization_ratio", "component_disk_buffer_utilization_ratio":
+			metrics.DiskBufferUtilPct = value * 100
+		case "vector_disk_buffer_utilization_percent", "disk_buffer_utilization_percent", "component_disk_buffer_utilization_percent":
+			metrics.DiskBufferUtilPct = value
+		case "sink_connected", "component_connected", "component_healthcheck_connected":
+			componentID := firstPresent(labels["component_id"], labels["component_name"], labels["name"])
+			if componentID != "" {
+				if value > 0 {
+					metrics.SinkConnectivity[componentID] = "connected"
+				} else {
+					metrics.SinkConnectivity[componentID] = "disconnected"
+				}
+			}
 		}
 	}
 
-	// Disk buffer utilization percentage
-	if metrics.DiskBufferUsage.TotalBytes > 0 {
-		cs.DiskBufferUtilPct = float64(metrics.DiskBufferUsage.UsedBytes) / float64(metrics.DiskBufferUsage.TotalBytes) * 100
+	return metrics
+}
+
+func parsePrometheusMetricLine(line string) (string, map[string]string, float64, bool) {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return "", nil, 0, false
 	}
 
-	consumers["vector"] = cs
+	parts := strings.Fields(line)
+	if len(parts) < 2 {
+		return "", nil, 0, false
+	}
+
+	value, err := strconv.ParseFloat(parts[1], 64)
+	if err != nil {
+		return "", nil, 0, false
+	}
+
+	head := parts[0]
+	labels := map[string]string{}
+	if open := strings.Index(head, "{"); open >= 0 {
+		close := strings.LastIndex(head, "}")
+		if close < open {
+			return "", nil, 0, false
+		}
+		name := head[:open]
+		labels = parsePrometheusLabels(head[open+1 : close])
+		return name, labels, value, true
+	}
+
+	return head, labels, value, true
+}
+
+func parsePrometheusLabels(input string) map[string]string {
+	labels := make(map[string]string)
+
+	for _, pair := range splitPrometheusLabelPairs(input) {
+		key, value, ok := strings.Cut(pair, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		value = strings.Trim(value, `"`)
+		value = strings.ReplaceAll(value, `\"`, `"`)
+		value = strings.ReplaceAll(value, `\\`, `\`)
+		if key != "" {
+			labels[key] = value
+		}
+	}
+
+	return labels
+}
+
+func splitPrometheusLabelPairs(input string) []string {
+	var parts []string
+	start := 0
+	inQuotes := false
+	escaped := false
+
+	for i, r := range input {
+		switch {
+		case escaped:
+			escaped = false
+		case r == '\\':
+			escaped = true
+		case r == '"':
+			inQuotes = !inQuotes
+		case r == ',' && !inQuotes:
+			parts = append(parts, input[start:i])
+			start = i + 1
+		}
+	}
+
+	if start <= len(input) {
+		parts = append(parts, input[start:])
+	}
+
+	return parts
+}
+
+func vectorInputComponentToSegmentID(componentID string) string {
+	switch componentID {
+	case "zeek_logs", "parse_zeek":
+		return "zeek"
+	case "suricata_eve", "parse_suricata":
+		return "suricata"
+	default:
+		return ""
+	}
+}
+
+func (c *Collector) computeVectorRecordRates(current map[string]float64, now time.Time) map[string]float64 {
+	c.prevVectorMu.Lock()
+	defer c.prevVectorMu.Unlock()
+
+	if c.prevVectorState == nil {
+		c.prevVectorState = make(map[string]prevVectorInputState)
+	}
+
+	rates := make(map[string]float64, len(current))
+	for segmentID, count := range current {
+		prev, hasPrev := c.prevVectorState[segmentID]
+		c.prevVectorState[segmentID] = prevVectorInputState{Count: count, Timestamp: now}
+
+		if !hasPrev || prev.Timestamp.IsZero() || count < prev.Count {
+			rates[segmentID] = 0
+			continue
+		}
+
+		elapsed := now.Sub(prev.Timestamp).Seconds()
+		if elapsed <= 0 {
+			rates[segmentID] = 0
+			continue
+		}
+
+		rates[segmentID] = (count - prev.Count) / elapsed
+	}
+
+	return rates
+}
+
+func firstPresent(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // computeThroughput calculates bits per second from successive byte count deltas

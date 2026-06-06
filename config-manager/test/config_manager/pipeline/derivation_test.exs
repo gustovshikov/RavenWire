@@ -53,6 +53,221 @@ defmodule ConfigManager.Pipeline.DerivationTest do
     refute Enum.any?(pipeline.segments, &(&1.state == :failed))
   end
 
+  test "vector input record rates drive analysis-to-vector connector flow" do
+    report =
+      report(%{
+        vector: %Health.VectorStats{
+          input_records_per_sec: %{"zeek" => 25.0, "suricata" => 0.0},
+          total_records_per_sec: 25.0,
+          disk_buffer_util_pct: 12.5,
+          sink_connectivity: %{"splunk_hec" => "connected"}
+        }
+      })
+
+    pipeline = Derivation.derive_sensor_pipeline(report, sensor(), opts())
+    zeek_connector = Enum.find(pipeline.connectors, &(&1.id == "zeek->vector"))
+    suricata_connector = Enum.find(pipeline.connectors, &(&1.id == "suricata->vector"))
+    pcap_connector = Enum.find(pipeline.connectors, &(&1.id == "pcap_ring->vector"))
+    vector = Enum.find(pipeline.segments, &(&1.id == "vector"))
+
+    assert zeek_connector.throughput_bps == nil
+    assert zeek_connector.record_rate_per_sec == 25.0
+    assert zeek_connector.throughput_label == "25 rec/s"
+    assert zeek_connector.flow_state == :flowing
+    assert zeek_connector.speed_tier == :kbps
+
+    assert suricata_connector.record_rate_per_sec == 0.0
+    assert suricata_connector.throughput_label == "0 rec/s"
+    assert suricata_connector.flow_state == :idle
+    assert suricata_connector.speed_tier == :zero
+
+    assert pcap_connector.record_rate_per_sec == nil
+    assert pcap_connector.flow_state == :unknown
+
+    assert vector.metrics.record_rate_per_sec == 25.0
+    assert vector.metrics.record_rate == "25 rec/s"
+    assert vector.tooltip.total_records_per_sec == "25 rec/s"
+
+    vector_summary = Enum.find(pipeline.summary_rows, &(&1.segment == "Vector"))
+    assert vector_summary.throughput == "25 rec/s"
+
+    assert vector.tooltip.input_records_per_sec == %{
+             "zeek" => "25 rec/s",
+             "suricata" => "0 rec/s"
+           }
+
+    assert vector.tooltip.sink_connectivity == %{"splunk_hec" => "connected"}
+  end
+
+  test "health protobuf accepts app-native process telemetry fields" do
+    stats = %Health.ConsumerStats{
+      process_throughput_bps: 1600.0,
+      process_packets_per_sec: 8.0,
+      process_drop_percent: 2.5,
+      process_telemetry_source: "suricata eve stats"
+    }
+
+    decoded = stats |> Health.ConsumerStats.encode() |> Health.ConsumerStats.decode()
+
+    assert decoded.process_throughput_bps == 1600.0
+    assert decoded.process_packets_per_sec == 8.0
+    assert decoded.process_drop_percent == 2.5
+    assert decoded.process_telemetry_source == "suricata eve stats"
+  end
+
+  test "process telemetry drives AF_PACKET to analysis branch labels without double counting NIC ingress" do
+    capture = %Health.CaptureStats{
+      consumers: %{
+        "zeek" => %Health.ConsumerStats{
+          throughput_bps: 2_000_000,
+          packets_received: 1_000,
+          drop_percent: 0.0,
+          process_throughput_bps: 800_000,
+          process_packets_per_sec: 80.0,
+          process_drop_percent: 0.1,
+          process_telemetry_source: "zeek stats.log"
+        },
+        "suricata" => %Health.ConsumerStats{
+          throughput_bps: 2_000_000,
+          packets_received: 1_000,
+          drop_percent: 0.0,
+          process_throughput_bps: 1_200_000,
+          process_packets_per_sec: 120.0,
+          process_drop_percent: 0.2,
+          process_telemetry_source: "suricata eve stats"
+        }
+      }
+    }
+
+    pipeline = report(%{capture: capture}) |> Derivation.derive_sensor_pipeline(sensor(), opts())
+
+    mirror_connector = Enum.find(pipeline.connectors, &(&1.id == "mirror_port->af_packet"))
+    zeek_connector = Enum.find(pipeline.connectors, &(&1.id == "af_packet->zeek"))
+    suricata_connector = Enum.find(pipeline.connectors, &(&1.id == "af_packet->suricata"))
+    zeek = Enum.find(pipeline.segments, &(&1.id == "zeek"))
+    suricata = Enum.find(pipeline.segments, &(&1.id == "suricata"))
+    zeek_summary = Enum.find(pipeline.summary_rows, &(&1.segment == "Zeek"))
+    suricata_summary = Enum.find(pipeline.summary_rows, &(&1.segment == "Suricata"))
+
+    assert mirror_connector.throughput_bps == 2_000_000
+    assert mirror_connector.throughput_label == "2.0 Mbps"
+
+    assert zeek_connector.throughput_bps == 800_000
+    assert zeek_connector.throughput_label == "800.0 Kbps"
+    assert zeek_connector.flow_state == :flowing
+
+    assert suricata_connector.throughput_bps == 1_200_000
+    assert suricata_connector.throughput_label == "1.2 Mbps"
+    assert suricata_connector.flow_state == :flowing
+
+    assert zeek.metrics.throughput_bps == 800_000
+    assert zeek.metrics.throughput == "800.0 Kbps"
+    assert zeek.metrics.process_telemetry_source == "zeek stats.log"
+    assert zeek.tooltip.telemetry_source == "zeek stats.log"
+    assert zeek.tooltip.process_packets_per_sec == 80.0
+
+    assert suricata.metrics.throughput_bps == 1_200_000
+    assert suricata.metrics.process_telemetry_source == "suricata eve stats"
+    assert suricata.tooltip.telemetry_source == "suricata eve stats"
+
+    assert zeek_summary.throughput == "800.0 Kbps"
+    assert zeek_summary.details == "container running; telemetry zeek stats.log"
+    assert suricata_summary.throughput == "1.2 Mbps"
+    assert suricata_summary.details == "container running; telemetry suricata eve stats"
+  end
+
+  test "analysis branch throughput falls back to NIC-derived value when process telemetry is missing" do
+    capture = %Health.CaptureStats{
+      consumers: %{
+        "zeek" => %Health.ConsumerStats{
+          throughput_bps: 2_000_000,
+          packets_received: 1_000,
+          drop_percent: 0.0
+        }
+      }
+    }
+
+    pipeline = report(%{capture: capture}) |> Derivation.derive_sensor_pipeline(sensor(), opts())
+    connector = Enum.find(pipeline.connectors, &(&1.id == "af_packet->zeek"))
+    zeek = Enum.find(pipeline.segments, &(&1.id == "zeek"))
+    zeek_summary = Enum.find(pipeline.summary_rows, &(&1.segment == "Zeek"))
+
+    assert connector.throughput_bps == 2_000_000
+    assert connector.throughput_label == "2.0 Mbps"
+    assert zeek.metrics.throughput_bps == 2_000_000
+    assert zeek.metrics.process_telemetry_source == "NIC fallback"
+    assert zeek.tooltip.telemetry_source == "NIC fallback"
+    assert zeek_summary.details == "container running; telemetry NIC fallback"
+  end
+
+  test "analysis degradation prefers process drop percent when present" do
+    running = %Health.ContainerHealth{state: "running", cpu_percent: 20.0}
+
+    healthy_from_process =
+      Derivation.derive_analysis_tool(
+        "zeek",
+        running,
+        %Health.ConsumerStats{
+          drop_percent: 15.0,
+          process_drop_percent: 0.0,
+          process_telemetry_source: "zeek stats.log"
+        }
+      )
+
+    degraded_from_process =
+      Derivation.derive_analysis_tool(
+        "suricata",
+        running,
+        %Health.ConsumerStats{
+          drop_percent: 0.0,
+          process_drop_percent: 6.0,
+          process_telemetry_source: "suricata eve stats"
+        }
+      )
+
+    assert healthy_from_process.state == :healthy
+    assert healthy_from_process.metrics.drop_percent == 0.0
+    assert degraded_from_process.state == :degraded
+    assert degraded_from_process.metrics.drop_percent == 6.0
+    assert "Suricata capture drops exceed 5.0%." in degraded_from_process.warnings
+  end
+
+  test "missing vector telemetry keeps analysis-to-vector connectors unknown" do
+    pipeline = report() |> Derivation.derive_sensor_pipeline(sensor(), opts())
+    connector = Enum.find(pipeline.connectors, &(&1.id == "zeek->vector"))
+
+    assert connector.record_rate_per_sec == nil
+    assert connector.throughput_label == "—"
+    assert connector.flow_state == :unknown
+  end
+
+  test "failed vector endpoint stops record-rate connector flow" do
+    report =
+      report(%{
+        containers: [
+          %Health.ContainerHealth{name: "systemd-zeek", state: "running", cpu_percent: 20.0},
+          %Health.ContainerHealth{name: "systemd-suricata", state: "running", cpu_percent: 20.0},
+          %Health.ContainerHealth{
+            name: "systemd-pcap-ring-writer",
+            state: "running",
+            cpu_percent: 20.0
+          },
+          %Health.ContainerHealth{name: "systemd-vector", state: "stopped", cpu_percent: 0.0}
+        ],
+        vector: %Health.VectorStats{
+          input_records_per_sec: %{"zeek" => 25.0},
+          total_records_per_sec: 25.0
+        }
+      })
+
+    pipeline = Derivation.derive_sensor_pipeline(report, sensor(), opts())
+    connector = Enum.find(pipeline.connectors, &(&1.id == "zeek->vector"))
+
+    assert connector.record_rate_per_sec == 25.0
+    assert connector.throughput_label == "25 rec/s"
+    assert connector.flow_state == :stopped
+  end
+
   test "mirror to AF_PACKET throughput does not double count parallel consumers" do
     capture = %Health.CaptureStats{
       consumers: %{
@@ -77,10 +292,18 @@ defmodule ConfigManager.Pipeline.DerivationTest do
     pipeline = report(%{capture: capture}) |> Derivation.derive_sensor_pipeline(sensor(), opts())
 
     mirror_connector = Enum.find(pipeline.connectors, &(&1.id == "mirror_port->af_packet"))
+    mirror_port = Enum.find(pipeline.segments, &(&1.id == "mirror_port"))
     af_packet = Enum.find(pipeline.segments, &(&1.id == "af_packet"))
+    mirror_summary = Enum.find(pipeline.summary_rows, &(&1.segment == "ens16f1"))
 
+    assert mirror_port.label == "ens16f1"
     assert mirror_connector.throughput_bps == 275_600
     assert mirror_connector.throughput_label == "275.6 Kbps"
+    assert mirror_port.metrics.ingest_bps == 275_600
+    assert mirror_port.metrics.ingest == "275.6 Kbps"
+    assert mirror_port.tooltip.nic_receive_ingest == "275.6 Kbps"
+    assert mirror_summary.throughput == "275.6 Kbps"
+    assert mirror_summary.details == "NIC receive ingest from ens16f1"
     assert af_packet.metrics.aggregate_throughput_bps == 275_600
     assert af_packet.metrics.aggregate_throughput == "275.6 Kbps"
   end

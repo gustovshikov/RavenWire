@@ -8,14 +8,35 @@ This plan implements the live data-flow visualization feature for the RavenWire 
 
 - Start this branch from the validated `main` state after Platform Alert Center, Historical Metrics, and Health Baselines have been merged.
 - Use `ConfigManager.Health.Registry.pod_topic/1` for pod-scoped subscriptions and `"sensor_pods"` for fleet-wide health updates.
+- Use `HealthReport.vector.input_records_per_sec` when present to animate Zeek/Suricata-to-Vector paths from real Vector ingress event-rate telemetry. Missing `vector` stats must keep those connector paths unknown.
 - Keep forwarding sink runtime health as `no_data`; forwarding configuration may label the single aggregate Forwarding Sinks node with counts, badges, and tooltip rows, but it is not delivery telemetry and must not create additional sink topology nodes in v1.
-- Use current HealthReport system telemetry for Mirror Port only where it is actually meaningful: capture interface name, NIC driver, and AF_PACKET availability. Do not infer physical mirror/SPAN link health.
+- Use current HealthReport system telemetry for the NIC/capture-interface segment only where it is actually meaningful: capture interface name, NIC driver, and AF_PACKET availability. Do not infer physical mirror/SPAN link health.
 - Use current PCAP ring-writer counters where available, but do not infer active Alert Driven PCAP flush/carve state until HealthReport exposes it explicitly.
 - Keep the feature browser/UI focused. Do not add `/api/v1` endpoints in this pass.
 - Use semantic HTML plus lightweight SVG connectors; do not add D3, canvas, or a new frontend build pipeline.
 - E2E coverage should focus on route rendering, missing telemetry placeholders, basic live update behavior, table fallback/accessibility, and permission behavior.
 
 ## Tasks
+
+- [x] 0. Follow-up slice — add Vector ingress flow telemetry
+  - [x] Extend HealthReport protobuf with `VectorStats` on field 8 and update Go/Elixir generated protobuf structs
+  - [x] Add Vector internal metrics plus local Prometheus exporter to generated `vector.toml`
+  - [x] Default and persist `VECTOR_METRICS_URL=http://127.0.0.1:9598/metrics` for sensor-agent installs/quadlets
+  - [x] Replace the old JSON-style Vector scrape with Prometheus text parsing for `component_received_events_total` / `vector_component_received_events_total`
+  - [x] Map Vector ingress component aliases (`zeek_logs`/`parse_zeek -> zeek`, `suricata_eve`/`parse_suricata -> suricata`), compute record-rate deltas, and omit `VectorStats` when the endpoint is unavailable
+  - [x] Derive Zeek/Suricata-to-Vector connector labels and animation from `rec/s` record rates while keeping byte throughput on AF_PACKET paths
+  - [x] Show Vector total ingress record rate on the node graph node when present
+  - [x] Add Go, derivation, component, and LiveView tests for Vector ingress record-rate behavior
+
+- [x] 0.5 Follow-up slice — add app-native Zeek/Suricata process input telemetry
+  - [x] Extend `ConsumerStats` protobuf with `process_throughput_bps`, `process_packets_per_sec`, `process_drop_percent`, and `process_telemetry_source`
+  - [x] Enable Zeek `policy/misc/stats` with a 10-second stats interval
+  - [x] Parse newest Zeek `stats*.log` rows and derive process input bps, packets/sec, and drop percent from interval counters
+  - [x] Parse newest Suricata EVE `stats` events, extract decoder byte/packet totals plus capture kernel drops, and compute process deltas
+  - [x] Preserve existing NIC/fallback `throughput_bps` and use `process_telemetry_source` as the presence marker for real process telemetry
+  - [x] Prefer process throughput/drop values for AF_PACKET-to-Zeek and AF_PACKET-to-Suricata connector labels, animation state, segment metrics, and analysis-tool degradation
+  - [x] Keep NIC/capture-interface ingest deduplicated from existing capture throughput, not the sum of process rates
+  - [x] Add Go, derivation, protobuf, and graph component tests for process telemetry and fallback behavior
 
 - [x] 1. Create the pure derivation module with segment state logic
   - [x] 1.1 Create `lib/config_manager/pipeline/derivation.ex` with module structure, types, and constants
@@ -179,7 +200,7 @@ This plan implements the live data-flow visualization feature for the RavenWire 
     - Verify failed targets stop animation, degraded endpoints produce degraded flow, Alert Driven PCAP without flush telemetry is idle, and formatted labels are never parsed for behavior
     - **Validates: Requirements 3.5, 3.6, 5.8, 5.9, 5.10, 16.13–16.16**
 
-  - [x] 1.23 Write property tests for Mirror Port derivation (Property 19)
+  - [x] 1.23 Write property tests for NIC/capture-interface derivation (Property 19)
     - Generate system telemetry with present/blank capture interface, NIC driver, and AF_PACKET availability
     - Verify current system fields can derive healthy/degraded/no_data but never failed
     - Verify summaries do not claim physical mirror/SPAN source health
@@ -259,7 +280,7 @@ This plan implements the live data-flow visualization feature for the RavenWire 
 - [x] 4. Checkpoint — Component rendering complete
   - Ensure all tests pass, ask the user if questions arise.
 
-- [x] 5. Implement SensorPipelineLive page
+- [x] 5. Implement original SensorPipelineLive page (superseded by graph in task 13.7)
   - [x] 5.1 Create `lib/config_manager_web/live/pipeline_live/sensor_pipeline_live.ex`
     - Implement `mount/3`: load SensorPod by ID from DB, handle 404, derive health_key, read health from Registry, derive pipeline state, subscribe to PubSub when connected
     - Build and pass the required derivation opts, including current time, stale threshold, forwarding config/summary, capture mode, and degradation reasons
@@ -335,13 +356,14 @@ This plan implements the live data-flow visualization feature for the RavenWire 
 
 - [x] 8. Add routes, RBAC, and navigation integration
   - [x] 8.1 Add pipeline routes to the router
-    - Add `live "/sensors/:id/pipeline"` and `live "/pools/:id/pipeline"` routes
+    - Add the original `live "/sensors/:id/pipeline"` and `live "/pools/:id/pipeline"` routes
+    - Superseded for sensors in task 13.7: `/sensors/:id/pipeline` is now an authenticated redirect to `/sensors/:id/pipeline/graph`
     - Place in the existing `:sensor_pages` live session under the authenticated scope that already uses the `:sensors_view` permission pipeline
     - Do not create a new live session unless the existing route grouping changes before implementation
     - _Requirements: 1.1, 1.4, 7.1, 7.2, 11.7_
 
   - [x] 8.2 Add navigation links to existing pages
-    - Add "Pipeline" link on sensor detail page linking to `/sensors/:id/pipeline`
+    - Add "Pipeline" link on sensor detail page linking to the sensor pipeline route; superseded in task 13.7 to point directly to `/sensors/:id/pipeline/graph`
     - Add "Pipeline" link on pool detail page linking to `/pools/:id/pipeline`
     - _Requirements: 11.1, 11.2_
 
@@ -372,7 +394,7 @@ This plan implements the live data-flow visualization feature for the RavenWire 
   - [x] 10.1 Add full-profile Playwright coverage
     - Create `e2e/tests/pipeline.spec.ts`
     - Log in as admin and open the built-in test sensor pipeline route
-    - Verify canonical segments, connector labels, missing-telemetry placeholders, Mirror Port local-interface wording, and PCAP active-flush-safe wording
+    - Verify canonical segments, connector labels, missing-telemetry placeholders, NIC local-interface wording, and PCAP active-flush-safe wording
     - Create or reuse an `e2e-` pool fixture and verify the pool pipeline route renders aggregate counts and member links
     - Verify a limited user with `sensors:view` can read the routes and an unauthenticated browser is redirected to login
     - Clean up any `e2e-` pool or sensor fixtures using the existing guarded cleanup helpers
@@ -408,7 +430,7 @@ This plan implements the live data-flow visualization feature for the RavenWire 
     - _Requirements: 16.19_
 
   - [x] 12.4 Prevent UI double-counting of AF_PACKET fan-out throughput
-    - Use the largest numeric capture-consumer throughput as the v1 deduplicated Mirror Port to AF_PACKET ingress estimate
+    - Use the largest numeric capture-consumer throughput as the v1 deduplicated NIC-to-AF_PACKET ingress estimate
     - Keep per-consumer fan-out throughput on the AF_PACKET-to-consumer branch connectors
     - Add derivation regression coverage for Zeek and Suricata reporting the same interface-backed throughput
     - _Requirements: 5.13, 16.20_
@@ -416,13 +438,13 @@ This plan implements the live data-flow visualization feature for the RavenWire 
 - [x] 13. Add adjacent sensor node graph test page
   - [x] 13.1 Create `SensorPipelineGraphLive` at `/sensors/:id/pipeline/graph`
     - Reuse existing sensor pipeline derivation, Health Registry lookup, pod-scoped PubSub subscription, forwarding context, and stale threshold behavior
-    - Keep `/sensors/:id/pipeline` as the canonical linear page and link to the graph page for side-by-side testing
+    - Keep `/sensors/:id/pipeline` available during validation and link to the graph page for side-by-side testing; superseded by task 13.7 after the graph became canonical
     - Preserve selected-node state across live updates when the selected segment still exists
     - _Requirements: 1.1, 1.4, 2.1, 13.3_
 
   - [x] 13.2 Create `PipelineGraphComponent`
     - Render semantic node buttons over SVG connector paths using deterministic left-to-right columns
-    - Use flexible columns for Mirror Port, AF_PACKET, Analysis consumers, Vector, and Forwarding Sinks so available graph space favors connector visibility
+    - Use flexible columns for NIC/capture interface, AF_PACKET, Analysis consumers, Vector, and Forwarding Sinks so available graph space favors connector visibility
     - Distribute nodes vertically within each column using the agreed 1/2/3/4+ node spacing rules
     - Render compact node boxes with name and throughput; do not render throughput, branch, or secondary packet labels on connector paths
     - Clicking a node opens its detail drawer, clicking the same node again closes it, and clicking a different node while open swaps the drawer content without closing
@@ -438,6 +460,27 @@ This plan implements the live data-flow visualization feature for the RavenWire 
   - [x] 13.4 Add component, LiveView, and RBAC route tests
     - Verify graph nodes, health classes, selected-node panel, node-click open/close/swap behavior, keyboard/focus attributes, unlabeled connector paths, route rendering, missing sensor handling, live update rendering, and `sensors:view` route coverage
     - _Requirements: 10.1, 10.3, 10.5, 11.7, 16.7_
+
+  - [x] 13.5 Add visible connector readout and summary below the graph
+    - Render connector source/target names, throughput or record-rate labels, and secondary packet-count labels below the graph so connector paths remain uncluttered
+    - Render the segment summary table visibly on the graph page as the sensor-page replacement for the linear pipeline summary
+    - Keep the linear route in place during validation; superseded by task 13.7 after navigation moved directly to the graph view
+    - _Requirements: 4.1, 5.2, 10.1, 11.2_
+
+  - [x] 13.6 Align summary metrics with graph telemetry semantics
+    - Show Vector summary throughput as total ingress record rate (`rec/s`) when Vector stats are present
+    - Show NIC/capture-interface summary throughput as NIC receive ingest using the de-duplicated capture-interface receive estimate
+    - Keep NIC/capture-interface wording clear that this is local NIC receive telemetry, not physical mirror/SPAN source health
+    - _Requirements: 2.7, 4.1, 5.13, 16.20_
+
+  - [x] 13.7 Promote the sensor graph and remove the linear sensor page
+    - Remove `SensorPipelineLive` and its `/sensors/:id/pipeline` LiveView route
+    - Keep `/sensors/:id/pipeline` as an authenticated compatibility redirect to `/sensors/:id/pipeline/graph`
+    - Point the sensor detail Pipeline link and pool member sensor links directly to `/sensors/:id/pipeline/graph`
+    - Remove the graph page's "Linear Pipeline" back-link
+    - Keep the pool aggregate pipeline page on the current linear component until the future pool graph/tab slice is implemented
+    - Add regression coverage for the redirect, canonical graph rendering, missing sensor behavior, and updated navigation
+    - _Requirements: 1.1, 1.4, 7.8, 11.1, 11.7_
 
 ## Notes
 

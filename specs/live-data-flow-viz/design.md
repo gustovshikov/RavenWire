@@ -2,19 +2,19 @@
 
 ## Overview
 
-This design adds a live data-flow visualization to the RavenWire Config Manager that renders the sensor pipeline as a visual flow map with throughput annotations and health-state indicators on each segment. The visualization is available per-sensor at `/sensors/:id/pipeline` and per-pool at `/pools/:id/pipeline`. An adjacent sensor-only node-graph test page is available at `/sensors/:id/pipeline/graph` so operators can compare the current linear visualization with a node-based data-flow graph using the same real derived health data. Each pipeline segment displays its current state using color-coded, icon-annotated, and text-labeled indicators so operators can instantly see where data is flowing, where it is degraded, where it has stopped, and where telemetry is not available.
+This design adds a live data-flow visualization to the RavenWire Config Manager that renders the sensor pipeline as a visual flow map with throughput annotations and health-state indicators on each segment. The canonical per-sensor visualization is the node graph at `/sensors/:id/pipeline/graph`; the legacy `/sensors/:id/pipeline` path is retained only as an authenticated redirect to the graph. The per-pool aggregate visualization remains available at `/pools/:id/pipeline`. Each pipeline segment displays its current state using color-coded, icon-annotated, and text-labeled indicators so operators can instantly see where data is flowing, where it is degraded, where it has stopped, and where telemetry is not available.
 
 The implementation introduces these modules:
 
 1. **`ConfigManager.Pipeline.Derivation`** — A pure-function module that transforms a `Health.HealthReport` struct and sensor metadata into a structured pipeline state map. This module contains all segment state derivation rules, throughput formatting, storage threshold logic, and tooltip data assembly. It has zero side effects and no dependencies on LiveView, PubSub, or ETS, making it fully property-testable.
 
-2. **`ConfigManagerWeb.PipelineLive.SensorPipelineLive`** — A LiveView at `/sensors/:id/pipeline` that loads the sensor identity from SQLite, reads health data from the Health Registry, subscribes to pod-scoped PubSub, and passes derived pipeline state to the rendering component.
+2. **`ConfigManagerWeb.PipelineLive.SensorPipelineGraphLive`** — A LiveView at `/sensors/:id/pipeline/graph` that loads the sensor identity from SQLite, reads health data from the Health Registry, subscribes to pod-scoped PubSub, and renders a node-based graph with a selected-node detail drawer.
 
 3. **`ConfigManagerWeb.PipelineLive.PoolPipelineLive`** — A LiveView at `/pools/:id/pipeline` that loads all member sensors for a pool, derives per-sensor pipeline states, aggregates them into per-segment state counts, and subscribes to pool-scoped PubSub with debounced re-derivation.
 
-4. **`ConfigManagerWeb.PipelineLive.SensorPipelineGraphLive`** — An adjacent LiveView at `/sensors/:id/pipeline/graph` that reuses the same sensor pipeline derivation and PubSub subscriptions as `SensorPipelineLive`, but renders a node-based graph with a selected-node detail panel for operator testing.
+4. **`ConfigManagerWeb.PipelineRedirectController`** — A controller that redirects `/sensors/:id/pipeline` to `/sensors/:id/pipeline/graph` so old bookmarks keep working after the linear sensor page is removed.
 
-The primary rendering is handled by a reusable function component (`ConfigManagerWeb.PipelineComponent`) that accepts a structured pipeline state map and a mode attribute (`:sensor` or `:pool`). The adjacent node graph is rendered by `ConfigManagerWeb.PipelineGraphComponent`, which consumes the same sensor `pipeline_state` and adds only deterministic layout/view metadata. Neither component queries any data source directly.
+The sensor graph is rendered by `ConfigManagerWeb.PipelineGraphComponent`, which consumes the sensor `pipeline_state` and adds only deterministic layout/view metadata. The pool aggregate still uses the reusable `ConfigManagerWeb.PipelineComponent` with `mode: :pool`. Neither component queries any data source directly.
 
 ### Current-State Reconciliation
 
@@ -22,9 +22,11 @@ This design is reconciled to the current post-MVP stack:
 
 - Platform Alert Center, Historical Metrics, and Health Baselines are implemented and verified. Pipeline visualization can link alongside those pages but should not duplicate historical charting or baseline computation.
 - `ConfigManager.Health.Registry.pod_topic/1` is already implemented and broadcasts pod-scoped updates in addition to the global `"sensor_pods"` topic. The current sensor detail LiveView uses `SensorPod.name` as the health registry key.
-- HealthReport currently provides container, capture, storage, clock, and limited system fields. System telemetry can identify the capture interface, NIC driver, and AF_PACKET availability, but it does not prove physical link, carrier, or mirror/SPAN source readiness. Capture telemetry includes PCAP ring-writer counters, but there is no manager-visible active PCAP flush/carve signal. Forwarding sink runtime status, buffer usage, and destination health remain unavailable, so forwarding runtime state remains `:no_data` until future telemetry explicitly supports it.
+- HealthReport provides container, capture, storage, clock, limited system fields, and `vector` ingress stats. System telemetry can identify the capture interface, NIC driver, and AF_PACKET availability, but it does not prove physical link, carrier, or mirror/SPAN source readiness. Capture telemetry includes PCAP ring-writer counters, but there is no manager-visible active PCAP flush/carve signal. Vector ingress telemetry reports log-record rates from Vector internal Prometheus metrics as `rec/s` keyed by canonical pipeline segment IDs such as `zeek` and `suricata`; missing Vector stats leave Zeek/Suricata-to-Vector paths unknown. Forwarding sink runtime status, delivery health, and destination health remain unavailable, so forwarding runtime state remains `:no_data` until future telemetry explicitly supports it.
 - Interface-backed capture consumers such as Zeek and Suricata may not expose consumer-specific byte counters. For those consumers, Sensor_Agent derives `throughput_bps` from the configured capture interface `rx_bytes` delta while preserving the per-consumer packet/drop counters in the HealthReport. A displayed `0 bps` value is therefore reserved for a real zero byte delta or the first/reset interval, not for a missing byte-counter source.
-- The Mirror Port to AF_PACKET connector represents capture ingress, not total fan-out work. Because interface-backed Zeek and Suricata branch telemetry can both describe the same physical `rx_bytes` stream, Config Manager uses the largest numeric capture-consumer throughput as the v1 deduplicated ingress estimate instead of summing branch values.
+- The NIC/capture-interface to AF_PACKET connector represents capture ingress, not total fan-out work. Because interface-backed Zeek and Suricata branch telemetry can both describe the same physical `rx_bytes` stream, Config Manager uses the largest numeric capture-consumer throughput as the v1 deduplicated ingress estimate instead of summing branch values.
+- Zeek/Suricata-to-Vector connectors use event-rate telemetry (`rec/s`) from `HealthReport.vector.input_records_per_sec`, not byte throughput. Positive record rates animate as flow, zero record rates render idle, and missing Vector stats render unknown.
+- The graph page summary treats Vector throughput as total Vector ingress record rate (`rec/s`) when Vector stats are present. The NIC/capture-interface summary uses the de-duplicated capture-interface receive estimate as an ingress/NIC receive value, because the current HealthReport does not expose a separate physical SPAN/link health signal.
 - Forwarding configuration can be used to label the single aggregate Forwarding Sinks node with configured sink counts and names, but not to infer runtime sink health or create additional sink topology nodes in v1.
 - This feature adds LiveView/browser routes only. It does not add `/api/v1` controllers or OpenAPI surface.
 
@@ -32,7 +34,7 @@ This design is reconciled to the current post-MVP stack:
 
 1. **Pure derivation module separate from LiveView**: All segment state derivation, threshold evaluation, and tooltip assembly lives in `ConfigManager.Pipeline.Derivation`. This follows the project's pattern of keeping business logic out of LiveViews (similar to how `DashboardLive` delegates status derivation to helper functions). The derivation module is the primary target for property-based testing with PropCheck.
 
-2. **Single reusable component for both modes**: The `PipelineComponent` accepts a mode attribute and structured data. In `:sensor` mode it renders per-segment state indicators with throughput annotations. In `:pool` mode it renders per-segment state count summaries with worst-state coloring. This avoids duplicating the topology layout and visual state palette logic.
+2. **Graph as the sensor page, linear component for pool aggregate**: The sensor page uses `PipelineGraphComponent` so operators get the node-based flow graph, detail drawer, connector readout, and summary table in one view. The original `PipelineComponent` remains for the current pool aggregate page until the future pool graph tab is added.
 
 3. **Semantic HTML with SVG connectors, not canvas**: The pipeline is rendered as positioned HTML elements (segments) connected by inline SVG paths (connectors). Each connector has a static base path for topology and, when the derived connector state allows it, an optional CSS-animated overlay using `stroke-dashoffset` to simulate square flow blocks. This provides native accessibility support, keyboard focusability, LiveView diff efficiency via stable DOM IDs, and compatibility with screen readers without requiring JavaScript canvas or D3.js.
 
@@ -44,9 +46,9 @@ This design is reconciled to the current post-MVP stack:
 
 7. **PropCheck for property-based testing**: The project already includes `propcheck ~> 1.4`. Property tests will validate derivation rules, throughput formatting, storage threshold logic, aggregate worst-state computation, and the distinction between zero values and missing telemetry.
 
-8. **Pod-scoped PubSub reuse**: The sensor pipeline page subscribes through `ConfigManager.Health.Registry.pod_topic(health_key)` using the same pattern as `SensorDetailLive`. The Registry already broadcasts `:pod_updated`, `:pod_degraded`, and `:pod_recovered` events to pod-scoped topics in addition to `"sensor_pods"`.
+8. **Pod-scoped PubSub reuse**: The sensor graph page subscribes through `ConfigManager.Health.Registry.pod_topic(health_key)` using the same pattern as `SensorDetailLive`. The Registry already broadcasts `:pod_updated`, `:pod_degraded`, and `:pod_recovered` events to pod-scoped topics in addition to `"sensor_pods"`.
 
-9. **Adjacent node graph test page**: `/sensors/:id/pipeline/graph` keeps the current `/sensors/:id/pipeline` page intact and renders a left-to-right node graph for real-data testing. Nodes are arranged by flexible columns (Mirror Port, AF_PACKET, Analysis, Vector, Forwarding Sinks), with analysis consumers distributed vertically inside the column. Compact node boxes show name and throughput, connector paths have no overlaid labels, and animation speed comes from the derived numeric speed tier rather than parsed labels. Clicking a node opens the detail drawer, clicking the same node again closes it, and clicking a different node while open swaps the selected-node content without closing the drawer.
+9. **Sensor node graph page**: `/sensors/:id/pipeline/graph` renders a left-to-right node graph as the canonical sensor pipeline view. Nodes are arranged by flexible columns (NIC/capture interface, AF_PACKET, Analysis, Vector, Forwarding Sinks), with analysis consumers distributed vertically inside the column. Compact node boxes show name and throughput or record rate, connector paths have no overlaid labels, and animation speed comes from the derived numeric speed tier rather than parsed labels. Clicking a node opens the detail drawer, clicking the same node again closes it, and clicking a different node while open swaps the selected-node content without closing the drawer. A visible readout below the graph lists connector rates/counts and the segment summary table so the graph page carries the dense data previously available from the linear sensor pipeline page.
 
 ## Architecture
 
@@ -56,22 +58,23 @@ This design is reconciled to the current post-MVP stack:
 graph TB
     subgraph "Config Manager (Phoenix)"
         Router --> AuthPipeline[Auth Pipeline]
-        AuthPipeline --> SensorPipelineLive[SensorPipelineLive<br/>/sensors/:id/pipeline]
+        AuthPipeline --> SensorPipelineGraphLive[SensorPipelineGraphLive<br/>/sensors/:id/pipeline/graph]
+        AuthPipeline --> PipelineRedirectController[PipelineRedirectController<br/>/sensors/:id/pipeline]
         AuthPipeline --> PoolPipelineLive[PoolPipelineLive<br/>/pools/:id/pipeline]
-        SensorPipelineLive --> PipelineComponent[PipelineComponent<br/>Reusable Function Component]
-        PoolPipelineLive --> PipelineComponent
+        SensorPipelineGraphLive --> PipelineGraphComponent[PipelineGraphComponent<br/>Sensor Node Graph]
+        PoolPipelineLive --> PipelineComponent[PipelineComponent<br/>Pool Aggregate Component]
     end
 
     subgraph "Derivation Layer"
-        SensorPipelineLive --> Derivation[Pipeline.Derivation<br/>Pure Functions]
+        SensorPipelineGraphLive --> Derivation[Pipeline.Derivation<br/>Pure Functions]
         PoolPipelineLive --> Derivation
         Derivation --> Formatters[Pure Formatting Helpers]
     end
 
     subgraph "Data Sources"
-        SensorPipelineLive -->|Ecto query| SQLite[(sensor_pods table)]
-        SensorPipelineLive -->|ETS read| HealthRegistry[Health Registry]
-        SensorPipelineLive -->|PubSub subscribe| PubSub[Phoenix PubSub]
+        SensorPipelineGraphLive -->|Ecto query| SQLite[(sensor_pods table)]
+        SensorPipelineGraphLive -->|ETS read| HealthRegistry[Health Registry]
+        SensorPipelineGraphLive -->|PubSub subscribe| PubSub[Phoenix PubSub]
         PoolPipelineLive -->|Ecto query| SQLite
         PoolPipelineLive -->|ETS read| HealthRegistry
         PoolPipelineLive -->|PubSub subscribe| PubSub
@@ -82,31 +85,32 @@ graph TB
     end
 
     subgraph "Existing Pages (Updated)"
-        SensorDetailLive[SensorDetailLive<br/>/sensors/:id] -->|pipeline link| SensorPipelineLive
+        SensorDetailLive[SensorDetailLive<br/>/sensors/:id] -->|pipeline link| SensorPipelineGraphLive
         PoolShowLive[PoolShowLive<br/>/pools/:id] -->|pipeline link| PoolPipelineLive
     end
 
     Browser[Operator Browser] --> Router
+    VectorMetrics[Vector internal Prometheus<br/>127.0.0.1:9598] --> HealthStream
     HealthStream[gRPC Health Stream] --> HealthRegistry
     HealthRegistry -->|broadcast| PubSub
 ```
 
 ### Request Flow
 
-**Sensor pipeline page load:**
-1. Browser navigates to `/sensors/:id/pipeline`
+**Sensor pipeline graph page load:**
+1. Browser navigates to `/sensors/:id/pipeline/graph`. Legacy `/sensors/:id/pipeline` requests pass the same auth and permission pipelines, then redirect to `/sensors/:id/pipeline/graph`.
 2. Auth pipeline validates session, checks `sensors:view` permission
-3. `SensorPipelineLive.mount/3` loads the `SensorPod` from SQLite by ID
+3. `SensorPipelineGraphLive.mount/3` loads the `SensorPod` from SQLite by ID
 4. If not found → render 404 page
 5. If found → derive `health_key = pod.name`, read health data from `Registry.get(health_key)`, read degradation from `Registry.get_degraded_pods()[health_key]`
 6. Call `Derivation.derive_sensor_pipeline/3` with the health report, sensor pod, and required options (`:now`, `:stale_threshold_sec`, `:forwarding_sinks`, `:forwarding_summary`, `:capture_mode`, `:degradation_reasons`) to produce the structured pipeline state
 7. Subscribe to `Registry.pod_topic(health_key)` PubSub topic when connected
-8. Pass pipeline state to `PipelineComponent` with `mode=:sensor`
+8. Pass pipeline state to `PipelineGraphComponent`
 
 **Real-time sensor pipeline update:**
 1. Sensor Agent streams `HealthReport` via gRPC
 2. Health Registry updates ETS, broadcasts `{:pod_updated, health_key}` to `Registry.pod_topic(health_key)` and `"sensor_pods"`
-3. `SensorPipelineLive.handle_info/2` receives the message, reads fresh health data from Registry
+3. `SensorPipelineGraphLive.handle_info/2` receives the message, reads fresh health data from Registry
 4. Re-derives pipeline state via `Derivation.derive_sensor_pipeline/3`
 5. LiveView diffs only changed segment attributes thanks to stable DOM IDs
 
@@ -134,18 +138,21 @@ lib/config_manager/
 ├── pipeline/
 │   └── derivation.ex                      # Pure derivation functions
 ├── health/
-│   ├── registry.ex                        # Existing (unchanged for this feature)
-│   └── proto/health.pb.ex                 # Existing protobuf (unchanged)
+│   ├── registry.ex                        # Existing registry and PubSub storage
+│   └── proto/health.pb.ex                 # Health protobuf including VectorStats
 ├── sensor_pod.ex                          # Existing (unchanged)
 
 lib/config_manager_web/
+├── controllers/
+│   └── pipeline_redirect_controller.ex    # /sensors/:id/pipeline -> /pipeline/graph
 ├── live/
 │   ├── pipeline_live/
-│   │   ├── sensor_pipeline_live.ex        # /sensors/:id/pipeline
+│   │   ├── sensor_pipeline_graph_live.ex  # /sensors/:id/pipeline/graph
 │   │   └── pool_pipeline_live.ex          # /pools/:id/pipeline
 │   ├── components/
-│   │   └── pipeline_component.ex          # Reusable pipeline visualization component
-│   ├── sensor_detail_live.ex              # Existing (updated: link to sensor pipeline)
+│   │   ├── pipeline_component.ex          # Pool aggregate visualization component
+│   │   └── pipeline_graph_component.ex    # Sensor node graph component
+│   ├── sensor_detail_live.ex              # Existing (updated: link to sensor graph)
 │   └── ...                                # Other existing LiveViews
 ├── router.ex                              # Extended with pipeline routes
 ```
@@ -369,7 +376,7 @@ defmodule ConfigManager.Pipeline.Derivation do
   def derive_forwarding_sinks(forwarding_config, forwarding_data)
 
   @doc """
-  Derives the Mirror Port segment from limited HealthReport.system fields.
+  Derives the NIC/capture-interface segment from limited HealthReport.system fields.
 
   - Healthy: capture_interface present and af_packet_available == true
   - Degraded: capture_interface present and af_packet_available == false
@@ -461,10 +468,10 @@ defmodule ConfigManager.Pipeline.Derivation do
 end
 ```
 
-### 2. `ConfigManagerWeb.PipelineLive.SensorPipelineLive` — Sensor Pipeline Page
+### 2. `ConfigManagerWeb.PipelineLive.SensorPipelineGraphLive` — Sensor Pipeline Graph Page
 
 ```elixir
-defmodule ConfigManagerWeb.PipelineLive.SensorPipelineLive do
+defmodule ConfigManagerWeb.PipelineLive.SensorPipelineGraphLive do
   use ConfigManagerWeb, :live_view
 
   alias ConfigManager.{Repo, SensorPod}
@@ -691,9 +698,11 @@ New pipeline routes are added to the existing `:sensor_pages` LiveView session, 
 ```elixir
 # Existing scope:
 # pipe_through([:browser, :require_auth, :require_password_change, :sensors_view])
+get "/sensors/:id/pipeline", PipelineRedirectController, :sensor
+
 live_session :sensor_pages,
   on_mount: [{ConfigManagerWeb.AuthHelpers, :require_auth}] do
-  live "/sensors/:id/pipeline", PipelineLive.SensorPipelineLive, :show
+  live "/sensors/:id/pipeline/graph", PipelineLive.SensorPipelineGraphLive, :show
   live "/pools/:id/pipeline", PipelineLive.PoolPipelineLive, :show
 end
 ```
@@ -702,7 +711,8 @@ Permission mapping:
 
 | Route | Permission | Notes |
 |-------|-----------|-------|
-| `/sensors/:id/pipeline` | `sensors:view` | Read-only visualization |
+| `/sensors/:id/pipeline` | `sensors:view` | Compatibility redirect to graph |
+| `/sensors/:id/pipeline/graph` | `sensors:view` | Read-only sensor visualization |
 | `/pools/:id/pipeline` | `sensors:view` | Read-only visualization |
 
 ### 6. PubSub Topics (Reused, No New Topics)
@@ -711,19 +721,19 @@ The pipeline pages reuse existing PubSub topics. No new topics are introduced.
 
 | Page | Topic | Messages Handled |
 |------|-------|-----------------|
-| Sensor Pipeline | `Registry.pod_topic(health_key)` | `{:pod_updated, _}`, `{:pod_degraded, _, _, _}`, `{:pod_recovered, _, _}` |
-| Sensor Pipeline | `"pool:#{pool_id}:forwarding"` when sensor belongs to a pool | `{:sink_created, _}`, `{:sink_updated, _}`, `{:sink_deleted, _}`, `{:sink_toggled, _}`, `{:schema_mode_changed, _}` |
+| Sensor Graph Pipeline | `Registry.pod_topic(health_key)` | `{:pod_updated, _}`, `{:pod_degraded, _, _, _}`, `{:pod_recovered, _, _}` |
+| Sensor Graph Pipeline | `"pool:#{pool_id}:forwarding"` when sensor belongs to a pool | `{:sink_created, _}`, `{:sink_updated, _}`, `{:sink_deleted, _}`, `{:sink_toggled, _}`, `{:schema_mode_changed, _}` |
 | Pool Pipeline | `"pool:#{pool_id}"` | `{:sensors_assigned, _, _}`, `{:sensors_removed, _, _}`, `{:pool_config_updated, _}` |
 | Pool Pipeline | `"pool:#{pool_id}:forwarding"` | `{:sink_created, _}`, `{:sink_updated, _}`, `{:sink_deleted, _}`, `{:sink_toggled, _}`, `{:schema_mode_changed, _}` |
 | Pool Pipeline | `Registry.pod_topic(health_key)` (per member) | `{:pod_updated, _}`, `{:pod_degraded, _, _, _}`, `{:pod_recovered, _, _}` |
 
 ### 7. Navigation Integration Updates
 
-**Sensor detail page** (`SensorDetailLive`): Add a "Pipeline" link/tab in the page header navigation, linking to `/sensors/:id/pipeline`.
+**Sensor detail page** (`SensorDetailLive`): Add a "Pipeline" link/tab in the page header navigation, linking to `/sensors/:id/pipeline/graph`.
 
 **Pool detail page** (`PoolShowLive`): Add a "Pipeline" link/tab in the pool navigation, linking to `/pools/:id/pipeline`.
 
-**Sensor pipeline page**: Include breadcrumb links:
+**Sensor graph pipeline page**: Include breadcrumb links:
 - Back to sensor detail: `/sensors/:id`
 - To pool pipeline (when sensor belongs to a pool): `/pools/:pool_id/pipeline`
 
@@ -737,7 +747,7 @@ The pipeline pages reuse existing PubSub topics. No new topics are introduced.
 
 | Segment | Healthy | Degraded | Failed | Disabled | Pending Reload | No Data |
 |---------|---------|----------|--------|----------|----------------|---------|
-| Mirror Port | `capture_interface` present and AF_PACKET available | `capture_interface` present and AF_PACKET unavailable | Future: explicit link/carrier/capture failure | — | — | Missing system telemetry or blank `capture_interface` |
+| NIC / capture interface | `capture_interface` present and AF_PACKET available | `capture_interface` present and AF_PACKET unavailable | Future: explicit link/carrier/capture failure | — | — | Missing system telemetry or blank `capture_interface` |
 | AF_PACKET | ≥1 consumer, no drops >5%, no BPF pending | Any consumer drop >5% | Future: explicit failure | — | Any BPF restart pending | No capture data |
 | Zeek | Container "running", no degradation | Container "running" + CPU >90% or drops >5%, container "restarting", or unknown non-running state | Container "error"/"stopped" | Intentionally disabled | — | Container missing |
 | Suricata | Container "running", no degradation | Container "running" + CPU >90% or drops >5%, container "restarting", or unknown non-running state | Container "error"/"stopped" | Intentionally disabled | — | Container missing |
@@ -770,9 +780,9 @@ Segment state styling is separate from connector flow styling. Segment state com
 
 Speed tiers are derived from numeric `throughput_bps`: `:gbps` is fastest, `:mbps` is medium, `:kbps` is slow, `:zero` is idle/static, and `:unknown` is static.
 
-For interface-backed capture consumers, Sensor_Agent populates `throughput_bps` from capture-interface `rx_bytes` deltas when no consumer-specific byte counter is available. The first collection interval and counter-reset interval report `0 bps` because there is no trustworthy positive delta yet; subsequent intervals report live interface byte movement. Config Manager treats that numeric value as structured telemetry and does not infer the capture interface or recalculate throughput in the browser layer.
+For interface-backed capture consumers, Sensor_Agent keeps `throughput_bps` populated from capture-interface `rx_bytes` deltas as a compatibility/fallback value. When app-native telemetry is available, Zeek `stats.log` and Suricata EVE `stats` events populate `process_throughput_bps`, `process_packets_per_sec`, `process_drop_percent`, and `process_telemetry_source`. Config Manager prefers those process fields for the AF_PACKET-to-Zeek and AF_PACKET-to-Suricata branch connectors and segment degradation, while preserving `throughput_bps` for NIC ingest derivation. The visible first node is labeled with the actual `system.capture_interface` value, falling back to `NIC` when unavailable.
 
-The AF_PACKET-to-consumer connectors display each consumer's branch throughput. The Mirror Port-to-AF_PACKET connector displays a deduplicated ingress estimate, currently the largest numeric capture-consumer throughput, so Zeek and Suricata copies of the same interface stream do not double-count the upstream ingress rate.
+The AF_PACKET-to-consumer connectors display each consumer's branch throughput, using process throughput for Zeek/Suricata when `process_telemetry_source` is present and NIC/fallback throughput otherwise. The NIC-to-AF_PACKET connector displays a deduplicated ingest estimate, currently the largest numeric capture-consumer `throughput_bps`, so Zeek and Suricata copies of the same interface stream do not double-count the upstream ingress rate.
 
 Connector CSS lives in `assets/css/app.css` under the existing `@layer components` pattern. The component should apply only derived CSS classes such as `flow-state-flowing`, `flow-state-degraded`, and `flow-speed-gbps`; it should not use JavaScript animation hooks or parse labels at render time.
 
@@ -780,7 +790,7 @@ Connector CSS lives in `assets/css/app.css` under the existing `@layer component
 
 ```mermaid
 graph LR
-    MP[Mirror Port] --> AF[AF_PACKET]
+    MP[NIC / capture interface] --> AF[AF_PACKET]
     AF --> Z[Zeek]
     AF --> S[Suricata]
     AF --> PR[PCAP Ring]
@@ -992,7 +1002,7 @@ erDiagram
 
 ### Property 4: Analysis-tool segment state derivation
 
-*For any* analysis-tool segment (Zeek, Suricata, PCAP Ring) and any combination of container health state, CPU percentage, and capture consumer drop percentage, the segment state SHALL be derived as follows: `:healthy` when the normalized container state is `"running"` and CPU ≤ 90% and consumer drop ≤ 5.0%; `:degraded` when the normalized container state is `"running"` and either CPU > 90% or consumer drop > 5.0%, when the container state is `"restarting"`, or when the container state is an unknown non-running value; `:failed` when the container state is `"error"` or `"stopped"`; `:no_data` when no expected container alias is present in the HealthReport. The same derivation rules SHALL apply identically to all three analysis-tool segment types.
+*For any* analysis-tool segment (Zeek, Suricata, PCAP Ring) and any combination of container health state, CPU percentage, and capture consumer drop percentage, the segment state SHALL be derived as follows: `:healthy` when the normalized container state is `"running"` and CPU ≤ 90% and effective consumer drop ≤ 5.0%; `:degraded` when the normalized container state is `"running"` and either CPU > 90% or effective consumer drop > 5.0%, when the container state is `"restarting"`, or when the container state is an unknown non-running value; `:failed` when the container state is `"error"` or `"stopped"`; `:no_data` when no expected container alias is present in the HealthReport. For Zeek and Suricata, effective consumer drop prefers `process_drop_percent` when `process_telemetry_source` is present and falls back to `drop_percent` otherwise.
 
 **Validates: Requirements 4.2**
 
@@ -1052,7 +1062,7 @@ erDiagram
 
 ### Property 14: Tooltip data completeness per segment type
 
-*For any* derived pipeline segment with non-`:no_data` state, the tooltip map SHALL contain all fields specified for that segment type: AF_PACKET tooltips SHALL include aggregate throughput, per-consumer packet counts, per-consumer drop percentages, and BPF restart status; analysis-tool tooltips SHALL include container state, uptime, CPU percentage, memory usage, packets received, packets dropped, and drop percentage; PCAP Ring tooltips SHALL include container state, storage path, total bytes, used bytes, available bytes, used percentage, packets written, bytes written, wrap count, socket drops, and overwrite risk when those values are present; Vector tooltips SHALL include container state, uptime, CPU percentage, memory usage, and forwarding buffer usage (or "not available"); Forwarding Sinks tooltips SHALL include configured sink count, enabled count, disabled count, sink labels, and safe destination labels when present. For `:no_data` segments, the tooltip SHALL contain a "data not available" message for runtime telemetry that is missing.
+*For any* derived pipeline segment with non-`:no_data` state, the tooltip map SHALL contain all fields specified for that segment type: AF_PACKET tooltips SHALL include aggregate throughput, per-consumer packet counts, per-consumer drop percentages, BPF restart status, and process telemetry source/rates when present; analysis-tool tooltips SHALL include container state, uptime, CPU percentage, memory usage, packets received, packets dropped, effective drop percentage, throughput, and telemetry source; PCAP Ring tooltips SHALL include container state, storage path, total bytes, used bytes, available bytes, used percentage, packets written, bytes written, wrap count, socket drops, and overwrite risk when those values are present; Vector tooltips SHALL include container state, uptime, CPU percentage, memory usage, and forwarding buffer usage (or "not available"); Forwarding Sinks tooltips SHALL include configured sink count, enabled count, disabled count, sink labels, and safe destination labels when present. For `:no_data` segments, the tooltip SHALL contain a "data not available" message for runtime telemetry that is missing.
 
 **Validates: Requirements 12.1, 12.2, 12.3, 12.4, 12.5, 12.6**
 
@@ -1070,7 +1080,7 @@ erDiagram
 
 ### Property 17: Connector flow state derivation
 
-*For any* connector source and target segment state pair, stale flag, capture mode context, and throughput value, connector `flow_state` SHALL be derived as follows: `:stopped` when source or target is `:failed` or `:disabled`; `:unknown` when source or target is `:no_data` or required telemetry is missing; `:degraded` when source or target is `:degraded` or trusted stale data is present; `:idle` when throughput is exactly zero or Alert_Driven_Mode PCAP is armed without active flush telemetry; and `:flowing` only when source and target can pass data and throughput is present or expected. AF_PACKET-to-consumer connectors use capture throughput. Zeek, Suricata, PCAP Ring, and dynamic consumer connectors to Vector remain `:unknown` with "—" throughput in v1 unless future output-rate telemetry exists. Capture mode alone SHALL NOT make the PCAP connector animate as flowing. A failed target SHALL stop animation even when the source is healthy.
+*For any* connector source and target segment state pair, stale flag, capture mode context, and throughput or record-rate value, connector `flow_state` SHALL be derived as follows: `:stopped` when source or target is `:failed` or `:disabled`; `:unknown` when source or target is `:no_data` or required telemetry is missing; `:degraded` when source or target is `:degraded` or trusted stale data is present; `:idle` when throughput/record-rate is exactly zero or Alert_Driven_Mode PCAP is armed without active flush telemetry; and `:flowing` only when source and target can pass data and numeric throughput/record-rate telemetry is present. AF_PACKET-to-consumer connectors use process throughput for Zeek/Suricata when available and capture fallback throughput otherwise. Zeek and Suricata connectors to Vector use Vector ingress record-rate telemetry when present; PCAP Ring and dynamic consumer connectors to Vector remain `:unknown` with "—" throughput unless matching Vector ingress telemetry exists. Capture mode alone SHALL NOT make the PCAP connector animate as flowing. A failed target SHALL stop animation even when the source is healthy.
 
 **Validates: Requirements 3.5, 3.6, 5.8, 16.13, 16.14, 16.15**
 
@@ -1080,9 +1090,9 @@ erDiagram
 
 **Validates: Requirements 5.8, 5.9, 5.10, 16.16**
 
-### Property 19: Mirror Port limited system telemetry derivation
+### Property 19: NIC limited system telemetry derivation
 
-*For any* HealthReport system fields, the Mirror Port segment SHALL be `:healthy` only when `capture_interface` is non-empty and `af_packet_available == true`, `:degraded` when `capture_interface` is non-empty and `af_packet_available == false`, and `:no_data` when system telemetry is missing or `capture_interface` is blank. It SHALL never derive `:failed` from current system fields and SHALL never claim physical mirror/SPAN source health.
+*For any* HealthReport system fields, the NIC/capture-interface segment SHALL be `:healthy` only when `capture_interface` is non-empty and `af_packet_available == true`, `:degraded` when `capture_interface` is non-empty and `af_packet_available == false`, and `:no_data` when system telemetry is missing or `capture_interface` is blank. It SHALL never derive `:failed` from current system fields and SHALL never claim physical mirror/SPAN source health.
 
 **Validates: Requirements 2.7, 4.7, 16.17**
 
@@ -1104,7 +1114,7 @@ erDiagram
 | Scenario | Behavior |
 |----------|----------|
 | Missing container in HealthReport | Segment state = `:no_data`, tooltip shows "data not available" |
-| Missing system stats | Mirror Port state = `:no_data`, tooltip shows local capture-interface data not available |
+| Missing system stats | NIC/capture-interface state = `:no_data`, tooltip shows local capture-interface data not available |
 | Missing capture stats | AF_PACKET and analysis connectors show no_data, throughput = "—", flow_state = unknown |
 | Missing storage stats | PCAP Ring shows "storage data not available", storage warnings = `:no_data` |
 | Missing forwarding data | The single Forwarding Sinks segment shows no_data when enabled sinks exist, disabled sink configs appear as configuration counts/details, and labels clarify runtime delivery data is unavailable |
@@ -1187,7 +1197,7 @@ This feature uses both property-based tests (via PropCheck) and example-based un
 16. Accessible summaries present (Property 16)
 17. Connector flow state derivation (Property 17)
 18. Speed tier classification from structured throughput (Property 18)
-19. Mirror Port limited system telemetry derivation (Property 19)
+19. NIC limited system telemetry derivation (Property 19)
 
 ### Example-Based Unit Tests
 
@@ -1200,7 +1210,7 @@ This feature uses both property-based tests (via PropCheck) and example-based un
 - Dynamic segment generation for extra capture consumers (Requirement 2.4)
 - PCAP Ring storage annotation content (Requirement 6.1)
 - PCAP Ring tooltip preserves ring-writer counters without implying active flush/carve state (Requirement 6.5)
-- Mirror Port state derivation from capture interface and AF_PACKET availability (Requirement 4.7)
+- NIC/capture-interface state derivation from capture interface and AF_PACKET availability (Requirement 4.7)
 - Forwarding Sinks aggregate segment metrics, badges, labels, and no-data runtime behavior with and without telemetry
 - Sensor status banner logic (pending, enrolled, revoked)
 - Empty pool handling
@@ -1208,8 +1218,7 @@ This feature uses both property-based tests (via PropCheck) and example-based un
 ### LiveView Integration Tests
 
 **Test files:**
-- `test/config_manager_web/live/pipeline_live/sensor_pipeline_live_test.exs`
-- `test/config_manager_web/live/pipeline_live/pool_pipeline_live_test.exs`
+- `test/config_manager_web/pipeline_live_test.exs`
 
 **Coverage:**
 - Page mount and rendering for existing/non-existent sensors and pools
@@ -1242,9 +1251,9 @@ This feature uses both property-based tests (via PropCheck) and example-based un
 **Test file:** `e2e/tests/pipeline.spec.ts`
 
 **Coverage:**
-- Log in as admin and open the built-in test sensor's `/sensors/:id/pipeline` route.
-- Verify canonical segments render: Mirror Port, AF_PACKET, Zeek, Suricata, PCAP Ring, Vector, and Forwarding Sinks.
-- Verify connector labels, no-data placeholders, Mirror Port local-interface wording, and PCAP active-flush-safe wording are visible where telemetry is missing.
+- Log in as admin and open the built-in test sensor's `/sensors/:id/pipeline/graph` route; also verify `/sensors/:id/pipeline` redirects there.
+- Verify canonical segments render: NIC/capture interface, AF_PACKET, Zeek, Suricata, PCAP Ring, Vector, and Forwarding Sinks.
+- Verify connector labels, no-data placeholders, NIC local-interface wording, and PCAP active-flush-safe wording are visible where telemetry is missing.
 - Create or reuse an `e2e-` pool fixture, open `/pools/:id/pipeline`, and verify aggregate segment counts and member links.
 - Verify a limited user with `sensors:view` can read both routes and an unauthenticated browser is redirected to login.
 - Verify any `e2e-` pool or sensor fixtures are cleaned up by UI or direct database cleanup using the existing E2E cleanup guard.

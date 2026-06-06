@@ -374,6 +374,9 @@ address = "127.0.0.1:8686"
 
 # ── Sources ──────────────────────────────────────────────────────────────────
 
+[sources.vector_internal_metrics]
+type = "internal_metrics"
+
 [sources.zeek_logs]
 type = "file"
 include = ["/var/sensor/logs/zeek/*.log"]
@@ -455,6 +458,11 @@ reroute_unmatched = false
 qualifying_alert = '.event_type == "alert" && exists(.alert.severity) && ((to_int(.alert.severity) ?? 999) <= {{ .SeverityThreshold }})'
 
 # ── Alert_Listener sink ──────────────────────────────────────────────────────
+
+[sinks.vector_metrics]
+type = "prometheus_exporter"
+inputs = ["vector_internal_metrics"]
+address = "127.0.0.1:9598"
 
 [sinks.pcap_alert_webhook]
 type = "http"

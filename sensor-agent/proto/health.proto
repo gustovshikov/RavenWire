@@ -13,6 +13,7 @@ message HealthReport {
   StorageStats storage = 5;
   ClockStats clock = 6;
   SystemStats system = 7;
+  VectorStats vector = 8;
 }
 
 message ContainerHealth {
@@ -25,6 +26,13 @@ message ContainerHealth {
 
 message CaptureStats {
   map<string, ConsumerStats> consumers = 1;  // keyed by consumer name
+}
+
+message VectorStats {
+  map<string, double> input_records_per_sec = 1;  // keyed by canonical pipeline segment ID
+  double total_records_per_sec = 2;
+  double disk_buffer_util_pct = 3;
+  map<string, string> sink_connectivity = 4;
 }
 
 message ConsumerStats {
@@ -40,6 +48,10 @@ message ConsumerStats {
   uint64 socket_drops = 10;
   uint64 socket_freeze_queue_drops = 11;
   bool overwrite_risk = 12;
+  double process_throughput_bps = 13;
+  double process_packets_per_sec = 14;
+  double process_drop_percent = 15;
+  string process_telemetry_source = 16;
 }
 
 message StorageStats {

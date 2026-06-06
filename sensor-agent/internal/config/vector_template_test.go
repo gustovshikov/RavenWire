@@ -32,13 +32,18 @@ func TestGenerateConfigBasicSources(t *testing.T) {
 	}
 
 	required := []string{
+		"[sources.vector_internal_metrics]",
 		"[sources.zeek_logs]",
 		"[sources.suricata_eve]",
 		"[transforms.parse_zeek]",
 		"[transforms.parse_suricata]",
 		"[transforms.normalize]",
 		"[transforms.route_alerts]",
+		"[sinks.vector_metrics]",
 		"[sinks.pcap_alert_webhook]",
+		`type = "internal_metrics"`,
+		`type = "prometheus_exporter"`,
+		`address = "127.0.0.1:9598"`,
 		`fingerprint.strategy = "device_and_inode"`,
 		"drop_on_abort = true",
 		"drop_on_error = true",
@@ -810,6 +815,7 @@ func TestProperty11_VectorConfigSinkIsolation(t *testing.T) {
 	// These are excluded from the user-sink equality check.
 	systemSinks := map[string]bool{
 		"pcap_alert_webhook": true,
+		"vector_metrics":     true,
 		"dead_letter":        true,
 		"normalized_null":    true,
 	}

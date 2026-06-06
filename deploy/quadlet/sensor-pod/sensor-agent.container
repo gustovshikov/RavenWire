@@ -40,6 +40,9 @@ Environment=PCAP_ALERTS_DIR=/sensor/pcap/alerts
 Environment=PCAP_DB_PATH=/sensor/pcap/pcap.db
 Environment=AUDIT_LOG_PATH=/var/sensor/audit.log
 Environment=HEALTH_BUFFER_PATH=/var/sensor/health-buffer.bin
+Environment=VECTOR_METRICS_URL=${VECTOR_METRICS_URL}
+Environment=ZEEK_LOG_DIR=/var/sensor/logs/zeek
+Environment=SURICATA_EVE_PATH=/var/sensor/logs/suricata/eve*.json
 Environment=SUPPORT_BUNDLE_DIR=/var/sensor/support-bundles
 Environment=LAST_KNOWN_CONFIG_PATH=/etc/sensor/last-known-config.json
 Environment=CERT_DIR=/etc/sensor/certs

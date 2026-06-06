@@ -70,6 +70,39 @@ func mockHTTPGet(body string, statusCode int, err error) func(string) (*http.Res
 	}
 }
 
+type testDirEntry struct {
+	name string
+	dir  bool
+}
+
+func (e testDirEntry) Name() string { return e.name }
+func (e testDirEntry) IsDir() bool  { return e.dir }
+func (e testDirEntry) Type() os.FileMode {
+	if e.dir {
+		return os.ModeDir
+	}
+	return 0
+}
+func (e testDirEntry) Info() (os.FileInfo, error) { return testFileInfo{name: e.name, dir: e.dir}, nil }
+
+type testFileInfo struct {
+	name  string
+	dir   bool
+	mtime time.Time
+}
+
+func (i testFileInfo) Name() string { return i.name }
+func (i testFileInfo) Size() int64  { return 0 }
+func (i testFileInfo) Mode() os.FileMode {
+	if i.dir {
+		return os.ModeDir
+	}
+	return 0
+}
+func (i testFileInfo) ModTime() time.Time { return i.mtime }
+func (i testFileInfo) IsDir() bool        { return i.dir }
+func (i testFileInfo) Sys() any           { return nil }
+
 // --- Drop Alert Tests ---
 
 func TestComputeDropAlert_AboveThreshold(t *testing.T) {
@@ -419,48 +452,257 @@ func TestScrapeSuricataStats_NoPath(t *testing.T) {
 	}
 }
 
+func TestParseSuricataEVEStats_ExtractsDecoderAndNewestGlob(t *testing.T) {
+	now := time.Unix(200, 0).UTC()
+	oldPath := "/var/log/suricata/eve-old.json"
+	newPath := "/var/log/suricata/eve-new.json"
+	oldContent := `{"timestamp":"1970-01-01T00:02:00.000000Z","event_type":"stats","stats":{"decoder":{"bytes":100,"pkts":10},"capture":{"kernel_packets":10,"kernel_drops":1,"kernel_ifdrops":0}}}`
+	newContent := `{"event_type":"alert","src_ip":"1.2.3.4"}
+{"timestamp":"1970-01-01T00:03:10.000000Z","event_type":"stats","stats":{"decoder":{"bytes":3000,"pkts":200},"capture":{"kernel_packets":200,"kernel_drops":4,"kernel_ifdrops":1}}}
+`
+
+	c := &Collector{
+		readDir: mockReadDir(map[string][]os.DirEntry{
+			"/var/log/suricata": {
+				testDirEntry{name: "eve-old.json"},
+				testDirEntry{name: "eve-new.json"},
+			},
+		}),
+		readFile: mockReadFile(map[string]string{
+			oldPath: oldContent,
+			newPath: newContent,
+		}),
+		stat: mockStat(map[string]os.FileInfo{
+			oldPath: testFileInfo{name: "eve-old.json", mtime: now.Add(-2 * time.Minute)},
+			newPath: testFileInfo{name: "eve-new.json", mtime: now.Add(-10 * time.Second)},
+		}),
+		timeNow: func() time.Time { return now },
+	}
+
+	stats, err := c.parseSuricataEVEStats("/var/log/suricata/eve*.json")
+	if err != nil {
+		t.Fatalf("parseSuricataEVEStats: %v", err)
+	}
+
+	if stats.Stats.Decoder.Bytes != 3000 {
+		t.Fatalf("Decoder.Bytes = %d, want 3000", stats.Stats.Decoder.Bytes)
+	}
+	if stats.Stats.Decoder.Pkts != 200 {
+		t.Fatalf("Decoder.Pkts = %d, want 200", stats.Stats.Decoder.Pkts)
+	}
+	if stats.Stats.Capture.KernelDrops != 4 {
+		t.Fatalf("KernelDrops = %d, want 4", stats.Stats.Capture.KernelDrops)
+	}
+	if stats.Stats.Capture.KernelIfdrops != 1 {
+		t.Fatalf("KernelIfdrops = %d, want 1", stats.Stats.Capture.KernelIfdrops)
+	}
+	if !stats.Timestamp.Equal(time.Unix(190, 0).UTC()) {
+		t.Fatalf("Timestamp = %s, want %s", stats.Timestamp, time.Unix(190, 0).UTC())
+	}
+}
+
+func TestScrapeSuricataStats_ProcessRatesFirstSampleDeltaAndReset(t *testing.T) {
+	now := time.Unix(200, 0).UTC()
+	body := `{"timestamp":"1970-01-01T00:03:10.000000Z","event_type":"stats","stats":{"decoder":{"bytes":1000,"pkts":100},"capture":{"kernel_packets":100,"kernel_drops":2,"kernel_ifdrops":1}}}`
+	c := &Collector{
+		suricataEVEPath:  "/var/log/suricata/eve.json",
+		readFile:         func(string) ([]byte, error) { return []byte(body), nil },
+		timeNow:          func() time.Time { return now },
+		interval:         10 * time.Second,
+		prevProcessState: make(map[string]prevProcessInputState),
+	}
+
+	first := &ConsumerStats{}
+	c.scrapeSuricataStats(first)
+	if first.ProcessTelemetrySource != "suricata eve stats" {
+		t.Fatalf("first ProcessTelemetrySource = %q", first.ProcessTelemetrySource)
+	}
+	if first.ProcessThroughputBps != 0 || first.ProcessPacketsPerSec != 0 || first.ProcessDropPercent != 0 {
+		t.Fatalf("first process rates should be zero, got bps=%f pps=%f drop=%f",
+			first.ProcessThroughputBps, first.ProcessPacketsPerSec, first.ProcessDropPercent)
+	}
+
+	body = `{"timestamp":"1970-01-01T00:03:20.000000Z","event_type":"stats","stats":{"decoder":{"bytes":3000,"pkts":180},"capture":{"kernel_packets":180,"kernel_drops":4,"kernel_ifdrops":1}}}`
+	second := &ConsumerStats{}
+	c.scrapeSuricataStats(second)
+	if second.ProcessThroughputBps != 1600 {
+		t.Fatalf("ProcessThroughputBps = %f, want 1600", second.ProcessThroughputBps)
+	}
+	if second.ProcessPacketsPerSec != 8 {
+		t.Fatalf("ProcessPacketsPerSec = %f, want 8", second.ProcessPacketsPerSec)
+	}
+	expectedDrop := float64(2) / float64(82) * 100
+	if second.ProcessDropPercent != expectedDrop {
+		t.Fatalf("ProcessDropPercent = %f, want %f", second.ProcessDropPercent, expectedDrop)
+	}
+
+	body = `{"timestamp":"1970-01-01T00:03:30.000000Z","event_type":"stats","stats":{"decoder":{"bytes":10,"pkts":5},"capture":{"kernel_packets":5,"kernel_drops":0,"kernel_ifdrops":0}}}`
+	reset := &ConsumerStats{}
+	c.scrapeSuricataStats(reset)
+	if reset.ProcessThroughputBps != 0 || reset.ProcessPacketsPerSec != 0 || reset.ProcessDropPercent != 0 {
+		t.Fatalf("reset process rates should be zero, got bps=%f pps=%f drop=%f",
+			reset.ProcessThroughputBps, reset.ProcessPacketsPerSec, reset.ProcessDropPercent)
+	}
+}
+
+func TestScrapeSuricataStats_StaleProcessTelemetryLeavesProcessFieldsEmpty(t *testing.T) {
+	now := time.Unix(200, 0).UTC()
+	c := &Collector{
+		suricataEVEPath: "/var/log/suricata/eve.json",
+		readFile: mockReadFile(map[string]string{
+			"/var/log/suricata/eve.json": `{"timestamp":"1970-01-01T00:01:00.000000Z","event_type":"stats","stats":{"decoder":{"bytes":1000,"pkts":100},"capture":{"kernel_packets":100,"kernel_drops":2,"kernel_ifdrops":1}}}`,
+		}),
+		timeNow:          func() time.Time { return now },
+		interval:         10 * time.Second,
+		prevProcessState: make(map[string]prevProcessInputState),
+	}
+
+	cs := &ConsumerStats{}
+	c.scrapeSuricataStats(cs)
+	if cs.ProcessTelemetrySource != "" {
+		t.Fatalf("stale telemetry should not set source, got %q", cs.ProcessTelemetrySource)
+	}
+}
+
+// --- Zeek Stats Tests ---
+
+func TestParseZeekStatsLogAndApplyProcessRates(t *testing.T) {
+	now := time.Unix(200, 0).UTC()
+	statsPath := "/var/log/zeek/stats.log"
+	content := `{"ts":185.0,"bytes_recv":1000,"pkts_proc":50,"pkts_dropped":5}
+{"ts":190.0,"bytes_recv":2000,"pkts_proc":80,"pkts_dropped":20}
+`
+	c := &Collector{
+		zeekLogDir: "/var/log/zeek",
+		readDir: mockReadDir(map[string][]os.DirEntry{
+			"/var/log/zeek": {testDirEntry{name: "stats.log"}},
+		}),
+		readFile: mockReadFile(map[string]string{statsPath: content}),
+		stat: mockStat(map[string]os.FileInfo{
+			statsPath: testFileInfo{name: "stats.log", mtime: now.Add(-10 * time.Second)},
+		}),
+		timeNow:  func() time.Time { return now },
+		interval: 10 * time.Second,
+	}
+
+	stats, err := c.parseZeekStatsLog("/var/log/zeek")
+	if err != nil {
+		t.Fatalf("parseZeekStatsLog: %v", err)
+	}
+
+	cs := &ConsumerStats{}
+	c.applyZeekProcessStats(cs, stats)
+	if cs.ProcessTelemetrySource != "zeek stats.log" {
+		t.Fatalf("ProcessTelemetrySource = %q", cs.ProcessTelemetrySource)
+	}
+	if cs.ProcessThroughputBps != 1600 {
+		t.Fatalf("ProcessThroughputBps = %f, want 1600", cs.ProcessThroughputBps)
+	}
+	if cs.ProcessPacketsPerSec != 8 {
+		t.Fatalf("ProcessPacketsPerSec = %f, want 8", cs.ProcessPacketsPerSec)
+	}
+	expectedDrop := float64(20) / float64(100) * 100
+	if cs.ProcessDropPercent != expectedDrop {
+		t.Fatalf("ProcessDropPercent = %f, want %f", cs.ProcessDropPercent, expectedDrop)
+	}
+}
+
+func TestParseZeekStatsLog_InvalidRowsProduceNoProcessTelemetry(t *testing.T) {
+	now := time.Unix(200, 0).UTC()
+	statsPath := "/var/log/zeek/stats.log"
+	c := &Collector{
+		zeekLogDir: "/var/log/zeek",
+		readDir: mockReadDir(map[string][]os.DirEntry{
+			"/var/log/zeek": {testDirEntry{name: "stats.log"}},
+		}),
+		readFile: mockReadFile(map[string]string{
+			statsPath: `{"ts":"not-a-time","bytes_recv":1000,"pkts_proc":10}`,
+		}),
+		stat: mockStat(map[string]os.FileInfo{
+			statsPath: testFileInfo{name: "stats.log", mtime: now.Add(-10 * time.Second)},
+		}),
+		timeNow:  func() time.Time { return now },
+		interval: 10 * time.Second,
+	}
+
+	if _, err := c.parseZeekStatsLog("/var/log/zeek"); err == nil {
+		t.Fatal("expected invalid Zeek stats rows to return an error")
+	}
+}
+
+func TestApplyZeekProcessStats_StaleTelemetryIgnored(t *testing.T) {
+	now := time.Unix(200, 0).UTC()
+	c := &Collector{
+		timeNow:  func() time.Time { return now },
+		interval: 10 * time.Second,
+	}
+
+	cs := &ConsumerStats{}
+	c.applyZeekProcessStats(cs, &zeekStatsRow{
+		Timestamp:        now.Add(-2 * time.Minute),
+		BytesRecv:        2000,
+		PacketsProcessed: 80,
+	})
+
+	if cs.ProcessTelemetrySource != "" {
+		t.Fatalf("stale telemetry should not set source, got %q", cs.ProcessTelemetrySource)
+	}
+}
+
 // --- Vector Stats Tests ---
 
 func TestScrapeVectorStats_Success(t *testing.T) {
-	metricsBody := `{
-		"components_received_events_total": [
-			{"name": "source_zeek", "value": 1000},
-			{"name": "source_suricata", "value": 500}
-		],
-		"sinks": [
-			{"name": "splunk_hec", "connected": true},
-			{"name": "cribl_http", "connected": false}
-		],
-		"disk_buffer_usage": {
-			"used_bytes": 500000,
-			"total_bytes": 1000000
-		}
-	}`
-
+	firstBody := `# HELP component_received_events_total Events received
+vector_component_received_events_total{component_id="parse_zeek",component_type="transform"} 1000
+vector_component_received_events_total{component_id="parse_suricata",component_type="transform"} 500
+component_received_events_total{component_id="normalize",component_type="transform"} 999
+disk_buffer_utilization_ratio 0.5
+sink_connected{component_id="splunk_hec"} 1
+sink_connected{component_id="cribl_http"} 0
+`
+	secondBody := `vector_component_received_events_total{component_id="parse_zeek",component_type="transform"} 1250
+vector_component_received_events_total{component_id="parse_suricata",component_type="transform"} 700
+disk_buffer_utilization_ratio 0.5
+sink_connected{component_id="splunk_hec"} 1
+sink_connected{component_id="cribl_http"} 0
+`
+	body := firstBody
+	now := time.Unix(100, 0)
 	c := &Collector{
 		vectorMetricsURL: "http://localhost:9598/metrics",
-		httpGet:          mockHTTPGet(metricsBody, 200, nil),
-		interval:         10 * time.Second,
+		httpGet:          func(string) (*http.Response, error) { return mockHTTPGet(body, 200, nil)("ignored") },
+		timeNow:          func() time.Time { return now },
 	}
 
-	consumers := map[string]ConsumerStats{
-		"vector": {},
+	first := c.scrapeVectorStats()
+	if first.InputRecordsPerSec["zeek"] != 0 {
+		t.Errorf("first sample should report zeek=0 rec/s, got %f", first.InputRecordsPerSec["zeek"])
 	}
-	c.scrapeVectorStats(consumers)
+	if first.InputRecordsPerSec["suricata"] != 0 {
+		t.Errorf("first sample should report suricata=0 rec/s, got %f", first.InputRecordsPerSec["suricata"])
+	}
+	if first.DiskBufferUtilPct != 50.0 {
+		t.Errorf("expected DiskBufferUtilPct=50.0, got %f", first.DiskBufferUtilPct)
+	}
+	if first.SinkConnectivity["splunk_hec"] != "connected" {
+		t.Errorf("expected splunk_hec=connected, got %s", first.SinkConnectivity["splunk_hec"])
+	}
+	if first.SinkConnectivity["cribl_http"] != "disconnected" {
+		t.Errorf("expected cribl_http=disconnected, got %s", first.SinkConnectivity["cribl_http"])
+	}
 
-	cs := consumers["vector"]
-	// 1500 total events / 10 seconds = 150 per sec
-	if cs.RecordsIngestedPerSec != 150.0 {
-		t.Errorf("expected RecordsIngestedPerSec=150.0, got %f", cs.RecordsIngestedPerSec)
+	body = secondBody
+	now = now.Add(10 * time.Second)
+	second := c.scrapeVectorStats()
+
+	if second.InputRecordsPerSec["zeek"] != 25.0 {
+		t.Errorf("expected zeek=25.0 rec/s, got %f", second.InputRecordsPerSec["zeek"])
 	}
-	if cs.SinkConnectivity["splunk_hec"] != "connected" {
-		t.Errorf("expected splunk_hec=connected, got %s", cs.SinkConnectivity["splunk_hec"])
+	if second.InputRecordsPerSec["suricata"] != 20.0 {
+		t.Errorf("expected suricata=20.0 rec/s, got %f", second.InputRecordsPerSec["suricata"])
 	}
-	if cs.SinkConnectivity["cribl_http"] != "disconnected" {
-		t.Errorf("expected cribl_http=disconnected, got %s", cs.SinkConnectivity["cribl_http"])
-	}
-	if cs.DiskBufferUtilPct != 50.0 {
-		t.Errorf("expected DiskBufferUtilPct=50.0, got %f", cs.DiskBufferUtilPct)
+	if second.TotalRecordsPerSec != 45.0 {
+		t.Errorf("expected total=45.0 rec/s, got %f", second.TotalRecordsPerSec)
 	}
 }
 
@@ -469,11 +711,41 @@ func TestScrapeVectorStats_NoURL(t *testing.T) {
 		vectorMetricsURL: "",
 	}
 
-	consumers := map[string]ConsumerStats{}
-	c.scrapeVectorStats(consumers)
+	stats := c.scrapeVectorStats()
 
-	if _, ok := consumers["vector"]; ok {
-		t.Error("expected no vector entry when URL is empty")
+	if vectorStatsPresent(stats) {
+		t.Fatal("expected absent VectorStats when URL is empty")
+	}
+}
+
+func TestScrapeVectorStats_ResetReportsZero(t *testing.T) {
+	body := `vector_component_received_events_total{component_id="parse_zeek"} 1000`
+	now := time.Unix(100, 0)
+	c := &Collector{
+		vectorMetricsURL: "http://localhost:9598/metrics",
+		httpGet:          func(string) (*http.Response, error) { return mockHTTPGet(body, 200, nil)("ignored") },
+		timeNow:          func() time.Time { return now },
+	}
+
+	_ = c.scrapeVectorStats()
+	body = `vector_component_received_events_total{component_id="parse_zeek"} 10`
+	now = now.Add(10 * time.Second)
+
+	stats := c.scrapeVectorStats()
+	if stats.InputRecordsPerSec["zeek"] != 0 {
+		t.Errorf("counter reset should report zeek=0 rec/s, got %f", stats.InputRecordsPerSec["zeek"])
+	}
+}
+
+func TestScrapeVectorStats_MissingEndpointIsAbsent(t *testing.T) {
+	c := &Collector{
+		vectorMetricsURL: "http://localhost:9598/metrics",
+		httpGet:          mockHTTPGet("", 500, nil),
+	}
+
+	stats := c.scrapeVectorStats()
+	if vectorStatsPresent(stats) {
+		t.Fatal("expected absent VectorStats when scrape fails")
 	}
 }
 
@@ -491,6 +763,10 @@ func TestToProto_MapsNewFields(t *testing.T) {
 					DropPercent:            0.99,
 					ThroughputBps:          8000000,
 					BpfRestartPending:      false,
+					ProcessThroughputBps:   1600,
+					ProcessPacketsPerSec:   8,
+					ProcessDropPercent:     2.5,
+					ProcessTelemetrySource: "suricata eve stats",
 					PacketsWritten:         5000,
 					BytesWritten:           250000,
 					WrapCount:              3,
@@ -500,6 +776,12 @@ func TestToProto_MapsNewFields(t *testing.T) {
 					DropAlert:              false,
 				},
 			},
+		},
+		Vector: VectorStats{
+			InputRecordsPerSec: map[string]float64{"zeek": 25, "suricata": 0},
+			TotalRecordsPerSec: 25,
+			DiskBufferUtilPct:  12.5,
+			SinkConnectivity:   map[string]string{"splunk_hec": "connected"},
 		},
 	}
 
@@ -529,6 +811,36 @@ func TestToProto_MapsNewFields(t *testing.T) {
 	}
 	if cs.ThroughputBps != 8000000 {
 		t.Errorf("proto ThroughputBps: expected 8000000, got %f", cs.ThroughputBps)
+	}
+	if cs.ProcessThroughputBps != 1600 {
+		t.Errorf("proto ProcessThroughputBps: expected 1600, got %f", cs.ProcessThroughputBps)
+	}
+	if cs.ProcessPacketsPerSec != 8 {
+		t.Errorf("proto ProcessPacketsPerSec: expected 8, got %f", cs.ProcessPacketsPerSec)
+	}
+	if cs.ProcessDropPercent != 2.5 {
+		t.Errorf("proto ProcessDropPercent: expected 2.5, got %f", cs.ProcessDropPercent)
+	}
+	if cs.ProcessTelemetrySource != "suricata eve stats" {
+		t.Errorf("proto ProcessTelemetrySource: expected suricata eve stats, got %s", cs.ProcessTelemetrySource)
+	}
+	if pb.Vector == nil {
+		t.Fatal("expected proto VectorStats")
+	}
+	if pb.Vector.InputRecordsPerSec["zeek"] != 25 {
+		t.Errorf("proto Vector zeek rate: expected 25, got %f", pb.Vector.InputRecordsPerSec["zeek"])
+	}
+	if pb.Vector.InputRecordsPerSec["suricata"] != 0 {
+		t.Errorf("proto Vector suricata rate: expected 0, got %f", pb.Vector.InputRecordsPerSec["suricata"])
+	}
+	if pb.Vector.TotalRecordsPerSec != 25 {
+		t.Errorf("proto Vector total rate: expected 25, got %f", pb.Vector.TotalRecordsPerSec)
+	}
+	if pb.Vector.DiskBufferUtilPct != 12.5 {
+		t.Errorf("proto Vector disk buffer: expected 12.5, got %f", pb.Vector.DiskBufferUtilPct)
+	}
+	if pb.Vector.SinkConnectivity["splunk_hec"] != "connected" {
+		t.Errorf("proto Vector sink connectivity: expected connected, got %s", pb.Vector.SinkConnectivity["splunk_hec"])
 	}
 }
 
@@ -580,6 +892,10 @@ func TestConsumerStats_JSONRoundTrip(t *testing.T) {
 		DropPercent:            0.99,
 		ThroughputBps:          8000000,
 		BpfRestartPending:      true,
+		ProcessThroughputBps:   1600,
+		ProcessPacketsPerSec:   8,
+		ProcessDropPercent:     2.5,
+		ProcessTelemetrySource: "suricata eve stats",
 		PacketsWritten:         5000,
 		BytesWritten:           250000,
 		WrapCount:              3,
@@ -622,6 +938,12 @@ func TestConsumerStats_JSONRoundTrip(t *testing.T) {
 	}
 	if decoded.RecordsIngestedPerSec != original.RecordsIngestedPerSec {
 		t.Errorf("RecordsIngestedPerSec mismatch: %f != %f", decoded.RecordsIngestedPerSec, original.RecordsIngestedPerSec)
+	}
+	if decoded.ProcessTelemetrySource != original.ProcessTelemetrySource {
+		t.Errorf("ProcessTelemetrySource mismatch: %s != %s", decoded.ProcessTelemetrySource, original.ProcessTelemetrySource)
+	}
+	if decoded.ProcessThroughputBps != original.ProcessThroughputBps {
+		t.Errorf("ProcessThroughputBps mismatch: %f != %f", decoded.ProcessThroughputBps, original.ProcessThroughputBps)
 	}
 }
 

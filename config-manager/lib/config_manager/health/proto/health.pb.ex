@@ -15,6 +15,10 @@ defmodule Health.ConsumerStats do
   field(:socket_drops, 10, type: :uint64, json_name: "socketDrops")
   field(:socket_freeze_queue_drops, 11, type: :uint64, json_name: "socketFreezeQueueDrops")
   field(:overwrite_risk, 12, type: :bool, json_name: "overwriteRisk")
+  field(:process_throughput_bps, 13, type: :double, json_name: "processThroughputBps")
+  field(:process_packets_per_sec, 14, type: :double, json_name: "processPacketsPerSec")
+  field(:process_drop_percent, 15, type: :double, json_name: "processDropPercent")
+  field(:process_telemetry_source, 16, type: :string, json_name: "processTelemetrySource")
 end
 
 defmodule Health.CaptureStats.ConsumersEntry do
@@ -34,6 +38,47 @@ defmodule Health.CaptureStats do
   field(:consumers, 1,
     repeated: true,
     type: Health.CaptureStats.ConsumersEntry,
+    map: true
+  )
+end
+
+defmodule Health.VectorStats.InputRecordsPerSecEntry do
+  @moduledoc false
+
+  use Protobuf, map: true, syntax: :proto3, protoc_gen_elixir_version: "0.12.0"
+
+  field(:key, 1, type: :string)
+  field(:value, 2, type: :double)
+end
+
+defmodule Health.VectorStats.SinkConnectivityEntry do
+  @moduledoc false
+
+  use Protobuf, map: true, syntax: :proto3, protoc_gen_elixir_version: "0.12.0"
+
+  field(:key, 1, type: :string)
+  field(:value, 2, type: :string)
+end
+
+defmodule Health.VectorStats do
+  @moduledoc false
+
+  use Protobuf, syntax: :proto3, protoc_gen_elixir_version: "0.12.0"
+
+  field(:input_records_per_sec, 1,
+    repeated: true,
+    type: Health.VectorStats.InputRecordsPerSecEntry,
+    json_name: "inputRecordsPerSec",
+    map: true
+  )
+
+  field(:total_records_per_sec, 2, type: :double, json_name: "totalRecordsPerSec")
+  field(:disk_buffer_util_pct, 3, type: :double, json_name: "diskBufferUtilPct")
+
+  field(:sink_connectivity, 4,
+    repeated: true,
+    type: Health.VectorStats.SinkConnectivityEntry,
+    json_name: "sinkConnectivity",
     map: true
   )
 end
@@ -111,6 +156,7 @@ defmodule Health.HealthReport do
   field(:storage, 5, type: Health.StorageStats)
   field(:clock, 6, type: Health.ClockStats)
   field(:system, 7, type: Health.SystemStats)
+  field(:vector, 8, type: Health.VectorStats)
 end
 
 defmodule Health.HealthAck do

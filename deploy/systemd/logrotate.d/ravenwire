@@ -6,10 +6,11 @@
 {
     daily
     rotate 2
-    maxsize 512M
+    maxsize 128M
     compress
     delaycompress
     missingok
     notifempty
+    su root root
     copytruncate
 }

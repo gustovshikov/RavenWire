@@ -6,7 +6,7 @@ The RavenWire Config Manager dashboard and sensor detail page currently display 
 
 This feature adds a live data-flow visualization that renders the sensor pipeline as a visual flow map with throughput annotations and health-state indicators on each segment. The visualization is available per-sensor at a dedicated route linked from the sensor detail page and per-pool at a dedicated route linked from the pool detail page. Each pipeline segment displays its current state using color-coded and icon/text-annotated indicators so that operators can instantly see where data is flowing, where it is degraded, where it has stopped, and where telemetry is not available. The visualization updates in real time via PubSub as new HealthReport data arrives.
 
-The current `HealthReport` protobuf includes container health, capture stats (per-consumer packets, drops, throughput, and PCAP ring-writer counters), storage stats, clock stats, and limited system stats (`capture_interface`, `nic_driver`, `af_packet_available`). It does **not** include forwarding data (Vector sink status, buffer usage, destination health), physical link/carrier or SPAN source status, or a manager-visible active PCAP flush/carve signal. The visualization handles missing telemetry gracefully, rendering "data not available" placeholders for segments without upstream telemetry rather than inferring health from absence.
+The current `HealthReport` protobuf includes container health, capture stats (per-consumer packets, drops, NIC/fallback throughput, app-native Zeek/Suricata process input telemetry when available, and PCAP ring-writer counters), Vector ingress record rates, storage stats, clock stats, and limited system stats (`capture_interface`, `nic_driver`, `af_packet_available`). It does **not** include forwarding data (Vector sink status, buffer usage, destination health), physical link/carrier or SPAN source status, or a manager-visible active PCAP flush/carve signal. The visualization handles missing telemetry gracefully, rendering "data not available" placeholders for segments without upstream telemetry rather than inferring health from absence.
 
 ## Current Implementation Context
 
@@ -25,16 +25,16 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 - **Config_Manager**: The Phoenix/LiveView web application that manages the RavenWire sensor fleet.
 - **Sensor_Pod**: A deployed sensor instance with an identity record in the `sensor_pods` database table and real-time health state in the Health_Registry.
 - **Health_Registry**: The in-memory ETS-backed GenServer (`ConfigManager.Health.Registry`) that stores the latest `HealthReport` for each connected Sensor_Pod.
-- **HealthReport**: A protobuf message streamed from the Sensor_Agent to the Config_Manager via gRPC, containing container health, capture stats, storage stats, clock stats, and limited system stats.
+- **HealthReport**: A protobuf message streamed from the Sensor_Agent to the Config_Manager via gRPC, containing container health, capture stats, app-native process telemetry when available, Vector ingress record rates, storage stats, clock stats, and limited system stats.
 - **Pipeline_Visualization**: The visual flow map component that renders the sensor data pipeline as a directed graph of connected segments with throughput annotations and health indicators.
 - **Pipeline_Segment**: A single node in the Pipeline_Visualization representing one stage of the data pipeline (for example, AF_PACKET, Zeek, Suricata, PCAP Ring, Vector, or the aggregate Forwarding Sinks node).
 - **Segment_State**: The health state of a Pipeline_Segment, one of: healthy, degraded, failed, disabled, pending_reload, or no_data.
 - **Segment_Connector**: A directed edge between two Pipeline_Segments in the Pipeline_Visualization, annotated with throughput or record rate when available.
 - **Connector_Flow_State**: The visual flow state of a Segment_Connector, one of: flowing, degraded, idle, stopped, or unknown. Connector_Flow_State is derived from source segment state, target segment state, staleness, capture mode, and structured throughput telemetry.
 - **Speed_Tier**: A coarse animation speed tier derived from numeric throughput telemetry, one of: gbps, mbps, kbps, zero, or unknown.
-- **Pipeline_Topology**: The ordered graph of Pipeline_Segments and Segment_Connectors that represents the data flow through a sensor. The canonical topology is: Mirror Port → AF_PACKET → [Zeek, Suricata, PCAP Ring] → Vector → [Forwarding Sinks].
+- **Pipeline_Topology**: The ordered graph of Pipeline_Segments and Segment_Connectors that represents the data flow through a sensor. The canonical topology is: NIC/capture interface → AF_PACKET → [Zeek, Suricata, PCAP Ring] → Vector → [Forwarding Sinks].
 - **Aggregate_Pipeline**: A pool-level Pipeline_Visualization that summarizes the pipeline health of all member sensors, showing per-segment counts of healthy, degraded, failed, disabled, pending_reload, and no_data members.
-- **Sensor_Pipeline_Page**: The LiveView page at `/sensors/:id/pipeline` that displays the per-sensor Pipeline_Visualization.
+- **Sensor_Pipeline_Page**: The LiveView page at `/sensors/:id/pipeline/graph` that displays the per-sensor Pipeline_Visualization. The legacy `/sensors/:id/pipeline` route is retained as an authenticated redirect to this page.
 - **Pool_Pipeline_Page**: The LiveView page at `/pools/:id/pipeline` that displays the Aggregate_Pipeline for a sensor pool.
 - **Throughput_Annotation**: A human-readable throughput or record rate label displayed on a Segment_Connector (for example, "8.2 Gbps", "12k eps", "41 alerts/hr"). It is display-only; behavior such as animation speed SHALL use structured numeric throughput fields, not parsed display text.
 - **Missing_Telemetry**: A condition where the HealthReport does not contain data for a Pipeline_Segment or segment annotation, requiring the visualization to display an explicit "data not available" indicator rather than inferring health. Missing segment health telemetry assigns `no_data`; missing annotation-only telemetry, such as PCAP storage, assigns a `no_data` annotation or badge without overriding container-derived segment health.
@@ -51,7 +51,7 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 
 #### Acceptance Criteria
 
-1. THE Config_Manager SHALL expose a Sensor_Pipeline_Page at `/sensors/:id/pipeline` and link to it from the sensor detail page at `/sensors/:id`.
+1. THE Config_Manager SHALL expose a Sensor_Pipeline_Page at `/sensors/:id/pipeline/graph`, retain `/sensors/:id/pipeline` as an authenticated compatibility redirect, and link to the graph page from the sensor detail page at `/sensors/:id`.
 2. WHEN an authenticated user navigates to the Sensor_Pipeline_Page for an existing Sensor_Pod in any enrollment state, THE Sensor_Pipeline_Page SHALL render the Pipeline_Visualization with all available health data and identity status for that Sensor_Pod.
 3. WHEN an authenticated user navigates to the Sensor_Pipeline_Page for a non-existent Sensor_Pod identifier, THE Config_Manager SHALL display a 404 Not Found page.
 4. THE Sensor_Pipeline_Page SHALL be accessible to all authenticated users with the `sensors:view` permission for read-only viewing.
@@ -63,13 +63,13 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 
 #### Acceptance Criteria
 
-1. THE Pipeline_Visualization SHALL render the following Pipeline_Segments in the canonical Pipeline_Topology order: Mirror Port (network interface), AF_PACKET ring buffer, Zeek, Suricata, PCAP Ring (pcap_ring_writer), Vector, and Forwarding Sinks.
+1. THE Pipeline_Visualization SHALL render the following Pipeline_Segments in the canonical Pipeline_Topology order: NIC/capture interface, AF_PACKET ring buffer, Zeek, Suricata, PCAP Ring (pcap_ring_writer), Vector, and Forwarding Sinks.
 2. THE Pipeline_Visualization SHALL render Segment_Connectors as directed edges showing the data flow direction from source segment to destination segment.
 3. THE Pipeline_Visualization SHALL render the analysis stage (Zeek, Suricata, PCAP Ring) as parallel branches from the AF_PACKET segment, converging at the Vector segment.
 4. WHEN the HealthReport includes additional capture consumers beyond Zeek, Suricata, and pcap_ring_writer, THE Pipeline_Visualization SHALL render those consumers as additional parallel branches in the analysis stage with deterministic segment IDs in the form `capture_consumer:<sanitized-name>`, stable sorting by normalized consumer name, and labels derived from the original consumer name.
 5. THE Pipeline_Visualization SHALL render exactly one stable Forwarding Sinks terminal segment after Vector in v1, with the canonical ID `forwarding_sinks`. Configured sink names, enabled counts, disabled counts, and sink labels SHALL render as metrics, badges, or tooltip content on that single segment. Enabled sinks' runtime state SHALL remain `no_data`; explicitly disabled sink configurations SHALL remain configuration detail within the aggregate segment and SHALL NOT add sink nodes.
 6. THE Pipeline_Visualization SHALL maintain a consistent left-to-right or top-to-bottom layout direction across all sensor views.
-7. THE Pipeline_Visualization SHALL derive Mirror Port only from current system telemetry (`capture_interface`, `nic_driver`, `af_packet_available`) and SHALL NOT infer physical link, carrier, or mirror/SPAN source readiness from those fields.
+7. THE Pipeline_Visualization SHALL derive the NIC/capture-interface segment only from current system telemetry (`capture_interface`, `nic_driver`, `af_packet_available`) and SHALL NOT infer physical link, carrier, or mirror/SPAN source readiness from those fields.
 8. THE Pipeline_Visualization SHALL visually represent live data movement by rendering a static connector base path plus an optional animated overlay of discrete graphical elements (for example, flowing dashes or dots) along the SVG paths of the Segment_Connectors.
 9. THE visual flow treatment for the PCAP Ring connector SHALL be telemetry-safe: in Full_PCAP_Mode it MAY show PCAP branch flow only when current PCAP branch telemetry is present and the target segment is healthy; capture mode alone SHALL NOT create heavy flow. In Alert_Driven_Mode it SHALL show an armed or idle static/subtle path unless current telemetry explicitly proves active flushing.
 10. THE Pipeline_Visualization SHALL use a responsive layout: a left-to-right graph on wide screens and a top-to-bottom graph or table-first fallback on narrow screens, without overlapping segment labels, connector labels, badges, or tooltips.
@@ -129,7 +129,7 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
    - No Data: WHEN no sink configuration is available, or when at least one enabled sink exists and no forwarding runtime data is available in the HealthReport.
 5. WHEN the HealthReport is a Stale_HealthReport (timestamp older than the configured freshness threshold), THE Pipeline_Visualization SHALL render all segments derived from that report with a stale-data overlay or badge indicating the age of the data.
 6. THE Config_Manager SHALL NOT derive a failed state from zero throughput or zero packet counters alone, because a live sensor may have no observed traffic during the reporting interval.
-7. THE Config_Manager SHALL derive the Mirror Port segment from limited system telemetry:
+7. THE Config_Manager SHALL derive the NIC/capture-interface segment from limited system telemetry:
    - Healthy: WHEN `system.capture_interface` is present and `system.af_packet_available == true`.
    - Degraded: WHEN `system.capture_interface` is present and `system.af_packet_available == false`.
    - Failed: reserved for future explicit physical link, carrier, or capture-interface failure telemetry.
@@ -143,10 +143,10 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 
 #### Acceptance Criteria
 
-1. THE Pipeline_Visualization SHALL display a Throughput_Annotation on the Segment_Connector between Mirror Port and AF_PACKET showing a deduplicated capture-ingress throughput estimate in human-readable units (bps, Kbps, Mbps, Gbps).
-2. THE Pipeline_Visualization SHALL display a Throughput_Annotation on each Segment_Connector from AF_PACKET to an analysis tool showing the per-consumer throughput from the capture stats.
+1. THE Pipeline_Visualization SHALL display a Throughput_Annotation on the Segment_Connector between the NIC/capture-interface segment and AF_PACKET showing a deduplicated capture-ingress throughput estimate in human-readable units (bps, Kbps, Mbps, Gbps).
+2. THE Pipeline_Visualization SHALL display a Throughput_Annotation on each Segment_Connector from AF_PACKET to an analysis tool showing app-native process throughput for Zeek and Suricata when `process_telemetry_source` is present, otherwise the per-consumer NIC/fallback throughput from capture stats.
 3. WHEN capture consumer stats include `packets_received`, THE Pipeline_Visualization SHALL display the packet count as a secondary annotation. THE Pipeline_Visualization SHALL display packet rate only when a derived rate is available from Health_Registry deltas or a future HealthReport field.
-4. THE Pipeline_Visualization SHALL render Segment_Connectors from Zeek, Suricata, PCAP Ring, and additional capture consumers to Vector with "—" throughput and `unknown` flow state in v1 unless future HealthReport telemetry exposes structured output-rate data for those paths.
+4. THE Pipeline_Visualization SHALL render Segment_Connectors from Zeek, Suricata, PCAP Ring, and additional capture consumers to Vector using Vector ingress record-rate telemetry (`rec/s`) when `HealthReport.vector.input_records_per_sec` includes the source segment ID. Missing Vector ingress telemetry SHALL render those connectors with "—" and `unknown` flow state.
 5. WHEN forwarding telemetry is available in a future HealthReport schema, THE Pipeline_Visualization SHALL display a Throughput_Annotation on the Segment_Connector from Vector to Forwarding Sinks showing the aggregate forwarding rate.
 6. THE Pipeline_Visualization SHALL format all throughput values using a shared or equivalent pure formatter consistent with the dashboard and sensor detail page (bps, Kbps, Mbps, Gbps for throughput; KB, MB, GB, TB for byte values), without making core derivation code depend on web-layer modules.
 7. WHEN throughput data is not available for a Segment_Connector, THE Pipeline_Visualization SHALL display a dash character ("—") as the Throughput_Annotation rather than displaying zero or omitting the annotation.
@@ -154,8 +154,9 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 9. WHEN a Segment_Connector has numeric throughput telemetry, THE Pipeline_Visualization SHALL expose `throughput_bps`, `throughput_label`, `flow_state`, and `speed_tier` as structured connector fields.
 10. WHEN a Segment_Connector has `flow_state = flowing`, THE Pipeline_Visualization SHALL scale the baseline CSS animation speed from `speed_tier`, providing distinct visual speed tiers for gbps (fastest), mbps (medium), and kbps/bps (slowest).
 11. THE Pipeline_Visualization SHALL derive `speed_tier` from numeric `throughput_bps`; it SHALL NOT parse Throughput_Annotation display text to determine behavior.
-12. WHEN interface-backed capture consumers such as Zeek and Suricata do not expose consumer-specific byte counters, THE Sensor_Agent SHALL compute `throughput_bps` from the configured capture interface `rx_bytes` delta instead of reporting zero solely because `bytes_written` is unavailable.
-13. THE Pipeline_Visualization SHALL NOT sum parallel AF_PACKET branch throughput values into the Mirror Port to AF_PACKET connector when those values can represent fan-out copies of the same capture interface stream. Until HealthReport includes explicit per-interface ingress telemetry, THE Pipeline_Visualization SHALL use the largest numeric capture-consumer throughput as the deduplicated ingress estimate and SHALL keep per-consumer values on the branch connectors.
+12. WHEN interface-backed capture consumers such as Zeek and Suricata do not expose app-native process telemetry, THE Sensor_Agent SHALL keep `throughput_bps` populated from the configured capture interface `rx_bytes` delta instead of reporting zero solely because `bytes_written` is unavailable.
+13. WHEN Zeek `stats.log` or Suricata EVE `stats` telemetry is available, THE Sensor_Agent SHALL populate `process_throughput_bps`, `process_packets_per_sec`, `process_drop_percent`, and `process_telemetry_source`; Config Manager SHALL prefer those process fields for Zeek/Suricata branch connector labels and analysis-tool degradation.
+14. THE Pipeline_Visualization SHALL NOT sum parallel AF_PACKET branch throughput values into the NIC-to-AF_PACKET connector when those values can represent fan-out copies of the same capture interface stream. Until HealthReport includes explicit per-interface ingress telemetry, THE Pipeline_Visualization SHALL use the largest numeric capture-consumer throughput as the deduplicated ingress estimate and SHALL keep per-consumer values on the branch connectors.
 
 ### Requirement 6: PCAP Ring Storage Annotation
 
@@ -243,7 +244,7 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 4. THE Pool_Pipeline_Page SHALL include links to each member sensor's pipeline view.
 5. WHEN a Pipeline_Segment on the Sensor_Pipeline_Page is clicked or activated, THE Config_Manager SHALL navigate to or scroll to the corresponding detail section on the sensor detail page (for example, clicking the Zeek segment navigates to the container section filtered to Zeek).
 6. THE Pool_Pipeline_Page SHALL include a link back to the pool detail page.
-7. THE route map and RBAC policy declarations SHALL include `/sensors/:id/pipeline` and `/pools/:id/pipeline` with the `sensors:view` permission.
+7. THE route map and RBAC policy declarations SHALL include `/sensors/:id/pipeline`, `/sensors/:id/pipeline/graph`, and `/pools/:id/pipeline` with the `sensors:view` permission.
 
 ### Requirement 12: Segment Detail Tooltip or Popover
 
@@ -252,8 +253,8 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 #### Acceptance Criteria
 
 1. WHEN an operator hovers over or focuses on a Pipeline_Segment, THE Pipeline_Visualization SHALL display a tooltip or popover showing the detailed metrics for that segment.
-2. THE tooltip for an analysis-tool segment (Zeek, Suricata) SHALL include: container state, uptime, CPU percentage, memory usage, packets received, packets dropped, and drop percentage.
-3. THE tooltip for the AF_PACKET segment SHALL include: aggregate throughput, per-consumer packet counts, per-consumer drop percentages, and BPF restart pending status.
+2. THE tooltip for an analysis-tool segment (Zeek, Suricata) SHALL include: container state, uptime, CPU percentage, memory usage, packets received, packets dropped, effective drop percentage, throughput, and telemetry source (`zeek stats.log`, `suricata eve stats`, or `NIC fallback`).
+3. THE tooltip for the AF_PACKET segment SHALL include: aggregate throughput, per-consumer packet counts, per-consumer drop percentages, BPF restart pending status, and process telemetry source/rates when present.
 4. THE tooltip for the PCAP Ring segment SHALL include: container state, storage path, total bytes, used bytes, available bytes, used percentage, and PCAP ring-writer counters (`packets_written`, `bytes_written`, `wrap_count`, `socket_drops`, `overwrite_risk`) when telemetry is available.
 5. THE tooltip for the Vector segment SHALL include: container state, uptime, CPU percentage, memory usage, and forwarding buffer usage when available.
 6. THE tooltip for the Forwarding Sinks segment SHALL include configured sink count, enabled count, disabled count, sink labels, destination labels when safe, future connection status, latency, and error count when available; or "Forwarding data not available" when runtime telemetry is missing. It SHALL NOT expose raw sink credentials.
@@ -328,7 +329,7 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 14. THE Config_Manager SHALL include tests verifying that a degraded source or target segment produces degraded connector flow.
 15. THE Config_Manager SHALL include tests verifying that Alert_Driven_Mode PCAP without active flush telemetry renders the PCAP connector as idle rather than flowing.
 16. THE Config_Manager SHALL include tests verifying that formatted throughput labels are never parsed to determine connector behavior.
-17. THE Config_Manager SHALL include tests verifying that Mirror Port state is derived only from current system fields and never implies physical mirror/SPAN link health.
+17. THE Config_Manager SHALL include tests verifying that NIC/capture-interface state is derived only from current system fields and never implies physical mirror/SPAN link health.
 18. THE Config_Manager SHALL include full-profile Playwright E2E coverage against the deployed test server for sensor pipeline rendering, pool pipeline rendering, missing-telemetry placeholders, permission behavior, and cleanup of any `e2e-` fixtures.
 19. THE Sensor_Agent SHALL include Go regression tests verifying that interface-backed capture throughput reads `rx_bytes`, computes deltas without underflow on counter resets, and preserves packet/drop counters while providing the byte source used for `throughput_bps`.
-20. THE Config_Manager SHALL include derivation regression tests verifying that Mirror Port to AF_PACKET throughput uses the deduplicated ingress estimate and does not double-count Zeek and Suricata fan-out throughput.
+20. THE Config_Manager SHALL include derivation regression tests verifying that NIC-to-AF_PACKET throughput uses the deduplicated ingress estimate and does not double-count Zeek and Suricata fan-out throughput.

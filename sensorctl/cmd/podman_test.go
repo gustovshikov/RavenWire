@@ -30,7 +30,7 @@ func TestPrepareHostInstallsJournaldLimits(t *testing.T) {
 	if !strings.Contains(commands, "journalctl --rotate") {
 		t.Fatal("prepareHost must rotate the journal before vacuuming existing logs")
 	}
-	if !strings.Contains(commands, "journalctl --vacuum-size=512M --vacuum-time=7d") {
+	if !strings.Contains(commands, "journalctl --vacuum-size=256M --vacuum-time=3d") {
 		t.Fatal("prepareHost must vacuum existing journals to the configured cap")
 	}
 	if !strings.Contains(commands, "deploy/systemd/logrotate.d/ravenwire") {
@@ -67,11 +67,11 @@ func TestJournaldDropInBoundsJournalStorage(t *testing.T) {
 
 	for _, want := range []string{
 		"[Journal]",
-		"SystemMaxUse=512M",
-		"RuntimeMaxUse=128M",
-		"SystemKeepFree=2G",
+		"SystemMaxUse=256M",
+		"RuntimeMaxUse=64M",
+		"SystemKeepFree=4G",
 		"RuntimeKeepFree=512M",
-		"MaxRetentionSec=7day",
+		"MaxRetentionSec=3day",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("journald drop-in missing %q", want)
@@ -96,12 +96,17 @@ func TestLogPruneTimerBoundsRavenWireHostLogs(t *testing.T) {
 
 	scriptText := string(script)
 	for _, want := range []string{
-		"RAVENWIRE_LOG_RETENTION_DAYS:-2",
-		"RAVENWIRE_LOG_MAX_TOTAL_MB:-2048",
-		"RAVENWIRE_LOG_MAX_FILE_MB:-512",
-		"RAVENWIRE_SUPPORT_BUNDLE_RETENTION_DAYS:-2",
+		"RAVENWIRE_LOG_RETENTION_DAYS:-1",
+		"RAVENWIRE_LOG_MAX_TOTAL_MB:-768",
+		"RAVENWIRE_LOG_MAX_FILE_MB:-128",
+		"RAVENWIRE_SUPPORT_BUNDLE_RETENTION_DAYS:-1",
 		"RAVENWIRE_PCAP_RETENTION_DAYS:-7",
-		"RAVENWIRE_PCAP_MAX_TOTAL_MB:-4096",
+		"RAVENWIRE_PCAP_MAX_TOTAL_MB:-8192",
+		"RAVENWIRE_PCAP_RESERVED_FREE_MB:-4096",
+		`-name "*.json.*"`,
+		`-name "*.log.*"`,
+		"enforce_pcap_reserve",
+		"truncated active log to preserve pcap free space",
 		"truncated active oversized log",
 		"deleted aged",
 	} {
@@ -139,7 +144,8 @@ func TestLogrotateRuleBoundsRavenWireHostLogs(t *testing.T) {
 		"/var/sensor/logs/zeek/*.log",
 		"/var/sensor/audit.log",
 		"rotate 2",
-		"maxsize 512M",
+		"maxsize 128M",
+		"su root root",
 		"copytruncate",
 	} {
 		if !strings.Contains(text, want) {
@@ -168,6 +174,11 @@ func TestDefaultVectorConfigDiscardsNormalizedOutput(t *testing.T) {
 		"drop_on_error = true",
 		"reroute_dropped = false",
 		"parsed = parse_json",
+		"[sources.vector_internal_metrics]",
+		`type = "internal_metrics"`,
+		"[sinks.vector_metrics]",
+		`type = "prometheus_exporter"`,
+		`address = "127.0.0.1:9598"`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("default Vector config missing %q", want)
@@ -498,7 +509,7 @@ func TestCleanupCommandsRunStoragePruning(t *testing.T) {
 	commands := strings.Join(cleanupCommands(cleanupOptions{}), "\n")
 
 	for _, want := range []string{
-		"journalctl --vacuum-size=512M --vacuum-time=7d",
+		"journalctl --vacuum-size=256M --vacuum-time=3d",
 		"ravenwire-log-prune.service",
 		"logrotate -f /etc/logrotate.d/ravenwire",
 		"sensor-support-*.tar.gz",
@@ -509,13 +520,42 @@ func TestCleanupCommandsRunStoragePruning(t *testing.T) {
 	}
 
 	withPodman := strings.Join(cleanupCommands(cleanupOptions{podman: true}), "\n")
-	if !strings.Contains(withPodman, "podman system prune -f") {
-		t.Fatal("cleanup --podman must prune unused Podman artifacts")
+	for _, want := range []string{
+		"podman system prune -af || true",
+		"sudo podman system prune -af",
+	} {
+		if !strings.Contains(withPodman, want) {
+			t.Fatalf("cleanup --podman must prune unused Podman artifacts, missing %q", want)
+		}
 	}
 
 	withDocker := strings.Join(cleanupCommands(cleanupOptions{docker: true}), "\n")
-	if !strings.Contains(withDocker, "docker system prune -f") {
+	if !strings.Contains(withDocker, "docker system prune -af") {
 		t.Fatal("cleanup --docker must prune unused Docker artifacts")
+	}
+}
+
+func TestUninstallCommandsRemoveSystemAndUserScopeState(t *testing.T) {
+	commands := strings.Join(uninstallCommands(true, true), "\n")
+
+	for _, want := range []string{
+		"systemctl --user stop 'management-pod.target' || true",
+		"rm -f \"$HOME/.config/containers/systemd/config-manager.container\"",
+		"rm -f \"$HOME/.config/containers/systemd/management-pod.target\"",
+		"rm -f \"$HOME/.config/systemd/user/management-pod.target\"",
+		"systemctl --user daemon-reload || true",
+		"sudo rm -f '/etc/containers/systemd/config-manager.container'",
+		"sudo rm -f '/etc/containers/systemd/management-pod.target'",
+		"sudo rm -f '/etc/systemd/system/management-pod.target'",
+		"sudo systemctl stop ravenwire-log-prune.timer ravenwire-log-prune.service || true",
+		"sudo systemctl disable ravenwire-log-prune.timer || true",
+		"sudo rm -rf /data/config_manager /data/ca /data/metrics /etc/sensor /etc/ravenwire /var/sensor /var/run/sensor /sensor/pcap",
+		"podman rmi -f localhost/ravenwire/config-manager:test localhost/ravenwire/sensor-agent:test localhost/ravenwire/pcap-ring-writer:test || true",
+		"sudo podman rmi -f localhost/ravenwire/config-manager:test localhost/ravenwire/sensor-agent:test localhost/ravenwire/pcap-ring-writer:test",
+	} {
+		if !strings.Contains(commands, want) {
+			t.Fatalf("uninstall commands missing %q", want)
+		}
 	}
 }
 

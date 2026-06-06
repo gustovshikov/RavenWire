@@ -160,10 +160,10 @@ defmodule ConfigManager.Baselines.Worker do
   end
 
   defp evaluate_sensor(sensor_pod_id, state) do
-    anomalies =
+    {anomalies, evaluated?, anomaly?} =
       sensor_pod_id
       |> latest_snapshots_for_sensor()
-      |> Enum.reduce(%{}, fn snapshot, acc ->
+      |> Enum.reduce({%{}, false, false}, fn snapshot, {acc, evaluated?, anomaly?} ->
         key = {snapshot.metric_type, snapshot.series_key}
 
         case Map.get(
@@ -171,20 +171,26 @@ defmodule ConfigManager.Baselines.Worker do
                {:sensor, sensor_pod_id, snapshot.metric_type, snapshot.series_key}
              ) do
           nil ->
-            acc
+            {acc, evaluated?, anomaly?}
 
           baseline ->
             case Baselines.evaluate_anomaly(snapshot.value, baseline) do
               {:anomaly, score, details} ->
                 maybe_fire_anomaly_alert(snapshot, baseline, score, details, state.rules)
-                Map.put(acc, key, %{score: score, value: snapshot.value, status: :anomaly})
+
+                {Map.put(acc, key, %{score: score, value: snapshot.value, status: :anomaly}),
+                 true, true}
 
               :normal ->
-                maybe_resolve_alert("baseline_anomaly", sensor_label(snapshot))
-                Map.put(acc, key, %{score: 0.0, value: snapshot.value, status: :normal})
+                {Map.put(acc, key, %{score: 0.0, value: snapshot.value, status: :normal}), true,
+                 anomaly?}
             end
         end
       end)
+
+    if evaluated? and not anomaly? do
+      maybe_resolve_alert("baseline_anomaly", sensor_label(sensor_pod_id))
+    end
 
     Phoenix.PubSub.broadcast(
       ConfigManager.PubSub,
@@ -330,9 +336,13 @@ defmodule ConfigManager.Baselines.Worker do
   defp broadcast_pool_baselines(_baseline), do: :ok
 
   defp sensor_label(%MetricSnapshot{} = snapshot) do
-    case Repo.get(SensorPod, snapshot.sensor_pod_id) do
+    sensor_label(snapshot.sensor_pod_id)
+  end
+
+  defp sensor_label(sensor_pod_id) do
+    case Repo.get(SensorPod, sensor_pod_id) do
       %SensorPod{name: name} -> name
-      nil -> snapshot.sensor_pod_id
+      nil -> sensor_pod_id
     end
   end
 end
