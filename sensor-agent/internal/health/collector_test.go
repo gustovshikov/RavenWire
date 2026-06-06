@@ -166,6 +166,46 @@ func TestComputeThroughput_ZeroElapsed(t *testing.T) {
 	}
 }
 
+func TestComputeThroughput_CounterReset(t *testing.T) {
+	now := time.Now()
+	c := &Collector{
+		prevState: map[string]prevConsumerState{
+			"test": {
+				BytesWritten: 5000,
+				Timestamp:    now.Add(-10 * time.Second),
+			},
+		},
+	}
+
+	bps := c.computeThroughput("test", 1000, now)
+	if bps != 0 {
+		t.Errorf("expected 0 bps when byte counter resets, got %f", bps)
+	}
+}
+
+func TestMergeInterfacePacketStatsReturnsBytesForThroughput(t *testing.T) {
+	cs := &ConsumerStats{}
+	bytesReceived := mergeInterfacePacketStats(cs, capture.ConsumerStats{
+		PacketsReceived: 42,
+		PacketsDropped:  2,
+		BytesReceived:   123456,
+		DropPercent:     4.5,
+	})
+
+	if bytesReceived != 123456 {
+		t.Fatalf("bytesReceived = %d, want 123456", bytesReceived)
+	}
+	if cs.PacketsReceived != 42 {
+		t.Fatalf("PacketsReceived = %d, want 42", cs.PacketsReceived)
+	}
+	if cs.PacketsDropped != 2 {
+		t.Fatalf("PacketsDropped = %d, want 2", cs.PacketsDropped)
+	}
+	if cs.DropPercent != 4.5 {
+		t.Fatalf("DropPercent = %f, want 4.5", cs.DropPercent)
+	}
+}
+
 // --- Overwrite Risk Tests ---
 
 func TestOverwriteRisk_WrapDeltaGreaterThanOne(t *testing.T) {

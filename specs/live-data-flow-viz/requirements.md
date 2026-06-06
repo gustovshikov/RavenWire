@@ -6,7 +6,7 @@ The RavenWire Config Manager dashboard and sensor detail page currently display 
 
 This feature adds a live data-flow visualization that renders the sensor pipeline as a visual flow map with throughput annotations and health-state indicators on each segment. The visualization is available per-sensor at a dedicated route linked from the sensor detail page and per-pool at a dedicated route linked from the pool detail page. Each pipeline segment displays its current state using color-coded and icon/text-annotated indicators so that operators can instantly see where data is flowing, where it is degraded, where it has stopped, and where telemetry is not available. The visualization updates in real time via PubSub as new HealthReport data arrives.
 
-The current `HealthReport` protobuf includes container health, capture stats (per-consumer packets, drops, throughput), storage stats, and clock stats. It does **not** include forwarding data (Vector sink status, buffer usage, destination health) or host-level interface readiness. The visualization handles missing telemetry gracefully, rendering "data not available" placeholders for segments without upstream telemetry rather than inferring health from absence.
+The current `HealthReport` protobuf includes container health, capture stats (per-consumer packets, drops, throughput, and PCAP ring-writer counters), storage stats, clock stats, and limited system stats (`capture_interface`, `nic_driver`, `af_packet_available`). It does **not** include forwarding data (Vector sink status, buffer usage, destination health), physical link/carrier or SPAN source status, or a manager-visible active PCAP flush/carve signal. The visualization handles missing telemetry gracefully, rendering "data not available" placeholders for segments without upstream telemetry rather than inferring health from absence.
 
 ## Current Implementation Context
 
@@ -15,6 +15,8 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 - `ConfigManager.Health.Registry.pod_topic/1` is the source of truth for pod-scoped PubSub topics. The current sensor detail page derives the registry key from `SensorPod.name` and subscribes through `Registry.pod_topic(health_key)`.
 - Global health updates continue to use the existing `"sensor_pods"` topic.
 - Forwarding sink configuration exists, but forwarding runtime telemetry is still unavailable in `HealthReport`; forwarding runtime state must remain `no_data` until the protobuf and sensor agent expose real sink telemetry.
+- Current HealthReport data exposes PCAP ring-writer counters in capture consumer stats, but it does not expose a manager-visible "active PCAP flush" signal for Alert_Driven_Mode; the PCAP branch must render as armed/idle unless future telemetry explicitly reports active flushing.
+- Current HealthReport system stats expose capture-interface name, NIC driver, and AF_PACKET availability. They do not prove physical link, carrier, or mirror/SPAN source readiness.
 - Historical Metrics and Health Baselines are implemented, but this feature should derive live visualization state from the latest HealthReport/Registry data, sensor identity, pool membership, and forwarding configuration only where configuration is useful for labels/topology.
 - This feature is browser/UI focused and SHALL NOT add new `/api/v1` endpoints.
 
@@ -23,17 +25,19 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 - **Config_Manager**: The Phoenix/LiveView web application that manages the RavenWire sensor fleet.
 - **Sensor_Pod**: A deployed sensor instance with an identity record in the `sensor_pods` database table and real-time health state in the Health_Registry.
 - **Health_Registry**: The in-memory ETS-backed GenServer (`ConfigManager.Health.Registry`) that stores the latest `HealthReport` for each connected Sensor_Pod.
-- **HealthReport**: A protobuf message streamed from the Sensor_Agent to the Config_Manager via gRPC, containing container health, capture stats, storage stats, and clock stats.
+- **HealthReport**: A protobuf message streamed from the Sensor_Agent to the Config_Manager via gRPC, containing container health, capture stats, storage stats, clock stats, and limited system stats.
 - **Pipeline_Visualization**: The visual flow map component that renders the sensor data pipeline as a directed graph of connected segments with throughput annotations and health indicators.
-- **Pipeline_Segment**: A single node in the Pipeline_Visualization representing one stage of the data pipeline (for example, AF_PACKET, Zeek, Suricata, PCAP Ring, Vector, or a forwarding sink).
+- **Pipeline_Segment**: A single node in the Pipeline_Visualization representing one stage of the data pipeline (for example, AF_PACKET, Zeek, Suricata, PCAP Ring, Vector, or the aggregate Forwarding Sinks node).
 - **Segment_State**: The health state of a Pipeline_Segment, one of: healthy, degraded, failed, disabled, pending_reload, or no_data.
 - **Segment_Connector**: A directed edge between two Pipeline_Segments in the Pipeline_Visualization, annotated with throughput or record rate when available.
+- **Connector_Flow_State**: The visual flow state of a Segment_Connector, one of: flowing, degraded, idle, stopped, or unknown. Connector_Flow_State is derived from source segment state, target segment state, staleness, capture mode, and structured throughput telemetry.
+- **Speed_Tier**: A coarse animation speed tier derived from numeric throughput telemetry, one of: gbps, mbps, kbps, zero, or unknown.
 - **Pipeline_Topology**: The ordered graph of Pipeline_Segments and Segment_Connectors that represents the data flow through a sensor. The canonical topology is: Mirror Port → AF_PACKET → [Zeek, Suricata, PCAP Ring] → Vector → [Forwarding Sinks].
 - **Aggregate_Pipeline**: A pool-level Pipeline_Visualization that summarizes the pipeline health of all member sensors, showing per-segment counts of healthy, degraded, failed, disabled, pending_reload, and no_data members.
 - **Sensor_Pipeline_Page**: The LiveView page at `/sensors/:id/pipeline` that displays the per-sensor Pipeline_Visualization.
 - **Pool_Pipeline_Page**: The LiveView page at `/pools/:id/pipeline` that displays the Aggregate_Pipeline for a sensor pool.
-- **Throughput_Annotation**: A human-readable throughput or record rate label displayed on a Segment_Connector (for example, "8.2 Gbps", "12k eps", "41 alerts/hr").
-- **Missing_Telemetry**: A condition where the HealthReport does not contain data for a Pipeline_Segment, requiring the visualization to assign the `no_data` Segment_State and display an explicit "data not available" indicator rather than inferring health.
+- **Throughput_Annotation**: A human-readable throughput or record rate label displayed on a Segment_Connector (for example, "8.2 Gbps", "12k eps", "41 alerts/hr"). It is display-only; behavior such as animation speed SHALL use structured numeric throughput fields, not parsed display text.
+- **Missing_Telemetry**: A condition where the HealthReport does not contain data for a Pipeline_Segment or segment annotation, requiring the visualization to display an explicit "data not available" indicator rather than inferring health. Missing segment health telemetry assigns `no_data`; missing annotation-only telemetry, such as PCAP storage, assigns a `no_data` annotation or badge without overriding container-derived segment health.
 - **Stale_HealthReport**: A HealthReport whose timestamp is older than the configured freshness threshold (default 60 seconds).
 - **Visual_State_Palette**: The set of visual indicators mapping Segment_State to color, icon, and text label: green/checkmark for healthy, yellow/warning-triangle for degraded, red/x-circle for failed, gray/circle-slash for disabled, blue/refresh for pending_reload, and gray-dashed/question-circle for no_data.
 - **RBAC_Gate**: The runtime permission check from the auth-rbac-audit spec that compares the current user's role permissions against the permission required by a route or action.
@@ -62,10 +66,13 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 1. THE Pipeline_Visualization SHALL render the following Pipeline_Segments in the canonical Pipeline_Topology order: Mirror Port (network interface), AF_PACKET ring buffer, Zeek, Suricata, PCAP Ring (pcap_ring_writer), Vector, and Forwarding Sinks.
 2. THE Pipeline_Visualization SHALL render Segment_Connectors as directed edges showing the data flow direction from source segment to destination segment.
 3. THE Pipeline_Visualization SHALL render the analysis stage (Zeek, Suricata, PCAP Ring) as parallel branches from the AF_PACKET segment, converging at the Vector segment.
-4. WHEN the HealthReport includes additional capture consumers beyond Zeek, Suricata, and pcap_ring_writer, THE Pipeline_Visualization SHALL render those consumers as additional parallel branches in the analysis stage.
-5. THE Pipeline_Visualization SHALL render Forwarding Sinks as terminal segments after Vector. In v1, configured sinks MAY render as labeled terminal segments, but each sink's runtime state SHALL remain `no_data`; when no sink configuration is available, the visualization SHALL render a single "Forwarding Sinks" `no_data` segment.
+4. WHEN the HealthReport includes additional capture consumers beyond Zeek, Suricata, and pcap_ring_writer, THE Pipeline_Visualization SHALL render those consumers as additional parallel branches in the analysis stage with deterministic segment IDs in the form `capture_consumer:<sanitized-name>`, stable sorting by normalized consumer name, and labels derived from the original consumer name.
+5. THE Pipeline_Visualization SHALL render exactly one stable Forwarding Sinks terminal segment after Vector in v1, with the canonical ID `forwarding_sinks`. Configured sink names, enabled counts, disabled counts, and sink labels SHALL render as metrics, badges, or tooltip content on that single segment. Enabled sinks' runtime state SHALL remain `no_data`; explicitly disabled sink configurations SHALL remain configuration detail within the aggregate segment and SHALL NOT add sink nodes.
 6. THE Pipeline_Visualization SHALL maintain a consistent left-to-right or top-to-bottom layout direction across all sensor views.
-7. THE Pipeline_Visualization SHALL not render host interface readiness as healthy or failed unless host interface telemetry is present; Mirror Port SHALL use no_data when only the current HealthReport schema is available.
+7. THE Pipeline_Visualization SHALL derive Mirror Port only from current system telemetry (`capture_interface`, `nic_driver`, `af_packet_available`) and SHALL NOT infer physical link, carrier, or mirror/SPAN source readiness from those fields.
+8. THE Pipeline_Visualization SHALL visually represent live data movement by rendering a static connector base path plus an optional animated overlay of discrete graphical elements (for example, flowing dashes or dots) along the SVG paths of the Segment_Connectors.
+9. THE visual flow treatment for the PCAP Ring connector SHALL be telemetry-safe: in Full_PCAP_Mode it MAY show PCAP branch flow only when current PCAP branch telemetry is present and the target segment is healthy; capture mode alone SHALL NOT create heavy flow. In Alert_Driven_Mode it SHALL show an armed or idle static/subtle path unless current telemetry explicitly proves active flushing.
+10. THE Pipeline_Visualization SHALL use a responsive layout: a left-to-right graph on wide screens and a top-to-bottom graph or table-first fallback on narrow screens, without overlapping segment labels, connector labels, badges, or tooltips.
 
 ### Requirement 3: Segment Health State Indicators
 
@@ -83,6 +90,13 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
    - No Data: gray dashed border with a question-circle icon and "No Data" text label.
 3. THE Pipeline_Visualization SHALL NOT rely on color alone to communicate Segment_State; each state SHALL be distinguishable by icon shape and text label in addition to color.
 4. WHEN a Pipeline_Segment has Missing_Telemetry, THE Pipeline_Visualization SHALL assign the `no_data` Segment_State, render that segment with a distinct "No Data" indicator using a dashed border or outline style, and SHALL NOT infer the segment as healthy or failed.
+5. THE Pipeline_Visualization SHALL assign each Segment_Connector exactly one Connector_Flow_State:
+   - Flowing: source and target are capable of passing data, telemetry is current enough to trust, and throughput is present or expected.
+   - Degraded: source or target is degraded, stale, or drop-pressure affected.
+   - Idle: the path is valid but throughput is zero, or Alert_Driven_Mode PCAP is armed without active flush telemetry.
+   - Stopped: source or target is failed or disabled.
+   - Unknown: required telemetry is missing or either side is `no_data`.
+6. THE Pipeline_Visualization SHALL derive Connector_Flow_State from source segment state, target segment state, staleness, capture mode, and structured throughput data; it SHALL NOT animate `no_data`, failed, disabled, or stale-unknown paths as healthy flow.
 
 ### Requirement 4: Segment State Derivation Rules
 
@@ -98,7 +112,7 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
    - No Data: WHEN no capture data is present in the HealthReport.
 2. THE Config_Manager SHALL derive each analysis-tool segment state (Zeek, Suricata, PCAP Ring) from the corresponding container health in the HealthReport:
    - Healthy: WHEN the container state is "running" and no degradation conditions apply.
-   - Degraded: WHEN the container state is "running" but CPU exceeds 90 percent, when CPU data is available, or the corresponding capture consumer has `drop_percent > 5.0`.
+   - Degraded: WHEN the container state is "running" and CPU exceeds 90 percent (when CPU data is available), the corresponding capture consumer has `drop_percent > 5.0`, the container state is "restarting", or the container state is an unknown non-running value.
    - Failed: WHEN the container state is "error" or "stopped" unexpectedly.
    - Disabled: WHEN the component is configured as intentionally disabled.
    - No Data: WHEN the container is expected but not present in the HealthReport and there is no configuration data proving that it is intentionally disabled.
@@ -107,13 +121,21 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
    - Degraded: WHEN the Vector container state is "running" but forwarding buffer usage exceeds 85 percent (when forwarding data is available).
    - Failed: WHEN the Vector container state is "error" or "stopped".
    - No Data: WHEN the Vector container is not present in the HealthReport.
-4. THE Config_Manager SHALL derive Forwarding Sink segment states from forwarding telemetry when available:
-   - Healthy: WHEN the sink reports a connected or healthy status.
-   - Degraded: WHEN the sink reports elevated latency or partial delivery failures.
-   - Failed: WHEN the sink reports a disconnected or unreachable status.
-   - No Data: WHEN no forwarding data is present in the HealthReport.
+4. THE Config_Manager SHALL derive the aggregate Forwarding Sinks segment state from forwarding telemetry when available:
+   - Healthy: reserved for future telemetry when all enabled sinks report connected or healthy status.
+   - Degraded: reserved for future telemetry when any enabled sink reports elevated latency or partial delivery failures.
+   - Failed: reserved for future telemetry when any enabled sink reports disconnected or unreachable status.
+   - Disabled: WHEN all configured sinks are explicitly disabled; this is configuration state, not runtime delivery health.
+   - No Data: WHEN no sink configuration is available, or when at least one enabled sink exists and no forwarding runtime data is available in the HealthReport.
 5. WHEN the HealthReport is a Stale_HealthReport (timestamp older than the configured freshness threshold), THE Pipeline_Visualization SHALL render all segments derived from that report with a stale-data overlay or badge indicating the age of the data.
 6. THE Config_Manager SHALL NOT derive a failed state from zero throughput or zero packet counters alone, because a live sensor may have no observed traffic during the reporting interval.
+7. THE Config_Manager SHALL derive the Mirror Port segment from limited system telemetry:
+   - Healthy: WHEN `system.capture_interface` is present and `system.af_packet_available == true`.
+   - Degraded: WHEN `system.capture_interface` is present and `system.af_packet_available == false`.
+   - Failed: reserved for future explicit physical link, carrier, or capture-interface failure telemetry.
+   - No Data: WHEN system telemetry is absent or `system.capture_interface` is blank.
+8. THE Config_Manager SHALL normalize expected container names using the aliases already accepted by the sensor detail page, including `systemd-*` and hyphenated aliases for Zeek, Suricata, Vector, and pcap_ring_writer.
+9. THE Config_Manager SHALL treat nil, zero, negative, or invalid HealthReport timestamps as stale with unknown age; future timestamps SHALL be clamped to an age of 0 seconds for display and derivation.
 
 ### Requirement 5: Throughput and Rate Annotations
 
@@ -121,13 +143,19 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 
 #### Acceptance Criteria
 
-1. THE Pipeline_Visualization SHALL display a Throughput_Annotation on the Segment_Connector between Mirror Port and AF_PACKET showing the aggregate capture throughput in human-readable units (bps, Kbps, Mbps, Gbps).
+1. THE Pipeline_Visualization SHALL display a Throughput_Annotation on the Segment_Connector between Mirror Port and AF_PACKET showing a deduplicated capture-ingress throughput estimate in human-readable units (bps, Kbps, Mbps, Gbps).
 2. THE Pipeline_Visualization SHALL display a Throughput_Annotation on each Segment_Connector from AF_PACKET to an analysis tool showing the per-consumer throughput from the capture stats.
 3. WHEN capture consumer stats include `packets_received`, THE Pipeline_Visualization SHALL display the packet count as a secondary annotation. THE Pipeline_Visualization SHALL display packet rate only when a derived rate is available from Health_Registry deltas or a future HealthReport field.
-4. WHEN forwarding telemetry is available, THE Pipeline_Visualization SHALL display a Throughput_Annotation on the Segment_Connector from Vector to each Forwarding Sink showing the forwarding rate.
-5. THE Pipeline_Visualization SHALL format all throughput values using a shared `Formatters` helper consistent with the dashboard and sensor detail page (bps, Kbps, Mbps, Gbps for throughput; KB, MB, GB, TB for byte values).
-6. WHEN throughput data is not available for a Segment_Connector, THE Pipeline_Visualization SHALL display a dash character ("—") as the Throughput_Annotation rather than displaying zero or omitting the annotation.
-7. WHEN throughput is available and equal to zero, THE Pipeline_Visualization SHALL display "0 bps" and SHALL NOT treat the zero value as Missing_Telemetry.
+4. THE Pipeline_Visualization SHALL render Segment_Connectors from Zeek, Suricata, PCAP Ring, and additional capture consumers to Vector with "—" throughput and `unknown` flow state in v1 unless future HealthReport telemetry exposes structured output-rate data for those paths.
+5. WHEN forwarding telemetry is available in a future HealthReport schema, THE Pipeline_Visualization SHALL display a Throughput_Annotation on the Segment_Connector from Vector to Forwarding Sinks showing the aggregate forwarding rate.
+6. THE Pipeline_Visualization SHALL format all throughput values using a shared or equivalent pure formatter consistent with the dashboard and sensor detail page (bps, Kbps, Mbps, Gbps for throughput; KB, MB, GB, TB for byte values), without making core derivation code depend on web-layer modules.
+7. WHEN throughput data is not available for a Segment_Connector, THE Pipeline_Visualization SHALL display a dash character ("—") as the Throughput_Annotation rather than displaying zero or omitting the annotation.
+8. WHEN throughput is available and equal to zero, THE Pipeline_Visualization SHALL display "0 bps" and SHALL NOT treat the zero value as Missing_Telemetry.
+9. WHEN a Segment_Connector has numeric throughput telemetry, THE Pipeline_Visualization SHALL expose `throughput_bps`, `throughput_label`, `flow_state`, and `speed_tier` as structured connector fields.
+10. WHEN a Segment_Connector has `flow_state = flowing`, THE Pipeline_Visualization SHALL scale the baseline CSS animation speed from `speed_tier`, providing distinct visual speed tiers for gbps (fastest), mbps (medium), and kbps/bps (slowest).
+11. THE Pipeline_Visualization SHALL derive `speed_tier` from numeric `throughput_bps`; it SHALL NOT parse Throughput_Annotation display text to determine behavior.
+12. WHEN interface-backed capture consumers such as Zeek and Suricata do not expose consumer-specific byte counters, THE Sensor_Agent SHALL compute `throughput_bps` from the configured capture interface `rx_bytes` delta instead of reporting zero solely because `bytes_written` is unavailable.
+13. THE Pipeline_Visualization SHALL NOT sum parallel AF_PACKET branch throughput values into the Mirror Port to AF_PACKET connector when those values can represent fan-out copies of the same capture interface stream. Until HealthReport includes explicit per-interface ingress telemetry, THE Pipeline_Visualization SHALL use the largest numeric capture-consumer throughput as the deduplicated ingress estimate and SHALL keep per-consumer values on the branch connectors.
 
 ### Requirement 6: PCAP Ring Storage Annotation
 
@@ -138,7 +166,8 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 1. THE Pipeline_Visualization SHALL display the PCAP Ring segment with storage usage information: used percentage and ring size from the HealthReport storage stats.
 2. WHEN the storage used percentage exceeds 85 percent and is less than or equal to 95 percent, THE PCAP Ring segment SHALL include a warning indicator in addition to its container-derived Segment_State.
 3. WHEN the storage used percentage exceeds 95 percent, THE PCAP Ring segment SHALL include a critical indicator in addition to its container-derived Segment_State.
-4. WHEN storage stats are not available in the HealthReport, THE PCAP Ring segment SHALL display "storage data not available" as the annotation.
+4. WHEN storage stats are not available in the HealthReport, THE PCAP Ring segment SHALL display "storage data not available" as a `no_data` storage annotation or badge without overriding the PCAP Ring Segment_State derived from container and capture telemetry.
+5. WHEN `pcap_ring_writer` capture consumer stats include PCAP-specific counters such as `packets_written`, `bytes_written`, `wrap_count`, `socket_drops`, or `overwrite_risk`, THE PCAP Ring segment SHALL expose those values in metrics and tooltip content without treating them as active flush/carve telemetry.
 
 ### Requirement 7: Per-Pool Aggregate Pipeline Visualization
 
@@ -173,6 +202,7 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 8. THE Sensor_Pipeline_Page SHALL ignore PubSub updates for Sensor_Pods other than the displayed one.
 9. THE Pool_Pipeline_Page SHALL debounce or coalesce rapid health updates so that high-frequency health streams do not cause unbounded LiveView re-renders.
 10. WHEN the Pool_Pipeline_Page receives a PubSub update for a sensor that is not currently a member of the displayed pool, THE Pool_Pipeline_Page SHALL ignore that update.
+11. WHEN forwarding configuration changes for the displayed sensor's pool or displayed pool, THE relevant Pipeline_Page SHALL re-read forwarding configuration and update configured sink labels without inferring runtime sink health.
 
 ### Requirement 9: Graceful Handling of Missing Telemetry
 
@@ -180,10 +210,10 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 
 #### Acceptance Criteria
 
-1. WHEN the HealthReport does not include forwarding data (Vector sink status, buffer usage, destination health), THE Pipeline_Visualization SHALL render the Vector-to-Sink connectors and Forwarding Sink segments with a "Forwarding data not available" label and the `no_data` visual indicator.
+1. WHEN the HealthReport does not include forwarding data (Vector sink status, buffer usage, destination health), THE Pipeline_Visualization SHALL render the Vector-to-Forwarding Sinks connector and the single Forwarding Sinks segment with a "Forwarding data not available" label and the `no_data` visual indicator when any enabled sink exists. Disabled sink configurations SHALL render only as configuration details, counts, badges, or tooltip rows unless all configured sinks are disabled.
 2. WHEN the HealthReport does not include capture stats, THE Pipeline_Visualization SHALL render the AF_PACKET segment and analysis-tool connectors with a "Capture data not available" label and the `no_data` visual indicator.
-3. WHEN the HealthReport does not include storage stats, THE PCAP Ring segment SHALL display "Storage data not available" and the `no_data` visual indicator.
-4. WHEN the Health_Registry has no HealthReport for the displayed Sensor_Pod, THE Sensor_Pipeline_Page SHALL render the Pipeline_Topology with all segments in the `no_data` state and display a prominent banner indicating that the sensor is not currently reporting health data.
+3. WHEN the HealthReport does not include storage stats, THE PCAP Ring segment SHALL display "Storage data not available" as a storage annotation or badge, and SHALL keep its Segment_State derived from container and capture telemetry.
+4. WHEN the Health_Registry has no HealthReport for the displayed Sensor_Pod, THE Sensor_Pipeline_Page SHALL render the Pipeline_Topology with all health-derived segments in the `no_data` state and display a prominent banner indicating that the sensor is not currently reporting health data. The aggregate Forwarding Sinks segment MAY still display safe forwarding configuration labels, counts, and disabled configuration detail without implying runtime health.
 5. THE Pipeline_Visualization SHALL clearly distinguish the `no_data` visual indicator from the disabled and failed states so that operators understand the difference between "no data received" and "component is down."
 6. THE Pipeline_Visualization SHALL preserve explicit zero values, such as `throughput_bps = 0`, as real telemetry rather than treating them as Missing_Telemetry.
 
@@ -197,8 +227,8 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 2. THE Pipeline_Visualization SHALL provide an accessible text description for each Segment_Connector that includes the source segment, destination segment, and Throughput_Annotation value.
 3. THE Pipeline_Visualization SHALL NOT rely on color alone to communicate any state; every Segment_State SHALL be distinguishable by icon shape and text label.
 4. THE Pipeline_Visualization SHALL be navigable via keyboard, allowing focus to move between Pipeline_Segments and Segment_Connectors.
-5. THE Pipeline_Visualization SHALL include a screen-reader-accessible summary table as an alternative representation of the pipeline state, listing each segment with its state and metrics in tabular form.
-6. WHEN the Pipeline_Visualization uses SVG or canvas rendering, THE Config_Manager SHALL provide equivalent semantic HTML fallback content for screen readers.
+5. THE Pipeline_Visualization SHALL include a screen-reader-accessible summary table as an alternative representation of the pipeline state, listing each segment with its state and metrics in tabular form. On narrow screens, the same summary data MAY be visibly promoted as the table-first fallback.
+6. BECAUSE the Pipeline_Visualization uses SVG connectors for visual layout, THE Config_Manager SHALL provide equivalent semantic HTML fallback content for screen readers.
 7. THE Pipeline_Visualization SHALL preserve usable contrast in high-contrast mode and SHALL meet WCAG AA contrast targets for text and meaningful icon outlines.
 
 ### Requirement 11: Navigation Integration
@@ -224,9 +254,9 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 1. WHEN an operator hovers over or focuses on a Pipeline_Segment, THE Pipeline_Visualization SHALL display a tooltip or popover showing the detailed metrics for that segment.
 2. THE tooltip for an analysis-tool segment (Zeek, Suricata) SHALL include: container state, uptime, CPU percentage, memory usage, packets received, packets dropped, and drop percentage.
 3. THE tooltip for the AF_PACKET segment SHALL include: aggregate throughput, per-consumer packet counts, per-consumer drop percentages, and BPF restart pending status.
-4. THE tooltip for the PCAP Ring segment SHALL include: container state, storage path, total bytes, used bytes, available bytes, and used percentage when storage telemetry is available.
+4. THE tooltip for the PCAP Ring segment SHALL include: container state, storage path, total bytes, used bytes, available bytes, used percentage, and PCAP ring-writer counters (`packets_written`, `bytes_written`, `wrap_count`, `socket_drops`, `overwrite_risk`) when telemetry is available.
 5. THE tooltip for the Vector segment SHALL include: container state, uptime, CPU percentage, memory usage, and forwarding buffer usage when available.
-6. THE tooltip for a Forwarding Sink segment SHALL include: sink destination label, connection status, latency, and error count when available; or "Forwarding data not available" when telemetry is missing.
+6. THE tooltip for the Forwarding Sinks segment SHALL include configured sink count, enabled count, disabled count, sink labels, destination labels when safe, future connection status, latency, and error count when available; or "Forwarding data not available" when runtime telemetry is missing. It SHALL NOT expose raw sink credentials.
 7. THE tooltip SHALL be dismissible via Escape key or by moving focus away from the segment.
 8. THE tooltip content SHALL be accessible to screen readers.
 9. THE tooltip SHALL avoid exposing raw internal errors, secrets, bearer tokens, certificates, or full sink credentials.
@@ -239,10 +269,12 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 
 1. WHEN the most recent HealthReport timestamp for the displayed Sensor_Pod is older than the configured freshness threshold (default 60 seconds), THE Sensor_Pipeline_Page SHALL display a stale-data warning banner indicating the time since the last report.
 2. WHEN the HealthReport is stale, THE Pipeline_Visualization SHALL render all health-derived segments with a visual stale-data overlay (for example, reduced opacity or a clock badge) in addition to their derived Segment_State.
-3. WHEN the Health_Registry has no HealthReport for the displayed Sensor_Pod, THE Sensor_Pipeline_Page SHALL render the Pipeline_Topology skeleton with all segments in the `no_data` state and a banner indicating the sensor is not reporting.
-4. WHEN the Sensor_Pod status in the database is "revoked", THE Sensor_Pipeline_Page SHALL display a revoked status banner and render the pipeline in a disabled state.
+3. WHEN the Health_Registry has no HealthReport for the displayed Sensor_Pod, THE Sensor_Pipeline_Page SHALL render the Pipeline_Topology skeleton with all health-derived segments in the `no_data` state and a banner indicating the sensor is not reporting. The aggregate Forwarding Sinks segment MAY still display forwarding configuration labels, counts, and disabled configuration detail without implying runtime health.
+4. WHEN the Sensor_Pod status in the database is "revoked", THE Sensor_Pipeline_Page SHALL display a revoked status banner and render available or stale telemetry when present; revocation SHALL NOT override derived segment states to `disabled`.
 5. WHEN the Sensor_Pod status in the database is "pending", THE Sensor_Pipeline_Page SHALL display a pending enrollment banner and render the pipeline using available telemetry if present, otherwise using the `no_data` state.
 6. THE stale-data threshold SHALL default to 60 seconds and SHALL be configurable by the Config_Manager, consistent with the sensor detail page threshold.
+7. THE pure derivation module SHALL receive the current time through an explicit option and SHALL NOT call `DateTime.utc_now/0` internally, so deterministic tests can pass a fixed `now`.
+8. WHEN a HealthReport in the Health_Registry is stale, THE dashboard SHALL NOT label that sensor, host, capture plane, or management plane as current/running solely from the stale snapshot; it SHALL label the row as stale while preserving the last reported metrics for operator context.
 
 ### Requirement 14: Pipeline Visualization Component Architecture
 
@@ -255,8 +287,11 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 3. THE Pipeline_Visualization component SHALL accept segment state data as a structured map, decoupling the rendering from the HealthReport data structure.
 4. THE segment state derivation logic SHALL be implemented in a dedicated pure-function module separate from the LiveView and component modules, enabling property-based testing without LiveView dependencies.
 5. THE Pipeline_Visualization component SHALL be testable in isolation by providing mock segment state data.
-6. THE derivation module SHALL expose a stable structured output that includes segment ID, label, state, metrics, warnings, tooltip data, and accessible summary text for each segment and connector.
-7. THE rendering component SHALL not directly query the Health_Registry, database, or PubSub; LiveViews SHALL provide already-derived pipeline state to the component.
+6. THE derivation module SHALL expose a stable structured output that includes segment ID, label, state, metrics, warnings, tooltip data, and accessible summary text for each segment.
+7. THE derivation module SHALL expose stable connector output that includes `id`, `source_id`, `target_id`, `throughput_bps`, `throughput_label`, `secondary_label`, `flow_state`, `speed_tier`, `capture_mode_context` (nil when not applicable), and accessible summary text.
+8. THE rendering component SHALL not directly query the Health_Registry, database, or PubSub; LiveViews SHALL provide already-derived pipeline state to the component.
+9. THE rendering component SHALL render connector animation from derived connector fields and SHALL NOT rederive flow health from raw HealthReport data or formatted throughput labels.
+10. THE `derive_sensor_pipeline/3` public API SHALL accept an options contract containing `:now`, `:stale_threshold_sec`, `:forwarding_sinks`, `:forwarding_summary`, `:capture_mode`, and `:degradation_reasons`; LiveViews SHALL provide those values from the database, Health_Registry, and existing forwarding context.
 
 ### Requirement 15: Performance and Rendering Constraints
 
@@ -267,8 +302,9 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 1. THE Sensor_Pipeline_Page SHALL render and update a single-sensor visualization without blocking the LiveView process on long-running computation.
 2. THE Pool_Pipeline_Page SHALL handle pools with at least 100 member sensors by deriving aggregate state in bounded time and without rendering one full per-sensor graph per member.
 3. THE Pipeline_Visualization SHALL use stable segment and connector IDs so LiveView diffs can update changed values without replacing the entire graph on every health report.
-4. THE Pipeline_Visualization SHALL avoid continuous animation for normal healthy flow; any animation used for state changes SHALL be brief, nonessential, and compatible with reduced-motion preferences.
-5. WHEN the user has enabled reduced motion, THE Pipeline_Visualization SHALL disable nonessential motion and animated connector effects.
+4. THE Pipeline_Visualization SHALL implement the flowing packet animation exclusively using CSS keyframes and SVG stroke properties (for example, `stroke-dasharray` and `stroke-dashoffset`) to avoid JavaScript rendering overhead and maintain LiveView diff efficiency.
+5. THE Pipeline_Visualization SHALL keep flow animation subtle and informational; labels, icons, and state badges SHALL remain sufficient to understand the pipeline when animation is absent.
+6. WHEN the user has enabled reduced motion, THE Pipeline_Visualization SHALL fully disable connector animation while keeping the static topology and all labels visible.
 
 ### Requirement 16: Tests and Verification
 
@@ -288,3 +324,11 @@ This feature starts after the validated single-site pilot MVP plus Platform Aler
 10. THE Config_Manager SHALL include tests verifying that explicit zero throughput is rendered as "0 bps" and is not treated as Missing_Telemetry.
 11. THE Config_Manager SHALL include tests verifying that revoked and pending sensors render the correct status banners and segment states.
 12. THE Config_Manager SHALL include tests verifying that pool aggregate updates are coalesced or debounced under rapid PubSub message bursts.
+13. THE Config_Manager SHALL include tests verifying that a failed target segment stops connector animation even when the source segment is healthy.
+14. THE Config_Manager SHALL include tests verifying that a degraded source or target segment produces degraded connector flow.
+15. THE Config_Manager SHALL include tests verifying that Alert_Driven_Mode PCAP without active flush telemetry renders the PCAP connector as idle rather than flowing.
+16. THE Config_Manager SHALL include tests verifying that formatted throughput labels are never parsed to determine connector behavior.
+17. THE Config_Manager SHALL include tests verifying that Mirror Port state is derived only from current system fields and never implies physical mirror/SPAN link health.
+18. THE Config_Manager SHALL include full-profile Playwright E2E coverage against the deployed test server for sensor pipeline rendering, pool pipeline rendering, missing-telemetry placeholders, permission behavior, and cleanup of any `e2e-` fixtures.
+19. THE Sensor_Agent SHALL include Go regression tests verifying that interface-backed capture throughput reads `rx_bytes`, computes deltas without underflow on counter resets, and preserves packet/drop counters while providing the byte source used for `throughput_bps`.
+20. THE Config_Manager SHALL include derivation regression tests verifying that Mirror Port to AF_PACKET throughput uses the deduplicated ingress estimate and does not double-count Zeek and Suricata fan-out throughput.

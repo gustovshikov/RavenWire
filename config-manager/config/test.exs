@@ -21,7 +21,7 @@ config :argon2_elixir,
 
 config :config_manager,
   ca_path: System.tmp_dir!() |> Path.join("config_manager_test_ca"),
-  grpc_port: 9090,
+  grpc_port: System.get_env("SENSOR_GRPC_PORT", "9090") |> String.to_integer(),
   allow_plain_cert_rotation: true,
   alert_engine_enabled: false,
   metrics_sampler_enabled: false,

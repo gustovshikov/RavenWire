@@ -53,7 +53,7 @@ export async function cleanupAlertFixturesByDatabase(env: E2EEnv, alerts: Create
 }
 
 function sqlDate(value: Date): string {
-  return value.toISOString().replace("T", " ").replace("Z", "000")
+  return value.toISOString()
 }
 
 function sqlString(value: string): string {

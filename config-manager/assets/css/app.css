@@ -175,4 +175,637 @@
     border-color: rgba(23, 147, 209, 0.55);
     color: var(--rw-cyan);
   }
+
+  .pipeline-card {
+    @apply rounded border p-4 shadow-sm;
+    background-color: rgba(23, 26, 33, 0.96);
+    border-color: var(--rw-border);
+    color: var(--rw-text);
+  }
+
+  .pipeline-heading {
+    @apply mb-4 flex flex-col gap-3 border-b pb-4 md:flex-row md:items-center md:justify-between;
+    border-color: var(--rw-border);
+  }
+
+  .pipeline-member-count {
+    @apply rounded border px-3 py-2 text-sm font-medium;
+    background-color: rgba(16, 20, 28, 0.68);
+    border-color: var(--rw-border);
+    color: var(--rw-text);
+  }
+
+  .pipeline-banner {
+    @apply mb-3 flex flex-col gap-1 rounded border px-3 py-2 text-sm md:flex-row md:items-center;
+    background-color: rgba(36, 41, 51, 0.68);
+    border-color: var(--rw-border);
+  }
+
+  .pipeline-banner strong {
+    @apply mr-2;
+  }
+
+  .pipeline-banner-stale,
+  .pipeline-banner-degraded,
+  .pipeline-banner-pending {
+    border-color: rgba(245, 158, 11, 0.55);
+    color: var(--rw-amber);
+  }
+
+  .pipeline-banner-revoked {
+    border-color: rgba(244, 63, 94, 0.55);
+    color: var(--rw-crimson);
+  }
+
+  .pipeline-graph {
+    @apply grid gap-3 md:grid-cols-5;
+  }
+
+  .pipeline-stage {
+    @apply flex min-w-0 flex-col gap-3 rounded border p-3;
+    background-color: rgba(16, 20, 28, 0.78);
+    border-color: var(--rw-border);
+  }
+
+  .pipeline-stage-label {
+    @apply text-xs font-semibold uppercase tracking-wide;
+    color: var(--rw-muted);
+  }
+
+  .pipeline-segment {
+    @apply rounded border p-3 text-sm;
+    color: var(--rw-text);
+    min-height: 10rem;
+    outline: none;
+  }
+
+  .pipeline-segment:focus,
+  .pipeline-connector:focus {
+    box-shadow: 0 0 0 3px rgba(23, 147, 209, 0.28);
+  }
+
+  .pipeline-segment-stale {
+    opacity: 0.72;
+  }
+
+  .pipeline-segment-title {
+    @apply flex items-start gap-2;
+  }
+
+  .pipeline-segment-title h3 {
+    @apply text-sm font-semibold;
+    color: var(--rw-text);
+  }
+
+  .pipeline-segment-title p {
+    @apply text-xs font-medium;
+    color: var(--rw-muted);
+  }
+
+  .pipeline-state-icon {
+    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border text-xs font-bold;
+    background-color: rgba(11, 14, 20, 0.78);
+  }
+
+  .pipeline-state-healthy {
+    border-color: rgba(16, 185, 129, 0.68);
+    background-color: rgba(16, 185, 129, 0.10);
+  }
+
+  .pipeline-state-healthy .pipeline-state-icon {
+    border-color: rgba(16, 185, 129, 0.72);
+    color: var(--rw-green);
+  }
+
+  .pipeline-state-degraded {
+    border-color: rgba(245, 158, 11, 0.72);
+    background-color: rgba(245, 158, 11, 0.11);
+  }
+
+  .pipeline-state-degraded .pipeline-state-icon,
+  .pipeline-state-pending .pipeline-state-icon {
+    border-color: rgba(245, 158, 11, 0.72);
+    color: var(--rw-amber);
+  }
+
+  .pipeline-state-failed {
+    border-color: rgba(244, 63, 94, 0.72);
+    background-color: rgba(244, 63, 94, 0.11);
+  }
+
+  .pipeline-state-failed .pipeline-state-icon {
+    border-color: rgba(244, 63, 94, 0.72);
+    color: var(--rw-crimson);
+  }
+
+  .pipeline-state-disabled {
+    border-color: rgba(148, 163, 184, 0.5);
+    background-color: rgba(148, 163, 184, 0.08);
+  }
+
+  .pipeline-state-disabled .pipeline-state-icon,
+  .pipeline-state-no-data .pipeline-state-icon {
+    border-color: rgba(148, 163, 184, 0.5);
+    color: var(--rw-muted);
+  }
+
+  .pipeline-state-pending {
+    border-color: rgba(23, 147, 209, 0.72);
+    background-color: rgba(23, 147, 209, 0.11);
+  }
+
+  .pipeline-state-no-data {
+    border-style: dashed;
+    border-color: rgba(148, 163, 184, 0.44);
+    background-color: rgba(148, 163, 184, 0.05);
+  }
+
+  .pipeline-metrics,
+  .pipeline-counts,
+  .pipeline-badges,
+  .pipeline-warnings {
+    @apply mt-3 flex flex-wrap gap-1.5;
+  }
+
+  .pipeline-metrics span,
+  .pipeline-counts span,
+  .pipeline-badge {
+    @apply rounded border px-2 py-0.5 text-xs;
+    background-color: rgba(36, 41, 51, 0.82);
+    border-color: var(--rw-border);
+    color: var(--rw-text);
+  }
+
+  .pipeline-warnings span {
+    @apply text-xs;
+    color: var(--rw-amber);
+  }
+
+  .pipeline-tooltip {
+    @apply mt-3 text-xs;
+  }
+
+  .pipeline-tooltip summary {
+    @apply cursor-pointer font-medium;
+    color: var(--rw-cyan);
+  }
+
+  .pipeline-tooltip dl {
+    @apply mt-2 grid gap-1;
+  }
+
+  .pipeline-tooltip div {
+    @apply grid gap-1 md:grid-cols-3;
+  }
+
+  .pipeline-tooltip dt {
+    @apply font-medium;
+    color: var(--rw-muted);
+  }
+
+  .pipeline-tooltip dd {
+    @apply break-words md:col-span-2;
+    color: var(--rw-text);
+  }
+
+  .pipeline-connectors {
+    @apply mt-4 grid gap-2 md:grid-cols-2;
+  }
+
+  .pipeline-connector {
+    @apply grid items-center gap-2 rounded border px-3 py-2 text-xs;
+    grid-template-columns: minmax(5rem, 1fr) 10rem minmax(5rem, 1fr) auto;
+    background-color: rgba(16, 20, 28, 0.82);
+    border-color: var(--rw-border);
+    color: var(--rw-text);
+  }
+
+  .pipeline-connector svg {
+    @apply h-6 w-full;
+  }
+
+  .pipeline-connector-base {
+    fill: none;
+    stroke: rgba(148, 163, 184, 0.72);
+    stroke-width: 2;
+  }
+
+  .pipeline-connector marker path {
+    fill: rgba(148, 163, 184, 0.72);
+  }
+
+  .pipeline-connector-flow {
+    fill: none;
+    stroke: var(--rw-green);
+    stroke-width: 3;
+    stroke-dasharray: 8 10;
+    animation: pipeline-flow 1.5s linear infinite;
+  }
+
+  .flow-state-flowing .pipeline-connector-flow {
+    stroke: var(--rw-green);
+  }
+
+  .flow-state-degraded .pipeline-connector-flow {
+    stroke: var(--rw-amber);
+  }
+
+  .flow-state-idle .pipeline-connector-base,
+  .flow-state-unknown .pipeline-connector-base {
+    stroke-dasharray: 4 5;
+  }
+
+  .flow-state-stopped .pipeline-connector-base {
+    stroke: var(--rw-crimson);
+    stroke-dasharray: 5 5;
+  }
+
+  .flow-speed-gbps .pipeline-connector-flow {
+    animation-duration: 0.5s;
+  }
+
+  .flow-speed-mbps .pipeline-connector-flow {
+    animation-duration: 1.5s;
+  }
+
+  .flow-speed-kbps .pipeline-connector-flow {
+    animation-duration: 3s;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pipeline-connector-flow {
+      animation: none !important;
+    }
+  }
+
+  .pipeline-connector-rate {
+    @apply rounded border px-2 py-0.5 font-medium;
+    background-color: rgba(36, 41, 51, 0.82);
+    border-color: rgba(226, 232, 240, 0.58);
+    color: var(--rw-text);
+  }
+
+  .pipeline-connector-secondary {
+    color: var(--rw-muted);
+  }
+
+  .pipeline-summary {
+    @apply mt-5 rounded border p-3;
+    background-color: rgba(16, 20, 28, 0.64);
+    border-color: var(--rw-border);
+    color: var(--rw-text);
+  }
+
+  .pipeline-summary table {
+    @apply w-full border-collapse text-left text-sm;
+  }
+
+  .pipeline-summary h3 {
+    color: var(--rw-text);
+  }
+
+  .pipeline-summary th,
+  .pipeline-summary td {
+    @apply border-b px-3 py-2;
+    border-color: var(--rw-border);
+  }
+
+  .pipeline-summary th {
+    color: var(--rw-muted);
+  }
+
+  .pipeline-summary td {
+    color: var(--rw-text);
+  }
+
+  .pipeline-member-links {
+    @apply mt-5 rounded border p-3;
+    background-color: rgba(16, 20, 28, 0.64);
+    border-color: var(--rw-border);
+  }
+
+  .pipeline-member-link {
+    @apply rounded border px-2 py-1 text-sm;
+    background-color: rgba(36, 41, 51, 0.72);
+    border-color: var(--rw-border);
+    color: var(--rw-cyan);
+  }
+
+  .pipeline-member-link:hover {
+    background-color: var(--rw-highlight);
+  }
+
+  .pipeline-node-card {
+    @apply rounded border p-4 shadow-sm;
+    background:
+      radial-gradient(circle at 12% 12%, color-mix(in srgb, var(--rw-cyan) 14%, transparent), transparent 24rem),
+      linear-gradient(180deg, color-mix(in srgb, var(--rw-slate) 96%, transparent), var(--rw-void));
+    border-color: var(--rw-border);
+    color: var(--rw-text);
+  }
+
+  .pipeline-node-heading {
+    @apply mb-4 flex flex-col gap-3 border-b pb-4 lg:flex-row lg:items-center lg:justify-between;
+    border-color: var(--rw-border);
+  }
+
+  .pipeline-node-heading h2 {
+    @apply text-xl font-semibold;
+    color: var(--rw-text);
+  }
+
+  .pipeline-node-heading p {
+    @apply mt-1 text-sm;
+    color: var(--rw-muted);
+  }
+
+  .pipeline-node-legend {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .pipeline-node-legend-item {
+    @apply rounded border px-2.5 py-1 text-xs font-semibold;
+    background-color: color-mix(in srgb, var(--rw-highlight) 74%, transparent);
+  }
+
+  .pipeline-node-shell {
+    @apply relative;
+  }
+
+  .pipeline-node-scroll {
+    @apply overflow-x-auto pr-0;
+  }
+
+  .pipeline-node-canvas {
+    @apply relative min-h-[650px] overflow-hidden rounded border;
+    min-width: 1180px;
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--rw-border) 20%, transparent) 1px, transparent 1px),
+      linear-gradient(180deg, color-mix(in srgb, var(--rw-border) 16%, transparent) 1px, transparent 1px),
+      color-mix(in srgb, var(--rw-void) 88%, var(--rw-slate));
+    background-size: 20% 100%, 100% 25%, auto;
+    border-color: var(--rw-border);
+  }
+
+  .pipeline-node-detail-toggle {
+    @apply absolute right-4 top-4 rounded border px-3 py-2 text-sm font-semibold;
+    z-index: 6;
+    background-color: color-mix(in srgb, var(--rw-highlight) 86%, var(--rw-void));
+    border-color: color-mix(in srgb, var(--rw-cyan) 62%, var(--rw-border));
+    color: var(--rw-text);
+    box-shadow: theme("boxShadow.plasma");
+  }
+
+  .pipeline-node-detail-toggle:hover {
+    border-color: var(--rw-cyan);
+    color: var(--rw-cyan);
+  }
+
+  .pipeline-node-svg {
+    @apply absolute inset-0 h-full w-full;
+    z-index: 1;
+  }
+
+  .pipeline-node-edge-base {
+    fill: none;
+    stroke-linecap: round;
+  }
+
+  .pipeline-node-edge-flow {
+    fill: none;
+    stroke-linecap: butt;
+  }
+
+  .pipeline-node-edge-base {
+    stroke: color-mix(in srgb, var(--rw-border) 86%, var(--rw-muted));
+    stroke-width: 0.65;
+  }
+
+  .pipeline-node-edge-flow {
+    stroke: var(--rw-cyan);
+    stroke-width: 1.15;
+    stroke-dasharray: 0.95 2.15;
+    animation: pipeline-node-flow 1.6s linear infinite;
+    shape-rendering: crispEdges;
+  }
+
+  .pipeline-node-flow-state-flowing .pipeline-node-edge-flow {
+    stroke: var(--rw-green);
+  }
+
+  .pipeline-node-flow-state-degraded .pipeline-node-edge-flow {
+    stroke: var(--rw-amber);
+  }
+
+  .pipeline-node-flow-state-idle .pipeline-node-edge-base,
+  .pipeline-node-flow-state-unknown .pipeline-node-edge-base {
+    stroke-dasharray: 1.1 1.5;
+  }
+
+  .pipeline-node-flow-state-stopped .pipeline-node-edge-base {
+    stroke: var(--rw-crimson);
+    stroke-dasharray: 1.1 1.5;
+  }
+
+  .pipeline-node-flow-speed-gbps .pipeline-node-edge-flow {
+    animation-duration: 0.45s;
+  }
+
+  .pipeline-node-flow-speed-mbps .pipeline-node-edge-flow {
+    animation-duration: 1.2s;
+  }
+
+  .pipeline-node-flow-speed-kbps .pipeline-node-edge-flow {
+    animation-duration: 2.8s;
+  }
+
+  .pipeline-node-segment {
+    @apply absolute grid -translate-x-1/2 -translate-y-1/2 gap-0.5 rounded-lg border px-2 py-1.5 text-center;
+    z-index: 3;
+    min-height: 2.85rem;
+    min-width: 7.25rem;
+    max-width: 9.5rem;
+    width: max-content;
+    background-color: color-mix(in srgb, var(--rw-void) 88%, var(--rw-slate));
+    border-color: color-mix(in srgb, var(--rw-border) 78%, var(--rw-muted));
+    color: var(--rw-text);
+    outline: none;
+  }
+
+  .pipeline-node-segment:focus,
+  .pipeline-node-selected {
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--rw-cyan) 24%, transparent),
+      theme("boxShadow.cyan-glow");
+  }
+
+  .pipeline-node-label {
+    @apply grid min-w-0 gap-1;
+  }
+
+  .pipeline-node-label strong {
+    @apply truncate text-sm font-semibold leading-tight;
+    color: var(--rw-text);
+  }
+
+  .pipeline-node-label span {
+    @apply truncate text-xs font-semibold leading-tight;
+    color: var(--rw-muted);
+    font-family: theme("fontFamily.mono");
+  }
+
+  .pipeline-node-state-healthy {
+    border-color: color-mix(in srgb, var(--rw-green) 72%, transparent);
+  }
+
+  .pipeline-node-state-healthy.pipeline-node-segment,
+  .pipeline-node-state-healthy.pipeline-node-detail-state,
+  .pipeline-node-state-healthy.pipeline-node-legend-item {
+    border-color: var(--rw-green);
+  }
+
+  .pipeline-node-state-degraded,
+  .pipeline-node-state-pending {
+    border-color: color-mix(in srgb, var(--rw-amber) 72%, transparent);
+  }
+
+  .pipeline-node-state-degraded.pipeline-node-segment,
+  .pipeline-node-state-pending.pipeline-node-segment,
+  .pipeline-node-state-degraded.pipeline-node-detail-state,
+  .pipeline-node-state-pending.pipeline-node-detail-state,
+  .pipeline-node-state-degraded.pipeline-node-legend-item {
+    border-color: var(--rw-amber);
+  }
+
+  .pipeline-node-state-failed {
+    border-color: color-mix(in srgb, var(--rw-crimson) 72%, transparent);
+  }
+
+  .pipeline-node-state-failed.pipeline-node-segment,
+  .pipeline-node-state-failed.pipeline-node-detail-state,
+  .pipeline-node-state-failed.pipeline-node-legend-item {
+    border-color: var(--rw-crimson);
+  }
+
+  .pipeline-node-state-disabled.pipeline-node-segment,
+  .pipeline-node-state-no-data.pipeline-node-segment,
+  .pipeline-node-state-no-data.pipeline-node-legend-item {
+    border-color: var(--rw-muted);
+    border-style: dashed;
+  }
+
+  .pipeline-node-detail {
+    @apply absolute right-4 top-16 w-96 overflow-y-auto rounded border p-4;
+    z-index: 5;
+    max-height: calc(100% - 5rem);
+    background-color: color-mix(in srgb, var(--rw-slate) 84%, var(--rw-void));
+    border-color: var(--rw-border);
+    color: var(--rw-text);
+    box-shadow: theme("boxShadow.plasma");
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(calc(100% + 1.5rem));
+    transition:
+      opacity 160ms ease,
+      transform 180ms ease;
+  }
+
+  .pipeline-node-detail-open .pipeline-node-detail {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+
+  .pipeline-node-detail-head {
+    @apply flex items-start justify-between gap-3 border-b pb-3;
+    border-color: var(--rw-border);
+  }
+
+  .pipeline-node-detail-kicker {
+    @apply text-xs font-semibold uppercase tracking-wide;
+    color: var(--rw-muted);
+  }
+
+  .pipeline-node-detail h3 {
+    @apply mt-1 text-lg font-semibold;
+    color: var(--rw-text);
+  }
+
+  .pipeline-node-detail-state {
+    @apply rounded border px-2 py-1 text-xs font-semibold;
+    background-color: color-mix(in srgb, var(--rw-highlight) 76%, transparent);
+    color: var(--rw-text);
+  }
+
+  .pipeline-node-detail-summary {
+    @apply mt-3 text-sm leading-6;
+    color: var(--rw-muted);
+  }
+
+  .pipeline-node-detail-section {
+    @apply mt-4;
+  }
+
+  .pipeline-node-detail-section h4 {
+    @apply text-xs font-semibold uppercase tracking-wide;
+    color: var(--rw-muted);
+  }
+
+  .pipeline-node-detail-chips {
+    @apply mt-2 flex flex-wrap gap-2;
+  }
+
+  .pipeline-node-detail-chips span {
+    @apply rounded border px-2 py-1 text-xs;
+    background-color: color-mix(in srgb, var(--rw-highlight) 72%, transparent);
+    border-color: var(--rw-border);
+    color: var(--rw-text);
+  }
+
+  .pipeline-node-detail-list {
+    @apply mt-2 list-disc pl-5 text-sm;
+    color: var(--rw-amber);
+  }
+
+  .pipeline-node-detail-grid {
+    @apply mt-2 grid gap-2 text-sm;
+  }
+
+  .pipeline-node-detail-grid div {
+    @apply grid gap-1 border-b pb-2;
+    border-color: var(--rw-border);
+  }
+
+  .pipeline-node-detail-grid dt {
+    @apply text-xs font-semibold uppercase tracking-wide;
+    color: var(--rw-muted);
+  }
+
+  .pipeline-node-detail-grid dd {
+    @apply break-words;
+    color: var(--rw-text);
+  }
+
+  .pipeline-node-detail-empty {
+    @apply text-sm;
+    color: var(--rw-muted);
+  }
+
+  @keyframes pipeline-flow {
+    to {
+      stroke-dashoffset: -36;
+    }
+  }
+
+  @keyframes pipeline-node-flow {
+    to {
+      stroke-dashoffset: -12;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pipeline-node-edge-flow {
+      animation: none !important;
+    }
+  }
 }

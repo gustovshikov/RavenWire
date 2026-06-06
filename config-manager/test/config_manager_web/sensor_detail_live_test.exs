@@ -183,6 +183,26 @@ defmodule ConfigManagerWeb.SensorDetailLiveTest do
     refute response =~ "Capture Consumers"
   end
 
+  test "dashboard marks stale health rows instead of reporting them as current", %{conn: conn} do
+    pod = insert_pod(%{status: "enrolled"})
+    stale_at = DateTime.utc_now() |> DateTime.add(-120, :second)
+
+    Registry.update(pod.name, health_report(pod.name, timestamp: stale_at))
+    Process.sleep(50)
+
+    conn =
+      conn
+      |> login()
+      |> recycle()
+      |> get("/")
+
+    response = html_response(conn, 200)
+
+    assert response =~ ~s(aria-label="View details for #{pod.name}")
+    assert response =~ ~r/View details for #{Regex.escape(pod.name)}.*Health data is stale\./s
+    assert response =~ ~r/View details for #{Regex.escape(pod.name)}.*>\s*stale\s*</s
+  end
+
   test "renders forwarding pool configuration for assigned sensors", %{conn: conn} do
     {:ok, pool} = Pools.create_pool(%{"name" => "sensor-forwarding-pool"}, "tester")
 
@@ -326,10 +346,15 @@ defmodule ConfigManagerWeb.SensorDetailLiveTest do
     }
   end
 
-  defp health_report(pod_name) do
+  defp health_report(pod_name, opts \\ []) do
+    timestamp =
+      opts
+      |> Keyword.get(:timestamp, DateTime.utc_now())
+      |> DateTime.to_unix(:millisecond)
+
     %Health.HealthReport{
       sensor_pod_id: pod_name,
-      timestamp_unix_ms: DateTime.utc_now() |> DateTime.to_unix(:millisecond),
+      timestamp_unix_ms: timestamp,
       containers: [
         %Health.ContainerHealth{
           name: "systemd-zeek",

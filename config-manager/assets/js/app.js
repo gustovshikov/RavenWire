@@ -6,6 +6,32 @@
   }
 
   const Hooks = {
+    PipelineTooltip: {
+      mounted() {
+        this.closeOnEscape = (event) => {
+          if (event.key === "Escape") {
+            this.el.open = false
+          }
+        }
+
+        this.closeOnFocusLoss = () => {
+          window.requestAnimationFrame(() => {
+            if (!this.el.contains(document.activeElement)) {
+              this.el.open = false
+            }
+          })
+        }
+
+        this.el.addEventListener("keydown", this.closeOnEscape)
+        this.el.addEventListener("focusout", this.closeOnFocusLoss)
+      },
+
+      destroyed() {
+        this.el.removeEventListener("keydown", this.closeOnEscape)
+        this.el.removeEventListener("focusout", this.closeOnFocusLoss)
+      }
+    },
+
     MetricsChart: {
       mounted() {
         this.renderChart()

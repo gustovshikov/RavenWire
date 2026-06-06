@@ -93,9 +93,18 @@ export class CleanupRegistry {
       try {
         await deleteUserByUi(page, user.username)
       } catch (error) {
-        failures.push(
-          `UI cleanup failed for user ${user.username}: ${error instanceof Error ? error.message : String(error)}`
-        )
+        if (env.allowDbCleanup) {
+          try {
+            await cleanupUserByDatabase(env, user.username)
+            continue
+          } catch (dbError) {
+            failures.push(
+              `DB cleanup failed for user ${user.username}: ${dbError instanceof Error ? dbError.message : String(dbError)}`
+            )
+          }
+        }
+
+        failures.push(`UI cleanup failed for user ${user.username}: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
 
@@ -172,6 +181,19 @@ export async function cleanupRulesetByDatabase(env: E2EEnv, rulesetName: string)
   }
 
   const query = `delete from rulesets where name = ${sqlString(rulesetName)} and name like 'e2e-%';`
+  await runSsh(env, `sudo sqlite3 ${shellQuote(env.managerDbPath)} ${shellQuote(query)}`)
+}
+
+export async function cleanupUserByDatabase(env: E2EEnv, username: string) {
+  if (!env.allowDbCleanup) {
+    throw new Error("Direct database cleanup requires E2E_ALLOW_DB_CLEANUP=true")
+  }
+
+  if (!username.startsWith("e2e-")) {
+    throw new Error(`Refusing to delete non-E2E user: ${username}`)
+  }
+
+  const query = `pragma foreign_keys = on; delete from users where username = ${sqlString(username)} and username like 'e2e-%';`
   await runSsh(env, `sudo sqlite3 ${shellQuote(env.managerDbPath)} ${shellQuote(query)}`)
 }
 

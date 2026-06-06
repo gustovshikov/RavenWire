@@ -566,37 +566,33 @@ func (c *Collector) scrapeCaptureStats() CaptureStats {
 		cs := ConsumerStats{
 			BpfRestartPending: bpfPending[name],
 		}
+		var throughputBytes uint64
 
 		switch name {
 		case "pcap_ring_writer":
 			c.scrapePcapRingWriterStats(&cs)
+			throughputBytes = cs.BytesWritten
 		case "suricata":
 			c.scrapeSuricataStats(&cs)
 			// Also merge interface-level stats as baseline
 			if rs, ok := rawStats[name]; ok {
-				cs.PacketsReceived = rs.PacketsReceived
-				cs.PacketsDropped = rs.PacketsDropped
-				cs.DropPercent = rs.DropPercent
+				throughputBytes = mergeInterfacePacketStats(&cs, rs)
 			}
 		case "zeek":
 			c.scrapeZeekStats(&cs)
 			// Also merge interface-level stats as baseline
 			if rs, ok := rawStats[name]; ok {
-				cs.PacketsReceived = rs.PacketsReceived
-				cs.PacketsDropped = rs.PacketsDropped
-				cs.DropPercent = rs.DropPercent
+				throughputBytes = mergeInterfacePacketStats(&cs, rs)
 			}
 		default:
 			// Fall back to interface-level stats
 			if rs, ok := rawStats[name]; ok {
-				cs.PacketsReceived = rs.PacketsReceived
-				cs.PacketsDropped = rs.PacketsDropped
-				cs.DropPercent = rs.DropPercent
+				throughputBytes = mergeInterfacePacketStats(&cs, rs)
 			}
 		}
 
 		// Compute throughput from byte count deltas (Req 7.6)
-		cs.ThroughputBps = c.computeThroughput(name, cs.BytesWritten, now)
+		cs.ThroughputBps = c.computeThroughput(name, throughputBytes, now)
 
 		// Update previous wrap count for pcap_ring_writer after overwrite risk
 		// has been computed and throughput has updated prevState.
@@ -614,6 +610,13 @@ func (c *Collector) scrapeCaptureStats() CaptureStats {
 	c.scrapeVectorStats(stats.Consumers)
 
 	return stats
+}
+
+func mergeInterfacePacketStats(cs *ConsumerStats, rs capture.ConsumerStats) uint64 {
+	cs.PacketsReceived = rs.PacketsReceived
+	cs.PacketsDropped = rs.PacketsDropped
+	cs.DropPercent = rs.DropPercent
+	return rs.BytesReceived
 }
 
 // scrapePcapRingWriterStats queries pcap_ring_writer via the Ring_Control_Protocol
@@ -956,6 +959,10 @@ func (c *Collector) computeThroughput(name string, currentBytes uint64, now time
 	c.prevState[name] = newState
 
 	if !hasPrev || prev.Timestamp.IsZero() || currentBytes == 0 {
+		return 0
+	}
+
+	if currentBytes < prev.BytesWritten {
 		return 0
 	}
 

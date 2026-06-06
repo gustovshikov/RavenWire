@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test"
 
 import type { E2EEnv } from "./env"
-import { expectLiveViewConnected } from "./live-view"
+import { checkAndSettle, expectLiveViewConnected, selectAndSettle } from "./live-view"
 import { runSsh, shellQuote } from "./ssh"
 
 export async function submitTimeRangePcapSearch(page: Page, sensorName: string): Promise<string> {
@@ -9,8 +9,8 @@ export async function submitTimeRangePcapSearch(page: Page, sensorName: string):
   await expect(page.getByRole("heading", { name: "PCAP Search" })).toBeVisible()
   await expectLiveViewConnected(page)
 
-  await page.locator("#search-type").selectOption("time_range")
-  await page.getByLabel(sensorName).check()
+  await selectAndSettle(page, "#search-type", "time_range")
+  await checkAndSettle(page, page.getByLabel(sensorName))
 
   const end = new Date()
   const start = new Date(end.getTime() - 5 * 60_000)

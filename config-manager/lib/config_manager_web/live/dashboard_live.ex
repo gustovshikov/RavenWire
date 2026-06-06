@@ -123,6 +123,7 @@ defmodule ConfigManagerWeb.DashboardLive do
   def status_color("error"), do: "bg-red-100 text-red-800"
   def status_color("restarting"), do: "bg-yellow-100 text-yellow-800"
   def status_color("degraded"), do: "bg-orange-100 text-orange-800"
+  def status_color("stale"), do: "bg-yellow-100 text-yellow-900"
   def status_color("ok"), do: "bg-green-100 text-green-800"
   def status_color("warning"), do: "bg-yellow-100 text-yellow-800"
   def status_color("critical"), do: "bg-red-100 text-red-800"
@@ -178,25 +179,40 @@ defmodule ConfigManagerWeb.DashboardLive do
   defp format_timestamp(nil), do: "—"
 
   defp format_timestamp(unix_ms) do
-    unix_ms
-    |> div(1_000)
-    |> DateTime.from_unix!()
-    |> Calendar.strftime("%Y-%m-%d %H:%M:%S UTC")
+    case report_datetime(unix_ms) do
+      nil -> "—"
+      datetime -> Calendar.strftime(datetime, "%Y-%m-%d %H:%M:%S UTC")
+    end
   end
+
+  defp report_datetime(unix_ms) when is_integer(unix_ms) and unix_ms > 0 do
+    case DateTime.from_unix(unix_ms, :millisecond) do
+      {:ok, datetime} -> datetime
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp report_datetime(_unix_ms), do: nil
 
   defp format_age(nil), do: "—"
 
   defp format_age(unix_ms) do
-    seconds =
-      DateTime.utc_now()
-      |> DateTime.diff(DateTime.from_unix!(div(unix_ms, 1_000)), :second)
-      |> max(0)
+    case report_datetime(unix_ms) do
+      nil ->
+        "—"
 
-    cond do
-      seconds < 60 -> "#{seconds}s ago"
-      seconds < 3_600 -> "#{div(seconds, 60)}m ago"
-      seconds < 86_400 -> "#{div(seconds, 3_600)}h ago"
-      true -> "#{div(seconds, 86_400)}d ago"
+      datetime ->
+        seconds =
+          DateTime.utc_now()
+          |> DateTime.diff(datetime, :second)
+          |> max(0)
+
+        cond do
+          seconds < 60 -> "#{seconds}s ago"
+          seconds < 3_600 -> "#{div(seconds, 60)}m ago"
+          seconds < 86_400 -> "#{div(seconds, 3_600)}h ago"
+          true -> "#{div(seconds, 86_400)}d ago"
+        end
     end
   end
 
@@ -271,6 +287,31 @@ defmodule ConfigManagerWeb.DashboardLive do
     |> length()
   end
 
+  defp current_pod_count(pods) do
+    Enum.count(pods, fn {_id, pod} -> not stale_report?(pod) end)
+  end
+
+  defp stale_threshold_sec do
+    :config_manager
+    |> Application.get_env(:sensor_detail_stale_threshold_sec, 60)
+    |> max(1)
+  end
+
+  defp stale_report?(%{timestamp_unix_ms: unix_ms}) do
+    case report_datetime(unix_ms) do
+      nil ->
+        true
+
+      datetime ->
+        DateTime.utc_now()
+        |> DateTime.diff(datetime, :second)
+        |> max(0) > stale_threshold_sec()
+    end
+  end
+
+  defp status_if_current(_status, true), do: "stale"
+  defp status_if_current(status, false), do: status
+
   defp system_disk_used_percent(%{system: %{disk_used_percent: percent}}) when is_number(percent),
     do: percent
 
@@ -293,7 +334,9 @@ defmodule ConfigManagerWeb.DashboardLive do
       <div class="mb-6 flex items-center justify-between gap-4">
         <div>
           <h1 class="text-2xl font-bold text-gray-900">Sensors</h1>
-          <p class="mt-1 text-sm text-gray-500"><%= map_size(@pods) %> reporting sensor pod(s)</p>
+          <p class="mt-1 text-sm text-gray-500">
+            <%= current_pod_count(@pods) %> current / <%= map_size(@pods) %> known sensor pod(s)
+          </p>
         </div>
       </div>
 
@@ -306,11 +349,12 @@ defmodule ConfigManagerWeb.DashboardLive do
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <%= for {_id, pod} <- Enum.sort_by(@pods, fn {id, _} -> id end) do %>
             <% degradation_reasons = Map.get(@degraded_pods, pod.sensor_pod_id, []) %>
-            <% overall = pod_status_with_degraded(pod.containers, degradation_reasons) %>
+            <% stale? = stale_report?(pod) %>
+            <% overall = pod_status_with_degraded(pod.containers, degradation_reasons) |> status_if_current(stale?) %>
             <% issues = issue_count(overall, degradation_reasons, pod) %>
             <% max_drop = max_drop_percent(pod.capture) %>
-            <% capture_status = capture_plane_status(pod.containers, degradation_reasons, pod.capture) %>
-            <% management_status = plane_status(pod.containers, :management) %>
+            <% capture_status = capture_plane_status(pod.containers, degradation_reasons, pod.capture) |> status_if_current(stale?) %>
+            <% management_status = plane_status(pod.containers, :management) |> status_if_current(stale?) %>
             <article class="rounded border border-gray-200 bg-white p-4 shadow-sm">
               <div class="mb-4 flex items-start justify-between gap-3">
                 <div class="min-w-0">
@@ -328,6 +372,9 @@ defmodule ConfigManagerWeb.DashboardLive do
                   <p class="mt-1 text-xs text-gray-500" title={format_timestamp(pod.timestamp_unix_ms)}>
                     Last report <%= format_age(pod.timestamp_unix_ms) %>
                   </p>
+                  <p :if={stale?} class="mt-1 text-xs font-medium text-yellow-800">
+                    Health data is stale.
+                  </p>
                 </div>
                 <span class={"shrink-0 rounded px-2 py-0.5 text-xs font-medium #{status_color(overall)}"}>
                   <%= overall %>
@@ -341,7 +388,9 @@ defmodule ConfigManagerWeb.DashboardLive do
                 </div>
                 <div>
                   <dt class="text-xs font-medium uppercase text-gray-500">Host</dt>
-                  <dd class="mt-1 font-medium text-gray-900"><%= if pod.system, do: pod.system.health || "unknown", else: "unknown" %></dd>
+                  <dd class="mt-1 font-medium text-gray-900">
+                    <%= if stale?, do: "stale", else: if(pod.system, do: pod.system.health || "unknown", else: "unknown") %>
+                  </dd>
                 </div>
                 <div>
                   <dt class="text-xs font-medium uppercase text-gray-500">Capture Plane</dt>

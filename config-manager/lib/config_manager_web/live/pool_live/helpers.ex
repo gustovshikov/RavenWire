@@ -20,6 +20,7 @@ defmodule ConfigManagerWeb.PoolLive.Helpers do
     ~H"""
     <div class="mb-4 flex flex-wrap gap-3 text-sm">
       <a href={"/pools/#{@pool.id}"} class="text-blue-600 hover:underline">Overview</a>
+      <a href={"/pools/#{@pool.id}/pipeline"} class="text-blue-600 hover:underline">Pipeline</a>
       <a href={"/pools/#{@pool.id}/sensors"} class="text-blue-600 hover:underline">Sensors</a>
       <a href={"/pools/#{@pool.id}/config"} class="text-blue-600 hover:underline">Config</a>
       <a href={"/pools/#{@pool.id}/forwarding"} class="text-blue-600 hover:underline">

@@ -40,7 +40,7 @@ export async function waitForLiveViewIdle(page: Page) {
           .evaluate(
             () =>
               document.querySelectorAll(
-                ".phx-click-loading, .phx-change-loading, .phx-submit-loading"
+                ".phx-loading, .phx-click-loading, .phx-change-loading, .phx-submit-loading"
               ).length
           )
           .catch(() => 0),

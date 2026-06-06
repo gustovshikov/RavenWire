@@ -116,9 +116,7 @@ defmodule ConfigManagerWeb.PcapLive.SearchLive do
             <div>
               <label class="mb-1 block text-sm font-medium text-gray-700" for="search-type">Search Mode</label>
               <select id="search-type" name="search[search_type]" class="w-full rounded border border-gray-300 px-3 py-2 text-sm">
-                <%= for {label, value} <- @search_modes do %>
-                  <option value={value} selected={@form["search_type"] == value}><%= label %></option>
-                <% end %>
+                <%= options_for_select(@search_modes, @form["search_type"]) %>
               </select>
               <.field_errors errors={@errors} field="search_type" />
             </div>

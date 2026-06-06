@@ -153,9 +153,7 @@ defmodule ConfigManagerWeb.ForwardingLive.SinkFormLive do
           <div>
             <label class="mb-1 block text-sm font-medium text-gray-700" for="sink-type">Sink Type</label>
             <select id="sink-type" name="sink[sink_type]" phx-change="select_type" disabled={@mode == :edit} class="w-full rounded border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100">
-              <%= for {label, value} <- @sink_types do %>
-                <option value={value} selected={@params["sink_type"] == value}><%= label %></option>
-              <% end %>
+              <%= options_for_select(@sink_types, @params["sink_type"]) %>
             </select>
             <%= if @mode == :edit do %>
               <input type="hidden" name="sink[sink_type]" value={@params["sink_type"]} />
@@ -300,9 +298,7 @@ defmodule ConfigManagerWeb.ForwardingLive.SinkFormLive do
     <div>
       <label class="mb-1 block text-sm font-medium text-gray-700" for={"sink-#{@field}"}><%= @label %></label>
       <select id={"sink-#{@field}"} name={"sink[#{@field}]"} class="w-full rounded border border-gray-300 px-3 py-2 text-sm">
-        <%= for {label, value} <- @options do %>
-          <option value={value} selected={to_string(Map.get(@params, @field, "")) == to_string(value)}><%= label %></option>
-        <% end %>
+        <%= options_for_select(@options, Map.get(@params, @field, "")) %>
       </select>
     </div>
     """

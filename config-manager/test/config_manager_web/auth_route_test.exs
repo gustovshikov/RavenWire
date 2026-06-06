@@ -502,6 +502,8 @@ defmodule ConfigManagerWeb.AuthRouteTest do
       "/rules/rulesets/#{ruleset.id}/edit",
       "/rules/deployments",
       "/sensors/#{sensor.id}",
+      "/sensors/#{sensor.id}/pipeline",
+      "/sensors/#{sensor.id}/pipeline/graph",
       "/sensors/#{sensor.id}/metrics",
       "/sensors/#{sensor.id}/baselines"
     ]

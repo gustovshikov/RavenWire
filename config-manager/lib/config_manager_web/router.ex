@@ -171,6 +171,7 @@ defmodule ConfigManagerWeb.Router do
       on_mount: [{ConfigManagerWeb.AuthHelpers, :require_auth}] do
       live("/pools", PoolLive.IndexLive, :index)
       live("/pools/:id", PoolLive.ShowLive, :show)
+      live("/pools/:id/pipeline", PipelineLive.PoolPipelineLive, :show)
       live("/pools/:id/sensors", PoolLive.SensorsLive, :index)
       live("/pools/:id/config", PoolLive.ConfigLive, :edit)
       live("/pools/:id/forwarding", ForwardingLive.OverviewLive, :index)
@@ -218,6 +219,8 @@ defmodule ConfigManagerWeb.Router do
 
       live("/support-bundle", SupportBundleLive, :index)
       live("/sensors/:id", SensorDetailLive, :show)
+      live("/sensors/:id/pipeline", PipelineLive.SensorPipelineLive, :show)
+      live("/sensors/:id/pipeline/graph", PipelineLive.SensorPipelineGraphLive, :show)
       live("/sensors/:id/metrics", MetricsLive.SensorMetricsLive, :show)
       live("/sensors/:id/baselines", BaselinesLive.SensorBaselinesLive, :show)
       live("/alerts", AlertDashboardLive, :index)

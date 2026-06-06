@@ -310,9 +310,9 @@ func (m *Manager) ApplyBPFFilter(filterText string) error {
 
 // BPF config paths and container names.
 const (
-	zeekBPFPath          = "/etc/sensor/zeek/af_packet_bpf.filter"
-	zeekContainerName    = "zeek"
-	suricataBPFPath      = "/etc/sensor/suricata/bpf_filter.bpf"
+	zeekBPFPath           = "/etc/sensor/zeek/af_packet_bpf.filter"
+	zeekContainerName     = "zeek"
+	suricataBPFPath       = "/etc/sensor/suricata/bpf_filter.bpf"
 	suricataContainerName = "suricata"
 )
 
@@ -484,6 +484,7 @@ type ConsumerStats struct {
 	Name            string  `json:"name"`
 	PacketsReceived uint64  `json:"packets_received"`
 	PacketsDropped  uint64  `json:"packets_dropped"`
+	BytesReceived   uint64  `json:"bytes_received"`
 	DropPercent     float64 `json:"drop_percent"`
 }
 
@@ -492,7 +493,7 @@ func ReadPacketStats(cfg *CaptureConfig) (map[string]ConsumerStats, error) {
 	stats := make(map[string]ConsumerStats)
 
 	for _, c := range cfg.Consumers {
-		received, dropped, err := readPacketStatsForIface(c.Interface)
+		received, dropped, bytesReceived, err := readPacketStatsForIface(c.Interface)
 		if err != nil {
 			stats[c.Name] = ConsumerStats{Name: c.Name}
 			continue
@@ -505,6 +506,7 @@ func ReadPacketStats(cfg *CaptureConfig) (map[string]ConsumerStats, error) {
 			Name:            c.Name,
 			PacketsReceived: received,
 			PacketsDropped:  dropped,
+			BytesReceived:   bytesReceived,
 			DropPercent:     dropPct,
 		}
 	}
@@ -514,20 +516,30 @@ func ReadPacketStats(cfg *CaptureConfig) (map[string]ConsumerStats, error) {
 
 // readPacketStatsForIface reads aggregate RX packet and drop counters for
 // a network interface from /sys/class/net/<iface>/statistics/.
-func readPacketStatsForIface(iface string) (received, dropped uint64, err error) {
+func readPacketStatsForIface(iface string) (received, dropped, bytesReceived uint64, err error) {
+	return readPacketStatsForIfaceRoot("/sys/class/net", iface)
+}
+
+func readPacketStatsForIfaceRoot(root, iface string) (received, dropped, bytesReceived uint64, err error) {
 	if iface == "" {
-		return 0, 0, fmt.Errorf("empty interface name")
+		return 0, 0, 0, fmt.Errorf("empty interface name")
 	}
 
-	rxPath := fmt.Sprintf("/sys/class/net/%s/statistics/rx_packets", iface)
-	dropPath := fmt.Sprintf("/sys/class/net/%s/statistics/rx_dropped", iface)
-	missedPath := fmt.Sprintf("/sys/class/net/%s/statistics/rx_missed_errors", iface)
+	statsRoot := fmt.Sprintf("%s/%s/statistics", root, iface)
+	rxPath := fmt.Sprintf("%s/rx_packets", statsRoot)
+	bytesPath := fmt.Sprintf("%s/rx_bytes", statsRoot)
+	dropPath := fmt.Sprintf("%s/rx_dropped", statsRoot)
+	missedPath := fmt.Sprintf("%s/rx_missed_errors", statsRoot)
 
 	rxData, err := os.ReadFile(rxPath)
 	if err != nil {
-		return 0, 0, fmt.Errorf("read rx_packets for %s: %w", iface, err)
+		return 0, 0, 0, fmt.Errorf("read rx_packets for %s: %w", iface, err)
 	}
 	fmt.Sscanf(string(rxData), "%d", &received)
+
+	if bytesData, e := os.ReadFile(bytesPath); e == nil {
+		fmt.Sscanf(string(bytesData), "%d", &bytesReceived)
+	}
 
 	var dropped1, dropped2 uint64
 	if dropData, e := os.ReadFile(dropPath); e == nil {
@@ -538,7 +550,7 @@ func readPacketStatsForIface(iface string) (received, dropped uint64, err error)
 	}
 	dropped = dropped1 + dropped2
 
-	return received, dropped, nil
+	return received, dropped, bytesReceived, nil
 }
 
 // SendSignalByName is kept for backward compatibility but is no longer used
